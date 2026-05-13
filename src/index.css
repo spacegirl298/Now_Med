@@ -1,14 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --color-deep-plum: #4B1528;
-  --color-plum: #72243E;
-  --color-rose: #993556;
-  --color-bloom: #D4537E;
-  --color-blush: #F4C0D1;
-  --color-mist: #FBEAF0;
-  --color-ink: #2C2C2A;
-  --color-slate: #5F5E5A;
-  --color-stone: #B4B2A9;
-  --color-sand: #F1EFE8;
+  /*Primary Colour Palette*/
+  --color-deep-plum: #4B1528; /*For hover states on dark elements*/
+  --color-plum: #72243E; /*Headings and emphasis text*/
+  --color-rose: #993556; /*Primary branc colour, applied to buttons, active navigation, & key interactive elements*/
+  --color-bloom: #D4537E; /*Large-text hover states only*/
+  --color-blush: #F4C0D1; /*Selected states & tag backgrounds*/
+  --color-mist: #FBEAF0; /*card & surface bg*/
+  /*Neutral Colour Palette*/
+  --color-ink: #2C2C2A; /*Primary body text*/
+  --color-slate: #5F5E5A;/*secondary &muted text*/
+  --color-stone: #B4B2A9;/*placeholders &disabled sates*/
+  --color-sand: #F1EFE8; /*page background*/
+  --color-white: #FFFFFF; /*card surfaces*/
+  /*Status Colour Palette*/
+  --color-green: #085041; /*Confirmed text*/
+  --color-pastel-green: #E1F5EE; /*confirmed background*/
+  --color-amber: #633806; /*Delayed text*/
+  --color-pastel-amber: #FAEEDA; /*Delayed Background*/
+  --color-red: #791F1F; /*Cancelled text*/
+  --color-pastel-red: #FCEBEB; /*Cancelled Background*/
+  --color-blue: #0C447C; /*Pending Text*/
+  --color-pastel-blue: #E6F1FB; /*Pending background*/ 
 }
+
