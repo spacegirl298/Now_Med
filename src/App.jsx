@@ -1,122 +1,97 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useAuth } from './context/AuthContext'
 
-function App() {
-  const [count, setCount] = useState(0)
+// Auth pages
+import Login from './pages/auth/Login'
+import SignUp from './pages/auth/SignUp'
+import ForgotPassword from './pages/auth/ForgotPassword'
+import EmailVerification from './pages/auth/EmailVerification'
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+// Patient pages
+import PatientDashboard from './pages/patient/PatientDashboard'
+import PatientCalendar from './pages/patient/PatientCalendar'
+import PatientRecords from './pages/patient/PatientRecords'
+import PatientProfile from './pages/patient/PatientProfile'
 
-      <div className="ticks"></div>
+// Secretary pages
+import SecretaryDashboard from './pages/secretary/SecretaryDashboard'
+import SecretarySchedule from './pages/secretary/SecretarySchedule'
+import PatientList from './pages/secretary/PatientList'
+import SecretaryProfile from './pages/secretary/SecretaryProfile'
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+// Protected route wrapper
+function ProtectedRoute({ children, allowedRole }) {
+  const { currentUser, userRole } = useAuth()
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+  // Not logged in → go to login
+  if (!currentUser) return <Navigate to="/login" />
+
+  // Wrong role → redirect to their correct dashboard
+  if (allowedRole && userRole !== allowedRole) {
+    return <Navigate to={userRole === 'patient' 
+      ? '/patient/dashboard' 
+      : '/secretary/dashboard'} 
+    />
+  }
+
+  return children
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/verify-email" element={<EmailVerification />} />
+
+        {/* Patient routes */}
+        <Route path="/patient/dashboard" element={
+          <ProtectedRoute allowedRole="patient">
+            <PatientDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/patient/calendar" element={
+          <ProtectedRoute allowedRole="patient">
+            <PatientCalendar />
+          </ProtectedRoute>
+        } />
+        <Route path="/patient/records" element={
+          <ProtectedRoute allowedRole="patient">
+            <PatientRecords />
+          </ProtectedRoute>
+        } />
+        <Route path="/patient/profile" element={
+          <ProtectedRoute allowedRole="patient">
+            <PatientProfile />
+          </ProtectedRoute>
+        } />
+
+        {/* Secretary routes */}
+        <Route path="/secretary/dashboard" element={
+          <ProtectedRoute allowedRole="secretary">
+            <SecretaryDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/secretary/schedule" element={
+          <ProtectedRoute allowedRole="secretary">
+            <SecretarySchedule />
+          </ProtectedRoute>
+        } />
+        <Route path="/secretary/patients" element={
+          <ProtectedRoute allowedRole="secretary">
+            <PatientList />
+          </ProtectedRoute>
+        } />
+        <Route path="/secretary/profile" element={
+          <ProtectedRoute allowedRole="secretary">
+            <SecretaryProfile />
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </BrowserRouter>
+  )
+}
