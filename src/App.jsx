@@ -5,7 +5,7 @@ import { useAuth } from './context/AuthContext'
 import Login from './pages/auth/Login'
 import SignUp from './pages/auth/SignUp'
 import ForgotPassword from './pages/auth/ForgotPassword'
-import EmailVerification from './pages/auth/EmailVerification'
+import EmailVerification from './pages/auth/EmailVerfication'
 
 // Patient pages
 import PatientDashboard from './pages/patient/PatientDashboard'
