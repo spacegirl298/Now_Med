@@ -5,7 +5,8 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  sendEmailVerification 
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
@@ -29,13 +30,15 @@ export function AuthProvider({ children }) {
     // Create the Firebase Auth account
     const result = await createUserWithEmailAndPassword(auth, email, password)
     
-    // Save extra info to Firestore
+    //sending Verification email 
+    sendEmailVerification(result.user)
+    // This saves their information to Firestore
     await setDoc(doc(db, 'users', result.user.uid), {
       uid: result.user.uid,
       name,
       email,
       role,
-      practiceCode,
+      practiceCode: practiceCode || '',
       hasCompletedIntake: false,
       createdAt: new Date()
     })
@@ -59,25 +62,30 @@ export function AuthProvider({ children }) {
   }
 
   // Listen for auth state changes (runs on every page load)
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // User is logged in — fetch their role from Firestore
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      try {
         const userDoc = await getDoc(doc(db, 'users', user.uid))
         if (userDoc.exists()) {
           setUserRole(userDoc.data().role)
         }
         setCurrentUser(user)
-      } else {
-        // User is logged out
-        setCurrentUser(null)
-        setUserRole(null)
+      } catch (error) {
+        // If Firestore read fails, still set the user
+        // so they aren't stuck on a blank page
+        console.error('Error fetching user role:', error)
+        setCurrentUser(user)
       }
-      setLoading(false)
-    })
+    } else {
+      setCurrentUser(null)
+      setUserRole(null)
+    }
+    setLoading(false)
+  })
 
-    return unsubscribe // cleanup on unmount
-  }, [])
+  return unsubscribe
+}, [])
 
   const value = {
     currentUser,
