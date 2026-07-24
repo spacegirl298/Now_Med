@@ -19,7 +19,7 @@ import {
 import { getAllPatients } from "../../firebase/firestore";
 
 export default function SecretaryDashboard() {
-  const { currentUser } = useAuth();
+  const { currentUser, userName } = useAuth();
   const { appointments, loading, error } = useAppointments();
   const navigate = useNavigate();
 
@@ -56,7 +56,7 @@ export default function SecretaryDashboard() {
   }, [searchTerm, patients]);
 
   const displayName =
-    currentUser?.displayName || currentUser?.email?.split("@")[0] || "there";
+    userName || currentUser?.email?.split("@")[0] || "there";
 
   return (
     <SecretaryLayout>

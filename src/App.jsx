@@ -19,14 +19,20 @@ import SecretarySchedule from './pages/secretary/SecretarySchedule'
 import PatientList from './pages/secretary/PatientList'
 import SecretaryProfile from './pages/secretary/SecretaryProfile'
 
+//dev bypass flag that allows us to view the dashboards without having to keep logging back in 
+const DEV_BYPASS_ROLE = 'null'
+
 // Protected route wrapper
 function ProtectedRoute({ children, allowedRole }) {
   const { currentUser, userRole } = useAuth()
 
-  // Not logged in → go to login
+  //Dev bypass
+  if (DEV_BYPASS_ROLE) {
+    return children
+  }
+
   if (!currentUser) return <Navigate to="/login" />
 
-  // Wrong role → redirect to their correct dashboard
   if (allowedRole && userRole !== allowedRole) {
     return <Navigate to={userRole === 'patient' 
       ? '/patient/dashboard' 

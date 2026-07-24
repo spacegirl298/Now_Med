@@ -11,22 +11,23 @@ import {
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
 
-// 1. Create the context
+
 const AuthContext = createContext()
 
-// 2. Custom hook so any component can access auth easily
+
 export function useAuth() {
   return useContext(AuthContext)
 }
 
-// 3. The provider wraps your whole app
+// The provider wraps your whole app
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const [userName, setUserName] = useState(null)
   const [loading, setLoading] = useState(true)
 
   // Register a new user
-  async function register(email, password, role, name, practiceCode) {
+  async function register(email, password, idNumber, idType, role, name, practiceCode) {
     // Create the Firebase Auth account
     const result = await createUserWithEmailAndPassword(auth, email, password)
     
@@ -38,6 +39,8 @@ export function AuthProvider({ children }) {
       name,
       email,
       role,
+      idNumber,
+      idType, // 'sa_id' or 'passport'
       practiceCode: practiceCode || '',
       hasCompletedIntake: false,
       createdAt: new Date()
@@ -61,7 +64,6 @@ export function AuthProvider({ children }) {
     return sendPasswordResetEmail(auth, email)
   }
 
-  // Listen for auth state changes (runs on every page load)
 useEffect(() => {
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (user) {
@@ -69,6 +71,7 @@ useEffect(() => {
         const userDoc = await getDoc(doc(db, 'users', user.uid))
         if (userDoc.exists()) {
           setUserRole(userDoc.data().role)
+          setUserName(userDoc.data().name)
         }
         setCurrentUser(user)
       } catch (error) {
@@ -80,6 +83,7 @@ useEffect(() => {
     } else {
       setCurrentUser(null)
       setUserRole(null)
+      setUserName(null)
     }
     setLoading(false)
   })
@@ -90,13 +94,13 @@ useEffect(() => {
   const value = {
     currentUser,
     userRole,
+    userName,
     register,
     login,
     logout,
     resetPassword
   }
 
-  // Don't render children until we know if user is logged in
   return (
     <AuthContext.Provider value={value}>
       {!loading && children}

@@ -11,7 +11,7 @@ export default function SignUp() {
   const [role, setRole] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
-    name: '', email: '', password: '', practiceCode: '', agreedToTerms: false
+    name: '', email: '', idNumber: '', idType: 'sa_id', password: '', practiceCode: '', agreedToTerms: false
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -68,8 +68,14 @@ export default function SignUp() {
   }
 
   async function handleSubmit() {
-    if (!formData.name || !formData.email || !formData.password) {
+    if (!formData.name || !formData.email || !formData.idNumber || !formData.password) {
       return setError('Please fill in all fields')
+    }
+    if (formData.idType === 'sa_id' && !/^\d{13}$/.test(formData.idNumber.trim())) {
+      return setError('Please enter a valid 13-digit South African ID number')
+    }
+    if (formData.idType === 'passport' && !/^[A-Za-z0-9]{5,15}$/.test(formData.idNumber.trim())) {
+      return setError('Please enter a valid passport number')
     }
     if (formData.password.length < 6) {
       return setError('Password must be at least 6 characters')
@@ -91,6 +97,8 @@ export default function SignUp() {
       await register(
         formData.email,
         formData.password,
+        formData.idNumber,
+        formData.idType,
         role,
         formData.name,
         formData.practiceCode
@@ -165,14 +173,56 @@ export default function SignUp() {
               onChange={e => setFormData({...formData, name: e.target.value})}
               className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
             />
-            <input
+            <div>
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, idType: 'sa_id', idNumber: ''})}
+                  className={`flex-1 rounded-xl py-2 text-sm font-medium border-2 transition-colors ${
+                    formData.idType === 'sa_id'
+                      ? 'border-rose bg-rose/10 text-rose'
+                      : 'border-sand text-slate'
+                  }`}
+                >
+                  South African ID
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({...formData, idType: 'passport', idNumber: ''})}
+                  className={`flex-1 rounded-xl py-2 text-sm font-medium border-2 transition-colors ${
+                    formData.idType === 'passport'
+                      ? 'border-rose bg-rose/10 text-rose'
+                      : 'border-sand text-slate'
+                  }`}
+                >
+                  Passport / Other ID
+                </button>
+              </div>
+              <input
+                placeholder={formData.idType === 'sa_id' ? '13-digit ID number' : 'Passport number'}
+                inputMode={formData.idType === 'sa_id' ? 'numeric' : 'text'}
+                maxLength={formData.idType === 'sa_id' ? 13 : 15}
+                value={formData.idNumber}
+                onChange={e => {
+                  const raw = e.target.value
+                  const value = formData.idType === 'sa_id' ? raw.replace(/\D/g, '') : raw
+                  setFormData({...formData, idNumber: value})
+                }}
+                className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+              />
+              {formData.idType === 'sa_id' ? (
+                <p className="text-xs text-slate mt-1">Not a South African citizen? Switch to "Passport / Other ID" above.</p>
+              ) : (
+                <p className="text-xs text-slate mt-1">Enter the ID number exactly as it appears on your passport.</p>
+              )}
+            </div>
+            <input  
               placeholder="Email address"
               type="email"
               value={formData.email}
               onChange={e => setFormData({...formData, email: e.target.value})}
               className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
             />
-
             <div className="relative">
               <input
                 placeholder="Password"

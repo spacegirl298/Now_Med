@@ -31,14 +31,14 @@ export default function Login() {
 
     try {
       const result = await login(email, password)
-
+      //if user hasn't verifid their email
       if (!result.user.emailVerified) {
         await logout()
         setError('Please verify your email before logging in. Check your inbox for the verification link.')
         setLoading(false)
         return
       }
-
+      //remember email information - easier to login again 
       if (rememberMe) {
         localStorage.setItem('rememberedEmail', email)
       } else {
@@ -47,10 +47,10 @@ export default function Login() {
 
       const userDoc = await getDoc(doc(db, 'users', result.user.uid))
       const role = userDoc.data().role
-
+      //takes you to your dashboard
       if (role === 'patient') navigate('/patient/dashboard')
       else navigate('/secretary/dashboard')
-
+      //error handling with incorrect login information
     } catch (err) {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
         setError('Incorrect email or password')
@@ -65,16 +65,12 @@ export default function Login() {
 
     setLoading(false)
   }
-
+  //Layout of the section
   return (
     <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6">
       <h1 className="text-2xl font-semibold text-ink mb-1">Welcome back</h1>
       <p className="text-slate text-sm mb-8">Log in to your Now Med account</p>
 
-      {/* 
-        The form tag with autocomplete="on" is what tells 
-        the browser to offer to save the password 
-      */}
       <form
         onSubmit={handleLogin}
         autoComplete="on"
@@ -90,7 +86,6 @@ export default function Login() {
           className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
         />
 
-        {/* Password with reveal toggle */}
         <div className="relative">
           <input
             placeholder="Password"
@@ -123,7 +118,6 @@ export default function Login() {
 
         {error && <p className="text-red-500 text-sm">{error}</p>}
 
-        {/* Must be type="submit" so the browser knows this is the login button */}
         <button
           type="submit"
           disabled={loading}
