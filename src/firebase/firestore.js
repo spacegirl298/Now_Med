@@ -80,6 +80,19 @@ export function subscribeToAllAppointments(callback, onError) {
   );
 }
 
+// Live subscription to just enough info to know which slots are taken —
+// date, time and status only. Used by the patient-facing calendar to render
+// availability without exposing other patients' names, notes, or ids.
+export function subscribeToBookedSlots(callback) {
+  return onSnapshot(appointmentsCol, (snap) => {
+    const slots = snap.docs.map((d) => {
+      const data = d.data();
+      return { date: data.date, time: data.time, status: data.status };
+    });
+    callback(slots);
+  });
+}
+
 // Live subscription scoped to one patient — used by the patient dashboard.
 export function subscribeToPatientAppointments(patientId, callback, onError) {
   const q = query(appointmentsCol, where("patientId", "==", patientId));
@@ -103,6 +116,7 @@ export async function createAppointment(data) {
     date: data.date,
     time: data.time,
     type: data.type || "in-person",
+    practice: data.practice || "",
     status: data.status || "confirmed",
     notes: data.notes || "",
     delayMinutes: 0,
