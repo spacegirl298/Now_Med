@@ -6,10 +6,12 @@ import {
   signOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
-  sendEmailVerification 
+  sendEmailVerification,
+  updateProfile
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
+import { linkPatientDataByIdNumber } from '../firebase/firestore'
 
 
 const AuthContext = createContext()
@@ -30,7 +32,11 @@ export function AuthProvider({ children }) {
   async function register(email, password, idNumber, idType, role, name, practiceCode) {
     // Create the Firebase Auth account
     const result = await createUserWithEmailAndPassword(auth, email, password)
-    
+
+    // So displayName is available anywhere we read it straight off the Auth
+    // user (e.g. profile pages), not just from the Firestore user doc
+    await updateProfile(result.user, { displayName: name })
+
     //sending Verification email 
     sendEmailVerification(result.user)
     // This saves their information to Firestore
@@ -45,6 +51,17 @@ export function AuthProvider({ children }) {
       hasCompletedIntake: false,
       createdAt: new Date()
     })
+
+    // If a secretary already booked appointments or added records for this
+    // person by ID number (e.g. a phone-in booking), attach that history to
+    // the new account now so it shows up immediately.
+    if (role === 'patient') {
+      try {
+        await linkPatientDataByIdNumber(result.user.uid, idNumber, name)
+      } catch (error) {
+        console.error('Could not link existing bookings/records by ID number:', error)
+      }
+    }
 
     return result
   }

@@ -11,10 +11,10 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
   onSnapshot,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./config";
 
@@ -23,6 +23,7 @@ const usersCol = collection(db, "users");
 const appointmentsCol = collection(db, "appointments");
 const notificationsCol = collection(db, "notifications");
 const blockedSlotsCol = collection(db, "blockedSlots");
+const recordsCol = collection(db, "records");
 
 // ================= USERS / PATIENTS =================
 
@@ -51,15 +52,69 @@ export async function getUserById(uid) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+// Looks up a registered patient by their SA ID / passport number. Used when
+// a secretary books a walk-in / phone-in patient, so that if that person
+// already has an account the appointment gets attached to their real uid
+// instead of being left "unregistered".
+export async function getUserByIdNumber(idNumber) {
+  if (!idNumber) return null;
+  const q = query(usersCol, where("idNumber", "==", idNumber));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
 export async function updateUserProfile(uid, data) {
   await updateDoc(doc(db, "users", uid), data);
 }
 
-// Patient medical records live in a subcollection: users/{uid}/records
+// Patient medical records live in a top-level "records" collection (rather
+// than a users/{uid}/records subcollection) so a secretary can attach a
+// record to a walk-in patient's ID number before that patient has an
+// account, and so it can later be linked to their uid once they sign up.
+// Sorted client-side to avoid depending on a composite index.
 export async function getPatientRecords(patientUid) {
-  const recordsCol = collection(db, "users", patientUid, "records");
-  const snap = await getDocs(query(recordsCol, orderBy("date", "desc")));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const q = query(recordsCol, where("patientId", "==", patientUid));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
+// Records for a patient who doesn't have an account yet, looked up by their
+// ID/passport number instead of a uid.
+export async function getRecordsByIdNumber(idNumber) {
+  if (!idNumber) return [];
+  const q = query(recordsCol, where("patientIdNumber", "==", idNumber));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
+// Lets a secretary add a medical record for a patient. If the patient has
+// no account yet, pass patientId: null and patientIdNumber instead — the
+// record will be linked automatically once they register (see
+// linkPatientDataByIdNumber).
+export async function addPatientRecord({
+  patientId = null,
+  patientIdNumber = "",
+  title,
+  date,
+  notes = "",
+  createdBy = null,
+}) {
+  const ref = await addDoc(recordsCol, {
+    patientId,
+    patientIdNumber: patientIdNumber || "",
+    title,
+    date,
+    notes,
+    createdBy,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
 }
 
 // ================= APPOINTMENTS =================
@@ -108,10 +163,21 @@ export function subscribeToPatientAppointments(patientId, callback, onError) {
   );
 }
 
+// patientId may be null here — that's the case when a secretary books an
+// appointment for someone contacted by phone/email/in person who doesn't
+// have an account yet. In that case patientIdNumber must be set, and the
+// appointment gets attached to the real account automatically once that
+// person registers with a matching ID/passport number (see
+// linkPatientDataByIdNumber).
 export async function createAppointment(data) {
+  const patientId = data.patientId || null;
+
   const ref = await addDoc(appointmentsCol, {
-    patientId: data.patientId,
+    patientId,
     patientName: data.patientName,
+    patientIdNumber: data.patientIdNumber || "",
+    patientPhone: data.patientPhone || "",
+    contactMethod: data.contactMethod || "",
     secretaryId: data.secretaryId || null,
     date: data.date,
     time: data.time,
@@ -125,14 +191,83 @@ export async function createAppointment(data) {
     updatedAt: serverTimestamp(),
   });
 
-  await createNotification({
-    recipientId: data.patientId,
-    appointmentId: ref.id,
-    type: "confirmation",
-    message: `Your appointment on ${data.date} at ${data.time} has been confirmed.`,
-  });
+  // Only registered patients (with a uid) can receive an in-app notification.
+  if (patientId) {
+    await createNotification({
+      recipientId: patientId,
+      appointmentId: ref.id,
+      type: "confirmation",
+      message: `Your appointment on ${data.date} at ${data.time} has been confirmed.`,
+    });
+  }
 
   return ref.id;
+}
+
+// Patients booked by a secretary before they've signed up ("walk-ins"),
+// grouped by ID number so they show up once in the patient directory even
+// if they have several appointments. Used to label/list them by ID number
+// until they register and their bookings link to a real account.
+export async function getUnlinkedWalkInPatients() {
+  const q = query(appointmentsCol, where("patientId", "==", null));
+  const snap = await getDocs(q);
+  const byIdNumber = new Map();
+  snap.docs.forEach((d) => {
+    const data = d.data();
+    if (!data.patientIdNumber) return;
+    if (!byIdNumber.has(data.patientIdNumber)) {
+      byIdNumber.set(data.patientIdNumber, {
+        id: null,
+        idNumber: data.patientIdNumber,
+        name: data.patientName || "",
+        phone: data.patientPhone || "",
+        isWalkIn: true,
+        appointmentCount: 0,
+      });
+    }
+    byIdNumber.get(data.patientIdNumber).appointmentCount += 1;
+  });
+  return Array.from(byIdNumber.values()).sort((a, b) =>
+    (a.name || "").localeCompare(b.name || ""),
+  );
+}
+
+// Called right after a patient registers. Any appointments or records that
+// were created for them by a secretary using their ID number (before they
+// had an account) get attached to their new uid so they instantly see their
+// history.
+export async function linkPatientDataByIdNumber(uid, idNumber, name) {
+  if (!idNumber) return;
+
+  const apptQ = query(
+    appointmentsCol,
+    where("patientIdNumber", "==", idNumber),
+    where("patientId", "==", null),
+  );
+  const recordsQ = query(
+    recordsCol,
+    where("patientIdNumber", "==", idNumber),
+    where("patientId", "==", null),
+  );
+
+  const [apptSnap, recordsSnap] = await Promise.all([
+    getDocs(apptQ),
+    getDocs(recordsQ),
+  ]);
+
+  if (apptSnap.empty && recordsSnap.empty) return;
+
+  const batch = writeBatch(db);
+  apptSnap.docs.forEach((d) => {
+    batch.update(d.ref, {
+      patientId: uid,
+      patientName: name || d.data().patientName,
+    });
+  });
+  recordsSnap.docs.forEach((d) => {
+    batch.update(d.ref, { patientId: uid });
+  });
+  await batch.commit();
 }
 
 export async function updateAppointment(appointmentId, data) {
@@ -148,12 +283,14 @@ export async function deleteAppointment(appointmentId) {
 
 export async function cancelAppointment(appointment) {
   await updateAppointment(appointment.id, { status: "cancelled" });
-  await createNotification({
-    recipientId: appointment.patientId,
-    appointmentId: appointment.id,
-    type: "cancellation",
-    message: `Your appointment on ${appointment.date} at ${appointment.time} has been cancelled.`,
-  });
+  if (appointment.patientId) {
+    await createNotification({
+      recipientId: appointment.patientId,
+      appointmentId: appointment.id,
+      type: "cancellation",
+      message: `Your appointment on ${appointment.date} at ${appointment.time} has been cancelled.`,
+    });
+  }
 }
 
 // Secretary marks a delay: updates the appointment and pushes a notification
@@ -171,15 +308,17 @@ export async function markAppointmentDelay(
     delayedTime: newTime,
   });
 
-  await createNotification({
-    recipientId: appointment.patientId,
-    appointmentId: appointment.id,
-    type: "delay",
-    message:
-      `Your ${appointment.time} appointment is running ${delayMinutes} min late` +
-      (newTime ? ` — now expected at ${newTime}.` : ".") +
-      (note ? ` Note: ${note}` : ""),
-  });
+  if (appointment.patientId) {
+    await createNotification({
+      recipientId: appointment.patientId,
+      appointmentId: appointment.id,
+      type: "delay",
+      message:
+        `Your ${appointment.time} appointment is running ${delayMinutes} min late` +
+        (newTime ? ` — now expected at ${newTime}.` : ".") +
+        (note ? ` Note: ${note}` : ""),
+    });
+  }
 }
 
 // ================= NOTIFICATIONS =================

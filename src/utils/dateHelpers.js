@@ -62,6 +62,13 @@ export function isToday(dateStr) {
   return dateStr === getTodayString()
 }
 
+// True if the given 'YYYY-MM-DD' date is strictly before today (local time).
+// Used to block new bookings on past dates while still allowing that day's
+// existing appointments to be viewed.
+export function isPastDate(dateStr) {
+  return dateStr < getTodayString()
+}
+
 // True if the given date+time is already in the past
 export function isPastSlot(dateStr, timeStr) {
   const slot = parseDate(dateStr)

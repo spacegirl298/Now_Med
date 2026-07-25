@@ -22,7 +22,7 @@ export default function Sidebar({ role = 'secretary' }) {
   const links = role === 'patient' ? PATIENT_LINKS : SECRETARY_LINKS
 
   return (
-    <aside className="hidden md:flex flex-col w-60 shrink-0 bg-plum text-white min-h-screen px-4 py-6">
+    <aside className="hidden md:flex flex-col w-60 shrink-0 bg-plum text-white h-screen sticky top-0 overflow-y-auto px-4 py-6">
       <div className="mb-8 px-2">
         <p className="text-lg font-semibold">Now Med</p>
         <p className="text-xs text-blush">

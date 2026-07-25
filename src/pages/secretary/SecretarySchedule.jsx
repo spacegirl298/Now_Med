@@ -14,6 +14,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
 import SecretaryLayout from "./SecretaryLayout";
+import BackButton from "../../components/BackButton";
 import Card from "../../components/Card";
 import Badge from "../../components/Badge";
 import Modal from "../../components/Modal";
@@ -27,18 +28,25 @@ import {
   generateTimeSlots,
   addMinutesToTime,
   isToday,
+  isPastDate,
 } from "../../utils/dateHelpers";
 import { DELAY_OPTIONS } from "../../utils/validators";
 import {
   getAllPatients,
+  getUserByIdNumber,
   blockDate,
   unblockSlot,
   subscribeToBlockedSlots,
 } from "../../firebase/firestore";
 
 const EMPTY_FORM = {
+  bookingMode: "existing", // 'existing' patient on file, or a 'new' walk-in/phone/email patient
   patientId: "",
   patientName: "",
+  patientIdNumber: "",
+  patientIdType: "sa_id",
+  patientPhone: "",
+  contactMethod: "in-person",
   time: "08:00",
   type: "in-person",
   notes: "",
@@ -138,7 +146,10 @@ export default function SecretarySchedule() {
     }
   }
 
+  const selectedDateIsPast = isPastDate(selectedDate);
+
   function openAddModal() {
+    if (isPastDate(selectedDate)) return;
     setEditingAppointment(null);
     setForm({ ...EMPTY_FORM, time: availableTimeOptions[0] || "08:00" });
     setFormError("");
@@ -148,7 +159,9 @@ export default function SecretarySchedule() {
   function openEditModal(appointment) {
     setEditingAppointment(appointment);
     setForm({
-      patientId: appointment.patientId,
+      ...EMPTY_FORM,
+      bookingMode: "existing",
+      patientId: appointment.patientId || "",
       patientName: appointment.patientName,
       time: appointment.time,
       type: appointment.type,
@@ -158,9 +171,34 @@ export default function SecretarySchedule() {
     setShowAddModal(true);
   }
 
+  // Double-clicking a day on the calendar jumps straight to booking on that
+  // day, skipping the extra step of selecting it first.
+  function handleDayDoubleClick(dateStr) {
+    if (isPastDate(dateStr)) return;
+    setSelectedDate(dateStr);
+    setEditingAppointment(null);
+    setForm({ ...EMPTY_FORM });
+    setFormError("");
+    setShowAddModal(true);
+  }
+
   async function handleSaveAppointment() {
-    if (!form.patientId) return setFormError("Please select a patient.");
+    if (isPastDate(selectedDate)) {
+      return setFormError(
+        "This date has already passed — appointments can't be booked in the past.",
+      );
+    }
     if (!form.time) return setFormError("Please select a time.");
+
+    if (form.bookingMode === "existing" && !editingAppointment) {
+      if (!form.patientId) return setFormError("Please select a patient.");
+    }
+    if (form.bookingMode === "new") {
+      if (!form.patientName.trim())
+        return setFormError("Please enter the patient's name.");
+      if (!form.patientIdNumber.trim())
+        return setFormError("Please enter the patient's ID or passport number.");
+    }
 
     try {
       if (editingAppointment) {
@@ -169,10 +207,31 @@ export default function SecretarySchedule() {
           type: form.type,
           notes: form.notes,
         });
-      } else {
+      } else if (form.bookingMode === "existing") {
         await createAppointment({
           patientId: form.patientId,
           patientName: form.patientName,
+          secretaryId: currentUser?.uid,
+          date: selectedDate,
+          time: form.time,
+          type: form.type,
+          notes: form.notes,
+          status: "confirmed",
+        });
+      } else {
+        // New / walk-in patient booked by phone, email, or in person. If
+        // this ID number already belongs to a registered account, attach
+        // the appointment straight to that account instead of leaving it
+        // unlinked.
+        const idNumber = form.patientIdNumber.trim();
+        const existingUser = await getUserByIdNumber(idNumber);
+
+        await createAppointment({
+          patientId: existingUser?.id || null,
+          patientName: existingUser?.name || form.patientName.trim(),
+          patientIdNumber: idNumber,
+          patientPhone: form.patientPhone.trim(),
+          contactMethod: form.contactMethod,
           secretaryId: currentUser?.uid,
           date: selectedDate,
           time: form.time,
@@ -216,6 +275,7 @@ export default function SecretarySchedule() {
   return (
     <SecretaryLayout>
       <div className="p-6 md:p-8 max-w-6xl mx-auto">
+        <BackButton />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold text-ink">Schedule</h1>
@@ -225,7 +285,13 @@ export default function SecretarySchedule() {
           </div>
           <button
             onClick={openAddModal}
-            className="hidden md:flex items-center gap-2 bg-rose text-white rounded-xl px-5 py-3 font-medium hover:bg-plum transition-colors"
+            disabled={selectedDateIsPast}
+            title={
+              selectedDateIsPast
+                ? "Can't add appointments to a date that has passed"
+                : undefined
+            }
+            className="hidden md:flex items-center gap-2 bg-rose text-white rounded-xl px-5 py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose"
           >
             <Plus size={18} /> Add appointment
           </button>
@@ -273,12 +339,15 @@ export default function SecretarySchedule() {
                   (b) => b.date === cell.dateStr && b.time === null,
                 );
                 const isSelected = cell.dateStr === selectedDate;
+                const isPast = isPastDate(cell.dateStr);
                 return (
                   <button
                     key={cell.dateStr}
                     onClick={() => setSelectedDate(cell.dateStr)}
+                    onDoubleClick={() => handleDayDoubleClick(cell.dateStr)}
+                    title={isPast ? "Past date — view only" : "Double-click to book"}
                     className={`aspect-square rounded-lg text-sm flex flex-col items-center justify-center gap-0.5 transition-colors
-                      ${!cell.inMonth ? "text-stone" : "text-ink"}
+                      ${!cell.inMonth ? "text-stone" : isPast ? "text-slate" : "text-ink"}
                       ${isSelected ? "bg-rose text-white" : isToday(cell.dateStr) ? "bg-blush" : "hover:bg-mist"}`}
                   >
                     <span>{cell.day}</span>
@@ -318,15 +387,22 @@ export default function SecretarySchedule() {
               </button>
             </div>
 
-            {isDayBlocked && (
+            {isDayBlocked && !selectedDateIsPast && (
               <p className="px-5 py-2 text-xs text-red bg-pastel-red">
                 This day is marked unavailable for bookings.
               </p>
             )}
 
+            {selectedDateIsPast && (
+              <p className="px-5 py-2 text-xs text-slate bg-mist">
+                This date has passed. View passed appointments.
+              </p>
+            )}
+
             <button
               onClick={openAddModal}
-              className="md:hidden w-full flex items-center justify-center gap-2 bg-rose text-white py-3 font-medium"
+              disabled={selectedDateIsPast}
+              className="md:hidden w-full flex items-center justify-center gap-2 bg-rose text-white py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus size={18} /> Add appointment
             </button>
@@ -349,9 +425,15 @@ export default function SecretarySchedule() {
                       <div>
                         <p className="text-sm font-medium text-ink">
                           {formatTime(a.time)} · {a.patientName}
+                          {!a.patientId && a.patientIdNumber && (
+                            <span className="text-slate font-normal">
+                              {" "}(ID: {a.patientIdNumber})
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-slate capitalize">
                           {a.type} consult
+                          {!a.patientId && " · not yet registered"}
                         </p>
                         {a.status === "delayed" && a.delayedTime && (
                           <p className="text-xs text-amber mt-1">
@@ -405,29 +487,113 @@ export default function SecretarySchedule() {
             {formatDisplayDate(selectedDate)}
           </p>
 
-          <div>
-            <label className="text-xs text-slate mb-1 block">Patient</label>
-            <select
-              value={form.patientId}
-              disabled={!!editingAppointment}
-              onChange={(e) => {
-                const p = patients.find((p) => p.id === e.target.value);
-                setForm({
-                  ...form,
-                  patientId: e.target.value,
-                  patientName: p?.name || "",
-                });
-              }}
-              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none disabled:bg-sand"
-            >
-              <option value="">Select a patient...</option>
-              {patients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.email})
-                </option>
-              ))}
-            </select>
-          </div>
+          {!editingAppointment && (
+            <div className="flex gap-2 -mt-1">
+              <button
+                type="button"
+                onClick={() => setForm({ ...EMPTY_FORM, bookingMode: "existing", time: form.time })}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+                  form.bookingMode === "existing"
+                    ? "bg-rose text-white border-rose"
+                    : "border-stone text-ink hover:border-rose"
+                }`}
+              >
+                Existing patient
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm({ ...EMPTY_FORM, bookingMode: "new", time: form.time })}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+                  form.bookingMode === "new"
+                    ? "bg-rose text-white border-rose"
+                    : "border-stone text-ink hover:border-rose"
+                }`}
+              >
+                New / walk-in patient
+              </button>
+            </div>
+          )}
+
+          {form.bookingMode === "existing" || editingAppointment ? (
+            <div>
+              <label className="text-xs text-slate mb-1 block">Patient</label>
+              <select
+                value={form.patientId}
+                disabled={!!editingAppointment}
+                onChange={(e) => {
+                  const p = patients.find((p) => p.id === e.target.value);
+                  setForm({
+                    ...form,
+                    patientId: e.target.value,
+                    patientName: p?.name || "",
+                  });
+                }}
+                className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none disabled:bg-sand"
+              >
+                <option value="">Select a patient...</option>
+                {patients.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} {p.idNumber ? `· ID: ${p.idNumber}` : `(${p.email})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs text-slate mb-1 block">Patient's full name</label>
+                <input
+                  value={form.patientName}
+                  onChange={(e) => setForm({ ...form, patientName: e.target.value })}
+                  placeholder="e.g. Thandiwe Nkosi"
+                  className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate mb-1 block">ID type</label>
+                  <select
+                    value={form.patientIdType}
+                    onChange={(e) => setForm({ ...form, patientIdType: e.target.value })}
+                    className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                  >
+                    <option value="sa_id">SA ID</option>
+                    <option value="passport">Passport</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate mb-1 block">ID / passport number</label>
+                  <input
+                    value={form.patientIdNumber}
+                    onChange={(e) => setForm({ ...form, patientIdNumber: e.target.value })}
+                    placeholder="e.g. 9001015800086"
+                    className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate mb-1 block">Phone number</label>
+                <input
+                  value={form.patientPhone}
+                  onChange={(e) => setForm({ ...form, patientPhone: e.target.value })}
+                  placeholder="e.g. 082 123 4567"
+                  className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate mb-1 block">How were they contacted?</label>
+                <select
+                  value={form.contactMethod}
+                  onChange={(e) => setForm({ ...form, contactMethod: e.target.value })}
+                  className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                >
+                  <option value="in-person">In person</option>
+                  <option value="phone">Phone call</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-xs text-slate mb-1 block">Time slot</label>
