@@ -25,7 +25,7 @@ import {
   formatDisplayDate,
   greetingForNow,
 } from "../../utils/dateHelpers";
-import { getPatientRecords } from "../../firebase/firestore";
+import { subscribeToPatientRecords } from "../../firebase/firestore";
 
 export default function PatientDashboard() {
   const { currentUser, userName } = useAuth();
@@ -36,9 +36,13 @@ export default function PatientDashboard() {
 
   useEffect(() => {
     if (!currentUser) return;
-    getPatientRecords(currentUser.uid)
-      .then(setRecords)
-      .catch(() => setRecords([]));
+    // Live subscription (rather than a one-time fetch) so a record the
+    // secretary adds or edits appears here within moments. Staff-only
+    // entries are never shown on the patient side.
+    const unsub = subscribeToPatientRecords(currentUser.uid, (list) =>
+      setRecords(list.filter((r) => !r.internalOnly)),
+    );
+    return () => unsub && unsub();
   }, [currentUser]);
 
   const today = getTodayString();

@@ -15,6 +15,7 @@ import {
   addPatientRecord,
 } from '../../firebase/firestore'
 import { formatShortDate, formatDisplayDate, getTodayString } from '../../utils/dateHelpers'
+import { GENDER_OPTIONS, isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -239,9 +240,39 @@ export default function PatientRecordModal({ patient, appointments = [], initial
 
 function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit }) {
   const age = calculateAge(overviewForm.dateOfBirth || profile?.dateOfBirth)
+  const [fieldErrors, setFieldErrors] = useState({})
+  const [saving, setSaving] = useState(false)
 
   function set(field, value) {
     setOverviewForm((prev) => ({ ...prev, [field]: value }))
+    setFieldErrors((prev) => ({ ...prev, [field]: undefined }))
+  }
+
+  function validate() {
+    const errors = {}
+    if (!isValidPhone(overviewForm.emergencyContactPhone)) {
+      errors.emergencyContactPhone = 'Numbers only, 7–15 digits.'
+    }
+    if (!isValidMedicalAidNumber(overviewForm.medicalAidNumber)) {
+      errors.medicalAidNumber = 'Numbers only.'
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  async function handleSave() {
+    if (!validate()) return
+    setSaving(true)
+    try {
+      await onSave()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function cancel() {
+    setFieldErrors({})
+    setEditingOverview(false)
   }
 
   return (
@@ -255,11 +286,11 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
             </button>
           ) : (
             <div className="flex gap-3">
-              <button onClick={() => setEditingOverview(false)} className="text-xs font-medium text-slate hover:underline">
+              <button onClick={cancel} className="text-xs font-medium text-slate hover:underline">
                 Cancel
               </button>
-              <button onClick={onSave} className="text-xs font-medium text-rose hover:underline">
-                Save
+              <button onClick={handleSave} disabled={saving} className="text-xs font-medium text-rose hover:underline disabled:opacity-60">
+                {saving ? 'Saving...' : 'Save'}
               </button>
             </div>
           )
@@ -270,7 +301,7 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
             <InfoItem label="Full name" value={patient.name} />
             <InfoItem label="Date of birth" value={profile?.dateOfBirth ? formatDisplayDate(profile.dateOfBirth) : '—'} />
             <InfoItem label="Age" value={age != null ? age : '—'} />
-            <InfoItem label="Gender" value={profile?.gender || '—'} />
+            <InfoItem label="Gender" value={GENDER_OPTIONS.find((g) => g.value === profile?.gender)?.label || profile?.gender || '—'} />
             <InfoItem label="ID/Passport number" value={patient.idNumber || '—'} />
             <InfoItem label="Contact number" value={patient.phone || '—'} />
             <InfoItem label="Email address" value={patient.email || '—'} />
@@ -284,7 +315,12 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
               <input type="date" value={overviewForm.dateOfBirth || ''} onChange={(e) => set('dateOfBirth', e.target.value)} className={inputClasses} />
             </Field>
             <Field label="Gender">
-              <input value={overviewForm.gender || ''} onChange={(e) => set('gender', e.target.value)} className={inputClasses} />
+              <select value={overviewForm.gender || ''} onChange={(e) => set('gender', e.target.value)} className={inputClasses}>
+                <option value="">Select...</option>
+                {GENDER_OPTIONS.map((g) => (
+                  <option key={g.value} value={g.value}>{g.label}</option>
+                ))}
+              </select>
             </Field>
             <Field label="Marital status">
               <input value={overviewForm.maritalStatus || ''} onChange={(e) => set('maritalStatus', e.target.value)} className={inputClasses} />
@@ -296,7 +332,16 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
               <input value={overviewForm.emergencyContactName || ''} onChange={(e) => set('emergencyContactName', e.target.value)} className={inputClasses} />
             </Field>
             <Field label="Emergency contact phone">
-              <input value={overviewForm.emergencyContactPhone || ''} onChange={(e) => set('emergencyContactPhone', e.target.value)} className={inputClasses} />
+              <input
+                type="tel"
+                inputMode="numeric"
+                value={overviewForm.emergencyContactPhone || ''}
+                onChange={(e) => set('emergencyContactPhone', e.target.value)}
+                className={`${inputClasses} ${fieldErrors.emergencyContactPhone ? 'border-red' : ''}`}
+              />
+              {fieldErrors.emergencyContactPhone && (
+                <p className="text-red text-xs mt-1">{fieldErrors.emergencyContactPhone}</p>
+              )}
             </Field>
           </div>
         )}
@@ -349,7 +394,16 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
               <input value={overviewForm.medicalAidProvider || ''} onChange={(e) => set('medicalAidProvider', e.target.value)} className={inputClasses} />
             </Field>
             <Field label="Medical aid number">
-              <input value={overviewForm.medicalAidNumber || ''} onChange={(e) => set('medicalAidNumber', e.target.value)} className={inputClasses} />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={overviewForm.medicalAidNumber || ''}
+                onChange={(e) => set('medicalAidNumber', e.target.value)}
+                className={`${inputClasses} ${fieldErrors.medicalAidNumber ? 'border-red' : ''}`}
+              />
+              {fieldErrors.medicalAidNumber && (
+                <p className="text-red text-xs mt-1">{fieldErrors.medicalAidNumber}</p>
+              )}
             </Field>
           </div>
         )}
@@ -688,6 +742,7 @@ const EMPTY_CONSULT_FORM = {
   treatment: '',
   followUpRequired: false,
   notes: '',
+  internalOnly: false,
   height: '',
   weight: '',
   bloodPressure: '',
@@ -736,6 +791,7 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
         notes: form.notes.trim(),
         vitals: hasVitals ? vitals : null,
         createdBy: currentUser?.uid || null,
+        internalOnly: form.internalOnly,
       })
       onAdded({
         id: newId,
@@ -749,6 +805,7 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
         followUpRequired: form.followUpRequired,
         notes: form.notes.trim(),
         vitals: hasVitals ? vitals : null,
+        internalOnly: form.internalOnly,
       })
       setForm(EMPTY_CONSULT_FORM)
       setShowForm(false)
@@ -794,6 +851,10 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
               <input type="checkbox" checked={form.followUpRequired} onChange={(e) => setForm({ ...form, followUpRequired: e.target.checked })} className="rounded border-stone" />
               Follow-up required
             </label>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input type="checkbox" checked={form.internalOnly} onChange={(e) => setForm({ ...form, internalOnly: e.target.checked })} className="rounded border-stone" />
+              Staff only — hidden from the patient's own record
+            </label>
             <Field label="Notes">
               <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className={inputClasses} />
             </Field>
@@ -835,7 +896,14 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
               .map((r) => (
                 <div key={r.id} className="bg-mist rounded-xl p-4">
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-sm font-medium text-ink">{r.title}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-ink">{r.title}</p>
+                      {r.internalOnly && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-sand text-slate">
+                          Staff only
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate">{r.date ? formatShortDate(r.date) : ''}</p>
                   </div>
                   {r.type === 'consultation' ? (

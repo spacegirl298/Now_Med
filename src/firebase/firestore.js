@@ -98,6 +98,24 @@ export async function getRecordsByIdNumber(idNumber) {
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 }
 
+// Live subscription version of getPatientRecords — used by the patient's
+// own Medical Records page (and dashboard preview) so a record a secretary
+// adds or edits shows up within moments, without a manual refresh.
+export function subscribeToPatientRecords(patientUid, callback, onError) {
+  if (!patientUid) return () => {};
+  const q = query(recordsCol, where("patientId", "==", patientUid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const records = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      callback(records);
+    },
+    onError,
+  );
+}
+
 // Lets a secretary add a medical record for a patient. If the patient has
 // no account yet, pass patientId: null and patientIdNumber instead — the
 // record will be linked automatically once they register (see
@@ -122,6 +140,10 @@ export async function addPatientRecord({
   followUpRequired = false,
   vitals = null,
   createdBy = null,
+  // Staff-only entries (e.g. sensitive internal notes) are stored like any
+  // other record but filtered out of every patient-facing read. Defaults to
+  // false so existing calls behave exactly as before.
+  internalOnly = false,
 }) {
   const ref = await addDoc(recordsCol, {
     patientId,
@@ -137,6 +159,7 @@ export async function addPatientRecord({
     followUpRequired,
     vitals,
     createdBy,
+    internalOnly,
     createdAt: serverTimestamp(),
   });
   return ref.id;
@@ -157,6 +180,26 @@ export async function getPatientProfile(patientId) {
   if (snap.empty) return null;
   const d = snap.docs[0];
   return { id: d.id, ...d.data() };
+}
+
+// Live subscription version of getPatientProfile — used by the patient's
+// own Medical Records page so edits a secretary makes (allergies, chronic
+// conditions, medications, etc.) appear within moments. Also picks up the
+// patient's own edits to the handful of fields they're allowed to update
+// (see savePatientProfile call sites), so the secretary sees those quickly
+// the next time they open this patient's record.
+export function subscribeToPatientProfile(patientId, callback, onError) {
+  if (!patientId) return () => {};
+  const q = query(profilesCol, where("patientId", "==", patientId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      if (snap.empty) return callback(null);
+      const d = snap.docs[0];
+      callback({ id: d.id, ...d.data() });
+    },
+    onError,
+  );
 }
 
 export async function getPatientProfileByIdNumber(idNumber) {
