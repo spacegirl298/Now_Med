@@ -14,7 +14,7 @@ export default function SecretaryProfile() {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [signupInfo, setSignupInfo] = useState(null) // idNumber/idType/practiceCode captured at sign up
+  const [signupInfo, setSignupInfo] = useState(null) // idNumber/idType
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
 
@@ -37,7 +37,6 @@ export default function SecretaryProfile() {
       setSignupInfo({
         idNumber: data.idNumber || '',
         idType: data.idType || '',
-        practiceCode: data.practiceCode || '',
         email: data.email || currentUser.email || '',
       })
     })
@@ -69,9 +68,6 @@ export default function SecretaryProfile() {
       await saveDoctorProfile(doctor)
       setDoctorMessage('Doctor profile saved.')
     } catch (error) {
-      // If this logs "permission-denied", your Firestore security rules
-      // don't allow the "practice" collection to be written by secretaries —
-      // that's the most common reason this save silently fails.
       console.error('Could not save doctor profile:', error)
       setDoctorMessage('Could not save the doctor profile. Please try again.')
     }
@@ -106,10 +102,7 @@ export default function SecretaryProfile() {
                   {signupInfo.idType === 'sa_id' ? 'SA ID' : signupInfo.idType === 'passport' ? 'Passport' : '—'}
                 </p>
               </div>
-              <div className="bg-mist rounded-xl px-3 py-2 col-span-2">
-                <p className="text-xs text-slate">Practice code</p>
-                <p className="text-ink">{signupInfo.practiceCode || '—'}</p>
-              </div>
+          
             </div>
           )}
 
