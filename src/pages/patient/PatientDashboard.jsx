@@ -5,7 +5,13 @@
 // which scopes the Firestore query by role).
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarPlus, Clock, FileText, CalendarCheck } from "lucide-react";
+import {
+  CalendarPlus,
+  Clock,
+  FileText,
+  CalendarCheck,
+  CalendarClock,
+} from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
 import PatientLayout from "./PatientLayout";
@@ -90,6 +96,63 @@ export default function PatientDashboard() {
             <p className="text-xs md:text-sm text-slate">Medical records</p>
           </Card>
         </div>
+
+        {/* Next appointment highlight */}
+        {!loading && nextAppointment && (
+          <Card className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-ink flex items-center gap-2">
+                <CalendarClock size={18} className="text-rose" />
+                Your next appointment
+              </h2>
+              <Badge status={nextAppointment.status} />
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="text-center w-16 shrink-0">
+                <p className="text-xs text-slate uppercase">
+                  {formatShortDate(nextAppointment.date)}
+                </p>
+                <p className="text-lg font-semibold text-ink">
+                  {formatTime(nextAppointment.time)}
+                </p>
+              </div>
+
+              <div className="flex-1">
+                <p className="text-sm font-medium text-ink capitalize">
+                  {nextAppointment.type} consult
+                </p>
+                {nextAppointment.practice && (
+                  <p className="text-xs text-slate">
+                    {nextAppointment.practice}
+                  </p>
+                )}
+
+                {nextAppointment.status === "delayed" && (
+                  <p className="text-xs text-amber mt-1 flex items-center gap-1">
+                    <Clock size={12} />
+                    Running {nextAppointment.delayMinutes} min late
+                    {nextAppointment.delayedTime && (
+                      <> — now expected at {formatTime(nextAppointment.delayedTime)}</>
+                    )}
+                  </p>
+                )}
+
+                {nextAppointment.status === "booked" && (
+                  <p className="text-xs text-slate mt-1">
+                    Awaiting confirmation from the practice.
+                  </p>
+                )}
+
+                {nextAppointment.status === "confirmed" && (
+                  <p className="text-xs text-green mt-1">
+                    Confirmed — see you then!
+                  </p>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Book an appointment CTA */}
         <Card className="mb-6 flex items-center justify-between gap-4">

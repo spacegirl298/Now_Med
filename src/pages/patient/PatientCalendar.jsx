@@ -1,43 +1,107 @@
 // Patient's view of the doctor's calendar (PRD: Booking — must-have).
-// Shows availability at a glance, lets the patient pick an open slot, and
-// confirms the booking. Read-only for anything the patient doesn't own —
-// patients can see THAT a slot is taken, never who it belongs to.
+// Mirrors the secretary's Schedule screen (same shell, same calendar grid,
+// same day-detail panel pattern, double-click-to-book) so the two dashboards
+// feel like one product. Booking itself is a 3-step flow — pick a time,
+// confirm the summary, see the confirmation — matching the approved design.
+// Patients can see THAT a slot is taken, never who it belongs to; they can
+// only ever add/cancel their own appointments, which is enforced by
+// useAppointments scoping the Firestore query to the current patient.
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
+  ArrowRight,
   Ban,
   CheckCircle2,
-  CalendarClock,
+  Plus,
+  Clock,
+  XCircle,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
 import PatientLayout from "./PatientLayout";
+import BackButton from "../../components/BackButton";
 import Card from "../../components/Card";
 import Badge from "../../components/Badge";
 import Modal from "../../components/Modal";
-import Button from "../../components/Button";
 import EmptyState from "../../components/EmptyState";
 import {
   getMonthGrid,
   getMonthLabel,
   formatTime,
+  formatShortDate,
   formatDisplayDate,
   getTodayString,
   generateTimeSlots,
+  addMinutesToTime,
   isToday,
+  isPastDate,
+  parseDate,
+  DAY_NAMES,
+  MONTH_NAMES,
 } from "../../utils/dateHelpers";
 import {
-  getUserById,
+  getDoctorProfile,
   subscribeToBookedSlots,
   subscribeToBlockedSlots,
 } from "../../firebase/firestore";
 
-const EMPTY_FORM = { practice: "", type: "in-person" };
+const EMPTY_FORM = { type: "in-person" };
+
+// A booking made 3+ days out needs the practice to call and confirm it with
+// the patient before it's locked in; anything sooner is confirmed instantly.
+const CONFIRMATION_WINDOW_DAYS = 3;
+
+function daysFromToday(dateStr) {
+  const diffMs = parseDate(dateStr) - parseDate(getTodayString());
+  return Math.round(diffMs / 86400000);
+}
+
+function computeBookingStatus(dateStr) {
+  return daysFromToday(dateStr) >= CONFIRMATION_WINDOW_DAYS ? "booked" : "confirmed";
+}
+
+// 'Monday, 30 March' — used in the modal header, deliberately without the
+// year to match the design (the year still shows in the booking summary).
+function formatModalHeaderDate(dateStr) {
+  const d = parseDate(dateStr);
+  return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
+}
+
+function downloadAppointmentICS(booking, doctorName) {
+  const start = parseDate(booking.date);
+  const [h, m] = booking.time.split(":").map(Number);
+  start.setHours(h, m, 0, 0);
+  const end = new Date(start.getTime() + 30 * 60000);
+  const stamp = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const summary = `${booking.type === "virtual" ? "Virtual" : "In-person"} consult${
+    doctorName ? ` with ${doctorName}` : ""
+  }`;
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    `DTSTART:${stamp(start)}`,
+    `DTEND:${stamp(end)}`,
+    `SUMMARY:${summary}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const blob = new Blob([ics], { type: "text/calendar" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `appointment-${booking.date}-${booking.time}.ics`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function PatientCalendar() {
   const { currentUser, userName } = useAuth();
-  const { appointments, createAppointment } = useAppointments();
+  const { appointments, loading, error, createAppointment, cancelAppointment } =
+    useAppointments();
+  const navigate = useNavigate();
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -46,12 +110,18 @@ export default function PatientCalendar() {
 
   const [bookedSlots, setBookedSlots] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
+  const [doctorName, setDoctorName] = useState("");
 
+  // Booking flow: null | 'time' | 'confirm' | 'confirmed'
+  const [bookingStep, setBookingStep] = useState(null);
   const [bookingTime, setBookingTime] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
+
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     const unsubBooked = subscribeToBookedSlots(setBookedSlots);
@@ -62,33 +132,43 @@ export default function PatientCalendar() {
     };
   }, []);
 
-  // Pre-fill the practice field from the patient's own record, if they have one on file
   useEffect(() => {
-    if (!currentUser) return;
-    getUserById(currentUser.uid)
-      .then((u) => {
-        if (u?.practiceCode) {
-          setForm((f) => ({ ...f, practice: f.practice || u.practiceCode }));
-        }
-      })
-      .catch(() => {});
-  }, [currentUser]);
+    getDoctorProfile()
+      .then((p) => setDoctorName(p?.name || p?.doctorName || ""))
+      .catch(() => setDoctorName(""));
+  }, []);
 
   const grid = useMemo(
     () => getMonthGrid(viewYear, viewMonth),
     [viewYear, viewMonth],
   );
 
+  // Belt-and-suspenders: useAppointments already scopes the Firestore query
+  // to this patient's uid (subscribeToPatientAppointments), but we filter
+  // again here so this screen can never render another patient's booking —
+  // even if that hook's scoping were ever changed or misconfigured. This is
+  // a client-side guard only; the Firestore security rules are what
+  // actually enforce this at the database level and should mirror it.
+  const myAppointments = useMemo(
+    () => appointments.filter((a) => a.patientId === currentUser?.uid),
+    [appointments, currentUser],
+  );
+
   const ownAppointmentsByDate = useMemo(() => {
     const map = {};
-    appointments
+    myAppointments
       .filter((a) => a.status !== "cancelled")
       .forEach((a) => {
         if (!map[a.date]) map[a.date] = [];
         map[a.date].push(a);
       });
+    Object.values(map).forEach((list) =>
+      list.sort((a, b) => a.time.localeCompare(b.time)),
+    );
     return map;
-  }, [appointments]);
+  }, [myAppointments]);
+
+  const selectedDayAppointments = ownAppointmentsByDate[selectedDate] || [];
 
   const activeBookedSlots = useMemo(
     () => bookedSlots.filter((b) => b.status !== "cancelled"),
@@ -98,8 +178,42 @@ export default function PatientCalendar() {
   const isDayBlocked = blockedSlots.some(
     (b) => b.date === selectedDate && b.time === null,
   );
+  const blockedRecordForDay = blockedSlots.find(
+    (b) => b.date === selectedDate && b.time === null,
+  );
+
+  // Titled hour-range blocks (e.g. "Lunch break" 12:00-13:00) for the
+  // selected day — read-only here, patients just see why those times are
+  // unavailable. Blocking a few hours never blocks the rest of the day.
+  const blockedHourGroupsForSelectedDay = useMemo(() => {
+    const groups = {};
+    blockedSlots
+      .filter((b) => b.date === selectedDate && b.time !== null)
+      .forEach((b) => {
+        const key = b.groupId || b.id;
+        if (!groups[key]) {
+          groups[key] = {
+            key,
+            title: b.title || b.reason || "Unavailable",
+            times: [],
+          };
+        }
+        groups[key].times.push(b.time);
+      });
+    return Object.values(groups)
+      .map((g) => ({ ...g, times: g.times.sort() }))
+      .sort((a, b) => a.times[0].localeCompare(b.times[0]));
+  }, [blockedSlots, selectedDate]);
 
   const allTimeSlots = useMemo(() => generateTimeSlots(), []);
+  const morningSlots = useMemo(
+    () => allTimeSlots.filter((t) => t < "12:00"),
+    [allTimeSlots],
+  );
+  const afternoonSlots = useMemo(
+    () => allTimeSlots.filter((t) => t >= "12:00"),
+    [allTimeSlots],
+  );
 
   const takenTimesForSelectedDay = useMemo(
     () =>
@@ -121,13 +235,10 @@ export default function PatientCalendar() {
     [blockedSlots, selectedDate],
   );
 
-  const ownAppointmentByTime = useMemo(() => {
-    const map = {};
-    (ownAppointmentsByDate[selectedDate] || []).forEach((a) => {
-      map[a.time] = a;
-    });
-    return map;
-  }, [ownAppointmentsByDate, selectedDate]);
+  const hasUnavailableSlot =
+    takenTimesForSelectedDay.size > 0 || blockedTimesForSelectedDay.size > 0;
+
+  const selectedDateIsPast = isPastDate(selectedDate);
 
   function goToPrevMonth() {
     if (viewMonth === 0) {
@@ -146,18 +257,39 @@ export default function PatientCalendar() {
     }
   }
 
-  function openBooking(time) {
-    if (isDayBlocked) return;
-    if (takenTimesForSelectedDay.has(time)) return;
-    if (blockedTimesForSelectedDay.has(time)) return;
+  function openBookingFlow(dateStr = selectedDate) {
+    if (isPastDate(dateStr) || isDayBlocked) return;
+    setSelectedDate(dateStr);
+    setBookingTime(null);
+    setForm(EMPTY_FORM);
     setFormError("");
-    setBookingTime(time);
+    setBookingStep("time");
+  }
+
+  // Double-clicking a day jumps straight into booking on that day, mirroring
+  // the secretary's Schedule screen.
+  function handleDayDoubleClick(dateStr) {
+    openBookingFlow(dateStr);
+  }
+
+  function closeBookingFlow() {
+    setBookingStep(null);
+    setBookingTime(null);
+    setFormError("");
+  }
+
+  function selectTime(t) {
+    if (takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t)) return;
+    setBookingTime(t);
+  }
+
+  function goToConfirmStep() {
+    if (!bookingTime) return;
+    setFormError("");
+    setBookingStep("confirm");
   }
 
   async function handleConfirmBooking() {
-    if (!form.practice.trim()) return setFormError("Please enter the practice.");
-    if (!form.type) return setFormError("Please choose an appointment type.");
-
     // Guard against a double-booking race: re-check the slot is still open
     if (
       isDayBlocked ||
@@ -165,9 +297,12 @@ export default function PatientCalendar() {
       blockedTimesForSelectedDay.has(bookingTime)
     ) {
       setFormError("Sorry, that slot was just taken. Please pick another time.");
+      setBookingStep("time");
       setBookingTime(null);
       return;
     }
+
+    const status = computeBookingStatus(selectedDate);
 
     setSaving(true);
     try {
@@ -178,16 +313,15 @@ export default function PatientCalendar() {
         date: selectedDate,
         time: bookingTime,
         type: form.type,
-        practice: form.practice.trim(),
-        status: "confirmed",
+        status,
       });
       setConfirmedBooking({
         date: selectedDate,
         time: bookingTime,
         type: form.type,
-        practice: form.practice.trim(),
+        status,
       });
-      setBookingTime(null);
+      setBookingStep("confirmed");
     } catch (err) {
       console.error(err);
       setFormError("Something went wrong booking this slot. Please try again.");
@@ -195,15 +329,56 @@ export default function PatientCalendar() {
     setSaving(false);
   }
 
+  function handleBackToDashboard() {
+    closeBookingFlow();
+    setConfirmedBooking(null);
+    navigate("/patient/dashboard");
+  }
+
+  async function handleConfirmCancel() {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      await cancelAppointment(cancelTarget);
+      setCancelTarget(null);
+    } catch (err) {
+      console.error(err);
+    }
+    setCancelling(false);
+  }
+
   return (
     <PatientLayout>
       <div className="p-6 md:p-8 max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-ink">Book an appointment</h1>
-          <p className="text-slate text-sm">
-            Pick an open slot on the doctor's calendar
-          </p>
+        <BackButton />
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-ink">Book an appointment</h1>
+            <p className="text-slate text-sm">
+             
+            </p>
+          </div>
+          <button
+            onClick={() => openBookingFlow()}
+            disabled={selectedDateIsPast || isDayBlocked}
+            title={
+              selectedDateIsPast
+                ? "Can't book a date that has passed"
+                : isDayBlocked
+                ? "The practice isn't taking bookings on this day"
+                : undefined
+            }
+            className="hidden md:flex items-center gap-2 bg-rose text-white rounded-xl px-5 py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose"
+          >
+            <Plus size={18} /> Add appointment
+          </button>
         </div>
+
+        {error && (
+          <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
+            {error} Check the browser console for the full Firestore error.
+          </div>
+        )}
 
         <div className="grid md:grid-cols-[1fr_360px] gap-6">
           {/* Calendar */}
@@ -236,25 +411,45 @@ export default function PatientCalendar() {
 
             <div className="grid grid-cols-7 gap-1">
               {grid.map((cell) => {
-                const blocked = blockedSlots.some(
+                const dayBlockRecord = blockedSlots.find(
                   (b) => b.date === cell.dateStr && b.time === null,
                 );
+                const fullyBlocked = !!dayBlockRecord;
+                const partiallyBlocked =
+                  !fullyBlocked &&
+                  blockedSlots.some(
+                    (b) => b.date === cell.dateStr && b.time !== null,
+                  );
                 const hasOwnAppt = (ownAppointmentsByDate[cell.dateStr] || [])
                   .length > 0;
                 const isSelected = cell.dateStr === selectedDate;
+                const isPast = isPastDate(cell.dateStr);
                 return (
                   <button
                     key={cell.dateStr}
                     onClick={() => setSelectedDate(cell.dateStr)}
+                    onDoubleClick={() => handleDayDoubleClick(cell.dateStr)}
+                    title={
+                      fullyBlocked
+                        ? dayBlockRecord.title || "Not available"
+                        : isPast
+                        ? "Past date — view only"
+                        : "Double-click to book"
+                    }
                     className={`aspect-square rounded-lg text-sm flex flex-col items-center justify-center gap-0.5 transition-colors
-                      ${!cell.inMonth ? "text-stone" : "text-ink"}
+                      ${!cell.inMonth ? "text-stone" : isPast ? "text-slate" : "text-ink"}
                       ${isSelected ? "bg-rose text-white" : isToday(cell.dateStr) ? "bg-blush" : "hover:bg-mist"}`}
                   >
-                    <span>{cell.day}</span>
-                    {blocked && (
+                    <span className={fullyBlocked ? "line-through decoration-2" : ""}>
+                      {cell.day}
+                    </span>
+                    {fullyBlocked && (
                       <span className="w-1 h-1 rounded-full bg-red" />
                     )}
-                    {!blocked && hasOwnAppt && (
+                    {partiallyBlocked && (
+                      <span className="w-1 h-1 rounded-full bg-amber" />
+                    )}
+                    {!fullyBlocked && !partiallyBlocked && hasOwnAppt && (
                       <span
                         className={`w-1 h-1 rounded-full ${isSelected ? "bg-white" : "bg-rose"}`}
                       />
@@ -263,174 +458,384 @@ export default function PatientCalendar() {
                 );
               })}
             </div>
-
-            <div className="flex items-center gap-4 mt-4 pt-4 border-t border-sand text-xs text-slate">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose inline-block" />
-                Your appointment
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red inline-block" />
-                Unavailable
-              </span>
-            </div>
           </Card>
 
-          {/* Day detail panel */}
+          {/* Day detail panel — same pattern as the secretary's Schedule screen */}
           <Card padded={false} className="h-fit">
-            <div className="px-5 py-4 border-b border-sand">
-              <p className="text-sm text-slate">Selected day</p>
-              <p className="font-semibold text-ink text-sm">
-                {formatDisplayDate(selectedDate)}
-              </p>
+            <div className="px-5 py-4 border-b border-sand flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate">Selected day</p>
+                <p className="font-semibold text-ink text-sm">
+                  {formatDisplayDate(selectedDate)}
+                </p>
+              </div>
+              <button
+                onClick={() => openBookingFlow()}
+                disabled={selectedDateIsPast || isDayBlocked}
+                title="Add appointment"
+                className="p-2 rounded-lg text-slate hover:bg-mist disabled:opacity-40"
+              >
+                <Plus size={18} />
+              </button>
             </div>
 
             {isDayBlocked ? (
               <EmptyState
                 icon={Ban}
-                title={
-                  blockedSlots.find(
-                    (b) => b.date === selectedDate && b.time === null,
-                  )?.title || "Not available"
-                }
+                title={blockedRecordForDay?.title || "Not available"}
                 message="The practice isn't taking bookings on this day. Please choose another date."
               />
             ) : (
-              <div className="divide-y divide-sand">
-                {allTimeSlots.map((t) => {
-                  const ownAppt = ownAppointmentByTime[t];
-                  const isTaken = takenTimesForSelectedDay.has(t);
-                  const isBlockedTime = blockedTimesForSelectedDay.has(t);
-
-                  if (ownAppt) {
-                    return (
-                      <div
-                        key={t}
-                        className="flex items-center justify-between px-5 py-3 bg-mist"
-                      >
+              <>
+                {blockedHourGroupsForSelectedDay.length > 0 && (
+                  <div className="px-5 py-3 bg-mist flex flex-col gap-2">
+                    {blockedHourGroupsForSelectedDay.map((g) => (
+                      <div key={g.key} className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-medium text-ink">
-                            {formatTime(t)}
+                          <p className="text-xs font-medium text-ink">{g.title}</p>
+                          <p className="text-xs text-slate">
+                            {formatTime(g.times[0])} –{" "}
+                            {formatTime(addMinutesToTime(g.times[g.times.length - 1], 30))}{" "}
+                            unavailable
                           </p>
-                          <p className="text-xs text-slate">Your appointment</p>
                         </div>
-                        <Badge status={ownAppt.status} />
                       </div>
-                    );
-                  }
+                    ))}
+                  </div>
+                )}
 
-                  if (isTaken || isBlockedTime) {
-                    const blockTitle = isBlockedTime
-                      ? blockedSlots.find(
-                          (b) => b.date === selectedDate && b.time === t,
-                        )?.title
-                      : null;
-                    return (
-                      <div
-                        key={t}
-                        className="flex items-center justify-between px-5 py-3 opacity-50"
-                      >
-                        <p className="text-sm text-ink">{formatTime(t)}</p>
-                        <span className="text-xs text-slate">
-                          {blockTitle || "Booked"}
-                        </span>
+                <button
+                  onClick={() => openBookingFlow()}
+                  disabled={selectedDateIsPast}
+                  className="md:hidden w-full flex items-center justify-center gap-2 bg-rose text-white py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Plus size={18} /> Add appointment
+                </button>
+
+                {loading ? (
+                  <p className="text-slate text-sm px-5 py-8 text-center">
+                    Loading appointments...
+                  </p>
+                ) : selectedDayAppointments.length === 0 ? (
+                  <EmptyState
+                    icon={Clock}
+                    title="No appointments"
+                    message="You don't have anything booked on this day yet."
+                    actionLabel={selectedDateIsPast ? undefined : "Add appointment"}
+                    onAction={selectedDateIsPast ? undefined : () => openBookingFlow()}
+                  />
+                ) : (
+                  <div className="divide-y divide-sand">
+                    {selectedDayAppointments.map((a) => (
+                      <div key={a.id} className="px-5 py-4">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-ink">
+                              {formatTime(a.time)}
+                            </p>
+                            <p className="text-xs text-slate capitalize">
+                              {a.type} consult
+                            </p>
+                            {a.status === "delayed" && a.delayedTime && (
+                              <p className="text-xs text-amber mt-1">
+                                Running {a.delayMinutes} min late → now{" "}
+                                {formatTime(a.delayedTime)}
+                              </p>
+                            )}
+                          </div>
+                          <Badge status={a.status} />
+                        </div>
+                        {a.status !== "cancelled" && !isPastDate(a.date) && (
+                          <button
+                            onClick={() => setCancelTarget(a)}
+                            className="mt-3 text-xs font-medium text-red hover:underline flex items-center gap-1"
+                          >
+                            <XCircle size={13} /> Cancel appointment
+                          </button>
+                        )}
                       </div>
-                    );
-                  }
-
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => openBooking(t)}
-                      className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-mist transition-colors"
-                    >
-                      <p className="text-sm text-ink">{formatTime(t)}</p>
-                      <span className="text-xs font-medium text-rose">
-                        Book
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </Card>
         </div>
       </div>
 
-      {/* Booking form modal */}
+      {/* Step 1 — select a time slot */}
       <Modal
-        isOpen={!!bookingTime}
-        onClose={() => setBookingTime(null)}
-        title="Confirm booking"
-        confirmLabel={saving ? "Booking..." : "Confirm appointment"}
-        onConfirm={handleConfirmBooking}
-        confirmDisabled={saving}
+        isOpen={bookingStep === "time"}
+        onClose={closeBookingFlow}
+        title={formatModalHeaderDate(selectedDate)}
+        headerVariant="dark"
+        hideFooter
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 text-sm text-ink bg-mist rounded-xl px-4 py-3">
-            <CalendarClock size={16} className="text-rose" />
-            {formatDisplayDate(selectedDate)} · {formatTime(bookingTime)}
-          </div>
-
-          <div>
-            <label className="text-xs text-slate mb-1 block">Practice</label>
-            <input
-              value={form.practice}
-              onChange={(e) => setForm({ ...form, practice: e.target.value })}
-              placeholder="e.g. Now Med Practice"
-              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs text-slate mb-1 block">
-              Appointment type
-            </label>
-            <select
-              value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value })}
-              className="w-full border border-stone rounded-xl px-4 py-3 text-ink bg-mist focus:border-rose focus:outline-none"
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, type: "in-person" })}
+              className={`rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+                form.type === "in-person"
+                  ? "bg-rose text-white border-rose"
+                  : "border-stone text-ink hover:border-rose"
+              }`}
             >
-              <option value="in-person">In-person</option>
-              <option value="virtual">Virtual</option>
-            </select>
+              In-person
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, type: "virtual" })}
+              className={`rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+                form.type === "virtual"
+                  ? "bg-rose text-white border-rose"
+                  : "border-stone text-ink hover:border-rose"
+              }`}
+            >
+              Virtual
+            </button>
           </div>
+
+          <div className="border border-blush rounded-2xl p-4">
+            <p className="text-sm font-semibold text-ink mb-3">Select a time slot</p>
+
+            <p className="text-xs text-slate uppercase tracking-wide mb-2">Morning</p>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {morningSlots.map((t) => (
+                <TimeSlotButton
+                  key={t}
+                  time={t}
+                  selected={bookingTime === t}
+                  taken={takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t)}
+                  onClick={() => selectTime(t)}
+                />
+              ))}
+            </div>
+
+            <p className="text-xs text-slate uppercase tracking-wide mb-2">Afternoon</p>
+            <div className="grid grid-cols-3 gap-2">
+              {afternoonSlots.map((t) => (
+                <TimeSlotButton
+                  key={t}
+                  time={t}
+                  selected={bookingTime === t}
+                  taken={takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t)}
+                  onClick={() => selectTime(t)}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-4 mt-4 pt-4 border-t border-sand text-xs text-slate">
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-rose inline-block" />
+                Selected
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded border border-rose inline-block" />
+                Open
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-mist inline-block" />
+                Taken
+              </span>
+            </div>
+          </div>
+
+          {hasUnavailableSlot && (
+            <p className="text-xs text-rose bg-blush rounded-xl px-4 py-2 text-center">
+              Taken slots are visible but not selectable
+            </p>
+          )}
 
           {formError && <p className="text-red text-sm">{formError}</p>}
+
+          <button
+            onClick={goToConfirmStep}
+            disabled={!bookingTime}
+            className="w-full bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            Review booking <ArrowRight size={16} />
+          </button>
         </div>
       </Modal>
 
-      {/* Booking confirmed screen */}
+      {/* Step 2 — confirm booking */}
       <Modal
-        isOpen={!!confirmedBooking}
-        onClose={() => setConfirmedBooking(null)}
-        title="Booking confirmed"
+        isOpen={bookingStep === "confirm"}
+        onClose={closeBookingFlow}
+        onBack={() => setBookingStep("time")}
+        title="Confirm booking"
+        headerVariant="dark"
+        hideFooter
+      >
+        <div className="flex flex-col gap-4">
+          <div className="border border-blush rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-sand">
+              <p className="text-sm font-semibold text-ink">Booking summary</p>
+            </div>
+            <div className="divide-y divide-sand">
+              <SummaryRow label="Doctor" value={doctorName || "The practice's doctor"} />
+              <SummaryRow
+                label="Date"
+                value={`${formatShortDate(selectedDate)} ${parseDate(selectedDate).getFullYear()}`}
+              />
+              <SummaryRow label="Time" value={formatTime(bookingTime)} />
+              <SummaryRow
+                label="Type"
+                value={form.type === "virtual" ? "Virtual consult" : "In-person consult"}
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-rose bg-blush rounded-xl px-4 py-3">
+            {computeBookingStatus(selectedDate) === "booked"
+              ? "We will call you a few days before your appointment to confirm your appointment."
+              : "By confirming, you agree to arrive 5 minutes before your appointment time and 15 minutes for first time patients."}
+          </p>
+
+          {formError && <p className="text-red text-sm">{formError}</p>}
+
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={handleConfirmBooking}
+              disabled={saving}
+              className="w-full bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50"
+            >
+              {saving
+                ? "Saving..."
+                : computeBookingStatus(selectedDate) === "booked"
+                ? "Book appointment"
+                : "Confirm appointment"}
+            </button>
+            <button
+              onClick={() => setBookingStep("time")}
+              className="w-full border border-stone text-ink rounded-xl py-3 font-medium hover:border-rose transition-colors"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Step 3 — booking confirmed */}
+      <Modal
+        isOpen={bookingStep === "confirmed"}
+        onClose={handleBackToDashboard}
+        title={confirmedBooking?.status === "booked" ? "Appointment requested" : "Booking confirmed"}
+        headerVariant="dark"
+        hideClose
         hideFooter
       >
         {confirmedBooking && (
-          <div className="flex flex-col items-center text-center gap-4 py-2">
-            <div className="w-14 h-14 rounded-full bg-pastel-green flex items-center justify-center">
-              <CheckCircle2 size={28} className="text-green" />
-            </div>
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            {confirmedBooking.status === "booked" ? (
+              <div className="w-16 h-16 rounded-full bg-pastel-amber flex items-center justify-center">
+                <Clock size={32} className="text-amber" />
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-pastel-green flex items-center justify-center">
+                <CheckCircle2 size={32} className="text-green" />
+              </div>
+            )}
             <div>
-              <p className="font-semibold text-ink mb-1">You're all set</p>
+              <p
+                className={`font-semibold text-lg mb-1 ${
+                  confirmedBooking.status === "booked" ? "text-amber" : "text-green"
+                }`}
+              >
+                {confirmedBooking.status === "booked" ? "You're on the books!" : "You're booked!"}
+              </p>
+              <p className="text-sm text-ink">{doctorName || "The practice's doctor"}</p>
               <p className="text-sm text-slate">
-                {formatDisplayDate(confirmedBooking.date)} at{" "}
+                {formatShortDate(confirmedBooking.date)}{" "}
+                {parseDate(confirmedBooking.date).getFullYear()} ·{" "}
                 {formatTime(confirmedBooking.time)}
               </p>
-              <p className="text-sm text-slate capitalize">
-                {confirmedBooking.type} consult · {confirmedBooking.practice}
-              </p>
             </div>
-            <Button
-              onClick={() => setConfirmedBooking(null)}
-              fullWidth
-            >
-              Done
-            </Button>
+            <Badge status={confirmedBooking.status} />
+            <div className="flex flex-col gap-2 w-full mt-2">
+              <button
+                onClick={handleBackToDashboard}
+                className="w-full bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors"
+              >
+                Back to dashboard
+              </button>
+              <button
+                onClick={() => downloadAppointmentICS(confirmedBooking, doctorName)}
+                className="w-full border border-stone text-ink rounded-xl py-3 font-medium hover:border-rose transition-colors"
+              >
+                Add to calendar
+              </button>
+            </div>
+            <p className="text-xs text-slate mt-1">
+              {confirmedBooking.status === "booked"
+                ? "The practice will contact you shortly to confirm this appointment."
+                : "Your appointment is now visible to the practice."}
+            </p>
           </div>
         )}
       </Modal>
+
+      {/* Cancel appointment confirmation */}
+      <Modal
+        isOpen={!!cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        title="Cancel appointment?"
+        confirmLabel={cancelling ? "Cancelling..." : "Cancel appointment"}
+        confirmVariant="danger"
+        onConfirm={handleConfirmCancel}
+        confirmDisabled={cancelling}
+        cancelLabel="Keep it"
+      >
+        <p className="text-sm text-slate">
+          This will cancel your{" "}
+          {cancelTarget && formatTime(cancelTarget.time)} appointment on{" "}
+          {cancelTarget && formatShortDate(cancelTarget.date)}. You can always
+          book a new slot afterwards.
+        </p>
+      </Modal>
     </PatientLayout>
+  );
+}
+
+function TimeSlotButton({ time, selected, taken, onClick }) {
+  const base = "rounded-xl py-2.5 text-sm font-medium border transition-colors";
+  if (selected) {
+    return (
+      <button type="button" onClick={onClick} className={`${base} bg-rose text-white border-rose`}>
+        {formatTime(time)}
+      </button>
+    );
+  }
+  if (taken) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="Taken"
+        className={`${base} bg-mist text-stone border-mist cursor-not-allowed`}
+      >
+        {formatTime(time)}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${base} border-rose text-rose hover:bg-blush`}
+    >
+      {formatTime(time)}
+    </button>
+  );
+}
+
+function SummaryRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <p className="text-sm text-slate">{label}</p>
+      <p className="text-sm font-medium text-ink text-right">{value}</p>
+    </div>
   );
 }
