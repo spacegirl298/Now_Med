@@ -1,5 +1,5 @@
 // Desktop navigation. Persistent left sidebar, links vary by role.
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { Calendar, Users, User, LayoutDashboard, LogOut } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -19,7 +19,21 @@ const SECRETARY_LINKS = [
 
 export default function Sidebar({ role = 'secretary' }) {
   const { logout } = useAuth()
+  const navigate = useNavigate()
   const links = role === 'patient' ? PATIENT_LINKS : SECRETARY_LINKS
+
+  // logout() only signs the user out of Firebase — it doesn't navigate
+  // anywhere on its own. Without an explicit redirect here, the app can be
+  // left showing a stale, now-unauthenticated page instead of returning to
+  // the login screen, which is what made this look "broken".
+  async function handleLogout() {
+    try {
+      await logout()
+      navigate('/login', { replace: true })
+    } catch (error) {
+      console.error('Could not log out:', error)
+    }
+  }
 
   return (
     <aside className="hidden md:flex flex-col w-60 shrink-0 bg-plum text-white h-screen sticky top-0 overflow-y-auto px-4 py-6">
@@ -48,7 +62,7 @@ export default function Sidebar({ role = 'secretary' }) {
       </nav>
 
       <button
-        onClick={logout}
+        onClick={handleLogout}
         className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-blush hover:bg-deep-plum transition-colors"
       >
         <LogOut size={18} />

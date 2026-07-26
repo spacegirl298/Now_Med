@@ -10,6 +10,9 @@ import {
   Ban,
   Pencil,
   Trash2,
+  CheckCircle2,
+  BellRing,
+  Undo2,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -30,13 +33,18 @@ import {
   isToday,
   isPastDate,
 } from "../../utils/dateHelpers";
-import { DELAY_OPTIONS } from "../../utils/validators";
+import { DELAY_OPTIONS, CONFIRMATION_METHODS } from "../../utils/validators";
 import {
   getAllPatients,
   getUserByIdNumber,
   blockDate,
+  blockTimeSlots,
   unblockSlot,
+  unblockGroup,
   subscribeToBlockedSlots,
+  confirmAppointment,
+  unconfirmAppointment,
+  sendConfirmationReminder,
 } from "../../firebase/firestore";
 
 const EMPTY_FORM = {
@@ -83,6 +91,22 @@ export default function SecretarySchedule() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const [patientSearchTerm, setPatientSearchTerm] = useState("");
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
+
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [blockMode, setBlockMode] = useState("day"); // 'day' | 'hours'
+  const [blockTitle, setBlockTitle] = useState("");
+  const [blockStart, setBlockStart] = useState("08:00");
+  const [blockEnd, setBlockEnd] = useState("09:00");
+  const [blockError, setBlockError] = useState("");
+  const [savingBlock, setSavingBlock] = useState(false);
+
+  const [confirmTarget, setConfirmTarget] = useState(null); // appointment being confirmed
+  const [confirmMethod, setConfirmMethod] = useState("whatsapp");
+  const [confirmingBusy, setConfirmingBusy] = useState(false);
+  const [reminderBusyId, setReminderBusyId] = useState(null);
+
   useEffect(() => {
     getAllPatients()
       .then(setPatients)
@@ -116,6 +140,31 @@ export default function SecretarySchedule() {
     (b) => b.date === selectedDate && b.time === null,
   );
 
+  // Titled hour-range blocks (e.g. "Lunch break" 12:00-13:00) for the
+  // selected day, grouped back together by groupId so they render — and get
+  // removed — as one entry instead of one row per 30-minute slot.
+  const blockedHourGroupsForSelectedDay = useMemo(() => {
+    const groups = {};
+    blockedSlots
+      .filter((b) => b.date === selectedDate && b.time !== null)
+      .forEach((b) => {
+        const key = b.groupId || b.id;
+        if (!groups[key]) {
+          groups[key] = {
+            key,
+            groupId: b.groupId,
+            id: b.id,
+            title: b.title || b.reason || "Unavailable",
+            times: [],
+          };
+        }
+        groups[key].times.push(b.time);
+      });
+    return Object.values(groups)
+      .map((g) => ({ ...g, times: g.times.sort() }))
+      .sort((a, b) => a.times[0].localeCompare(b.times[0]));
+  }, [blockedSlots, selectedDate]);
+
   const bookedTimesForSelectedDay = new Set(
     selectedDayAppointments
       .filter(
@@ -128,6 +177,19 @@ export default function SecretarySchedule() {
   const availableTimeOptions = generateTimeSlots().filter(
     (t) => !bookedTimesForSelectedDay.has(t),
   );
+
+  const filteredPatientOptions = useMemo(() => {
+    const term = patientSearchTerm.trim().toLowerCase();
+    if (!term) return patients.slice(0, 8);
+    return patients
+      .filter(
+        (p) =>
+          (p.name || "").toLowerCase().includes(term) ||
+          (p.idNumber || "").toLowerCase().includes(term) ||
+          (p.email || "").toLowerCase().includes(term),
+      )
+      .slice(0, 8);
+  }, [patients, patientSearchTerm]);
 
   function goToPrevMonth() {
     if (viewMonth === 0) {
@@ -152,6 +214,8 @@ export default function SecretarySchedule() {
     if (isPastDate(selectedDate)) return;
     setEditingAppointment(null);
     setForm({ ...EMPTY_FORM, time: availableTimeOptions[0] || "08:00" });
+    setPatientSearchTerm("");
+    setShowPatientDropdown(false);
     setFormError("");
     setShowAddModal(true);
   }
@@ -163,10 +227,13 @@ export default function SecretarySchedule() {
       bookingMode: "existing",
       patientId: appointment.patientId || "",
       patientName: appointment.patientName,
+      patientIdNumber: appointment.patientIdNumber || "",
       time: appointment.time,
       type: appointment.type,
       notes: appointment.notes || "",
     });
+    setPatientSearchTerm(appointment.patientName || "");
+    setShowPatientDropdown(false);
     setFormError("");
     setShowAddModal(true);
   }
@@ -178,6 +245,8 @@ export default function SecretarySchedule() {
     setSelectedDate(dateStr);
     setEditingAppointment(null);
     setForm({ ...EMPTY_FORM });
+    setPatientSearchTerm("");
+    setShowPatientDropdown(false);
     setFormError("");
     setShowAddModal(true);
   }
@@ -216,7 +285,7 @@ export default function SecretarySchedule() {
           time: form.time,
           type: form.type,
           notes: form.notes,
-          status: "confirmed",
+          status: "booked",
         });
       } else {
         // New / walk-in patient booked by phone, email, or in person. If
@@ -237,7 +306,7 @@ export default function SecretarySchedule() {
           time: form.time,
           type: form.type,
           notes: form.notes,
-          status: "confirmed",
+          status: "booked",
         });
       }
       setShowAddModal(false);
@@ -264,12 +333,102 @@ export default function SecretarySchedule() {
     setDeleteTarget(null);
   }
 
-  async function toggleDayBlocked() {
+  // Quick toggle for the Ban icon: unblocking needs no extra info so it
+  // happens instantly. Blocking needs a title (and mode) patients will see,
+  // so that opens the one combined modal instead.
+  async function handleBanIconClick() {
     if (isDayBlocked && blockedRecordForDay) {
       await unblockSlot(blockedRecordForDay.id);
     } else {
-      await blockDate(selectedDate, "Marked unavailable by secretary");
+      openBlockModal();
     }
+  }
+
+  function openBlockModal() {
+    if (isPastDate(selectedDate)) return;
+    setBlockMode("day");
+    setBlockTitle("");
+    setBlockStart("08:00");
+    setBlockEnd("09:00");
+    setBlockError("");
+    setShowBlockModal(true);
+  }
+
+  async function handleSaveBlock() {
+    setBlockError("");
+    if (!blockTitle.trim()) {
+      return setBlockError(
+        'Please add a title patients will see, e.g. "Public holiday" or "Lunch break".',
+      );
+    }
+
+    setSavingBlock(true);
+    try {
+      if (blockMode === "day") {
+        await blockDate(selectedDate, blockTitle.trim());
+      } else {
+        if (blockStart >= blockEnd) {
+          setBlockError("End time must be after the start time.");
+          setSavingBlock(false);
+          return;
+        }
+        const slots = generateTimeSlots(blockStart, blockEnd);
+        if (slots.length === 0) {
+          setBlockError("Please choose a valid time range.");
+          setSavingBlock(false);
+          return;
+        }
+        await blockTimeSlots(selectedDate, slots, blockTitle.trim());
+      }
+      setShowBlockModal(false);
+    } catch (err) {
+      console.error(err);
+      setBlockError("Could not save this block. Please try again.");
+    }
+    setSavingBlock(false);
+  }
+
+  async function handleRemoveHourGroup(group) {
+    if (group.groupId) {
+      await unblockGroup(group.groupId);
+    } else {
+      await unblockSlot(group.id);
+    }
+  }
+
+  function openConfirmModal(appointment) {
+    setConfirmTarget(appointment);
+    setConfirmMethod("whatsapp");
+  }
+
+  async function handleConfirmAppointment() {
+    if (!confirmTarget) return;
+    setConfirmingBusy(true);
+    try {
+      await confirmAppointment(confirmTarget, confirmMethod);
+      setConfirmTarget(null);
+    } catch (err) {
+      console.error(err);
+    }
+    setConfirmingBusy(false);
+  }
+
+  async function handleUnconfirm(appointment) {
+    try {
+      await unconfirmAppointment(appointment.id);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleSendReminder(appointment) {
+    setReminderBusyId(appointment.id);
+    try {
+      await sendConfirmationReminder(appointment);
+    } catch (err) {
+      console.error(err);
+    }
+    setReminderBusyId(null);
   }
 
   return (
@@ -374,23 +533,59 @@ export default function SecretarySchedule() {
                   {formatDisplayDate(selectedDate)}
                 </p>
               </div>
-              <button
-                onClick={toggleDayBlocked}
-                title={
-                  isDayBlocked
-                    ? "Make day available again"
-                    : "Mark day unavailable"
-                }
-                className={`p-2 rounded-lg ${isDayBlocked ? "bg-pastel-red text-red" : "text-slate hover:bg-mist"}`}
-              >
-                <Ban size={18} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleBanIconClick}
+                  disabled={selectedDateIsPast}
+                  title={
+                    isDayBlocked
+                      ? "Make day available again"
+                      : "Mark day unavailable"
+                  }
+                  className={`p-2 rounded-lg disabled:opacity-40 ${isDayBlocked ? "bg-pastel-red text-red" : "text-slate hover:bg-mist"}`}
+                >
+                  <Ban size={18} />
+                </button>
+              </div>
             </div>
 
             {isDayBlocked && !selectedDateIsPast && (
               <p className="px-5 py-2 text-xs text-red bg-pastel-red">
-                This day is marked unavailable for bookings.
+                This day is marked unavailable
+                {blockedRecordForDay?.title && (
+                  <> — "{blockedRecordForDay.title}"</>
+                )}
+                . Patients see this instead of open slots.
               </p>
+            )}
+
+            {blockedHourGroupsForSelectedDay.length > 0 && (
+              <div className="px-5 py-3 bg-mist flex flex-col gap-2">
+                {blockedHourGroupsForSelectedDay.map((g) => (
+                  <div
+                    key={g.key}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <div>
+                      <p className="text-xs font-medium text-ink">
+                        {g.title}
+                      </p>
+                      <p className="text-xs text-slate">
+                        {formatTime(g.times[0])} –{" "}
+                        {formatTime(
+                          addMinutesToTime(g.times[g.times.length - 1], 30),
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveHourGroup(g)}
+                      className="text-xs font-medium text-red hover:underline shrink-0"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
 
             {selectedDateIsPast && (
@@ -441,10 +636,51 @@ export default function SecretarySchedule() {
                             {formatTime(a.delayedTime)}
                           </p>
                         )}
+                        {a.status === "confirmed" && a.confirmedVia && (
+                          <p className="text-xs text-green mt-1 capitalize">
+                            Confirmed via{" "}
+                            {a.confirmedVia === "call"
+                              ? "phone call"
+                              : a.confirmedVia}
+                          </p>
+                        )}
+                        {a.status === "booked" && a.reminderSentAt && (
+                          <p className="text-xs text-slate mt-1">
+                            Reminder sent
+                          </p>
+                        )}
                       </div>
                       <Badge status={a.status} />
                     </div>
-                    <div className="flex gap-3 mt-3">
+                    <div className="flex flex-wrap gap-3 mt-3">
+                      {a.status === "booked" && (
+                        <>
+                          <button
+                            onClick={() => openConfirmModal(a)}
+                            className="text-xs font-medium text-green hover:underline flex items-center gap-1"
+                          >
+                            <CheckCircle2 size={13} /> Confirm
+                          </button>
+                          <button
+                            onClick={() => handleSendReminder(a)}
+                            disabled={reminderBusyId === a.id}
+                            className="text-xs font-medium text-blue hover:underline flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <BellRing size={13} />
+                            {reminderBusyId === a.id
+                              ? "Sending..."
+                              : "Send reminder"}
+                          </button>
+                        </>
+                      )}
+                      {a.status === "confirmed" && (
+                        <button
+                          onClick={() => handleUnconfirm(a)}
+                          className="text-xs font-medium text-slate hover:underline flex items-center gap-1"
+                        >
+                          <Undo2 size={13} /> Mark as booked
+                        </button>
+                      )}
                       <button
                         onClick={() => setDelayTarget(a)}
                         className="text-xs font-medium text-amber hover:underline flex items-center gap-1"
@@ -491,7 +727,11 @@ export default function SecretarySchedule() {
             <div className="flex gap-2 -mt-1">
               <button
                 type="button"
-                onClick={() => setForm({ ...EMPTY_FORM, bookingMode: "existing", time: form.time })}
+                onClick={() => {
+                  setForm({ ...EMPTY_FORM, bookingMode: "existing", time: form.time })
+                  setPatientSearchTerm("")
+                  setShowPatientDropdown(false)
+                }}
                 className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
                   form.bookingMode === "existing"
                     ? "bg-rose text-white border-rose"
@@ -502,7 +742,11 @@ export default function SecretarySchedule() {
               </button>
               <button
                 type="button"
-                onClick={() => setForm({ ...EMPTY_FORM, bookingMode: "new", time: form.time })}
+                onClick={() => {
+                  setForm({ ...EMPTY_FORM, bookingMode: "new", time: form.time })
+                  setPatientSearchTerm("")
+                  setShowPatientDropdown(false)
+                }}
                 className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
                   form.bookingMode === "new"
                     ? "bg-rose text-white border-rose"
@@ -514,29 +758,54 @@ export default function SecretarySchedule() {
             </div>
           )}
 
-          {form.bookingMode === "existing" || editingAppointment ? (
+          {editingAppointment ? (
             <div>
               <label className="text-xs text-slate mb-1 block">Patient</label>
-              <select
-                value={form.patientId}
-                disabled={!!editingAppointment}
+              <div className="w-full border border-stone rounded-xl px-4 py-3 text-ink bg-sand">
+                {form.patientName || "Unnamed patient"}
+                {!form.patientId && form.patientIdNumber && (
+                  <span className="text-slate"> (ID: {form.patientIdNumber})</span>
+                )}
+              </div>
+            </div>
+          ) : form.bookingMode === "existing" ? (
+            <div className="relative">
+              <label className="text-xs text-slate mb-1 block">Patient</label>
+              <input
+                value={patientSearchTerm}
                 onChange={(e) => {
-                  const p = patients.find((p) => p.id === e.target.value);
-                  setForm({
-                    ...form,
-                    patientId: e.target.value,
-                    patientName: p?.name || "",
-                  });
+                  setPatientSearchTerm(e.target.value);
+                  setForm({ ...form, patientId: "", patientName: e.target.value });
+                  setShowPatientDropdown(true);
                 }}
-                className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none disabled:bg-sand"
-              >
-                <option value="">Select a patient...</option>
-                {patients.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.idNumber ? `· ID: ${p.idNumber}` : `(${p.email})`}
-                  </option>
-                ))}
-              </select>
+                onFocus={() => setShowPatientDropdown(true)}
+                onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
+                placeholder="Search patients by name, email, or ID..."
+                autoComplete="off"
+                className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+              />
+              {showPatientDropdown && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-stone rounded-xl max-h-48 overflow-y-auto shadow-lg">
+                  {filteredPatientOptions.length === 0 ? (
+                    <p className="px-4 py-3 text-sm text-slate">No patients match that search.</p>
+                  ) : (
+                    filteredPatientOptions.map((p) => (
+                      <button
+                        type="button"
+                        key={p.id}
+                        onMouseDown={() => {
+                          setForm({ ...form, patientId: p.id, patientName: p.name });
+                          setPatientSearchTerm(p.name);
+                          setShowPatientDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-ink hover:bg-mist transition-colors"
+                      >
+                        {p.name} {p.idNumber ? `· ID: ${p.idNumber}` : `(${p.email})`}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -707,6 +976,135 @@ export default function SecretarySchedule() {
           {deleteTarget && formatTime(deleteTarget.time)} appointment. This
           cannot be undone.
         </p>
+      </Modal>
+
+      {/* Block availability modal — one entry point (the Ban icon) for
+          blocking either the whole day or specific hours, with a title
+          patients see instead of open slots on their calendar. */}
+      <Modal
+        isOpen={showBlockModal}
+        onClose={() => setShowBlockModal(false)}
+        title="Block availability"
+        confirmLabel={savingBlock ? "Saving..." : "Block"}
+        onConfirm={handleSaveBlock}
+        confirmDisabled={savingBlock}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-slate -mt-2">
+            {formatDisplayDate(selectedDate)}
+          </p>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setBlockMode("day")}
+              className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+                blockMode === "day"
+                  ? "bg-rose text-white border-rose"
+                  : "border-stone text-ink hover:border-rose"
+              }`}
+            >
+              Whole day
+            </button>
+            <button
+              type="button"
+              onClick={() => setBlockMode("hours")}
+              className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+                blockMode === "hours"
+                  ? "bg-rose text-white border-rose"
+                  : "border-stone text-ink hover:border-rose"
+              }`}
+            >
+              Specific hours
+            </button>
+          </div>
+
+          {blockMode === "hours" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate mb-1 block">From</label>
+                <select
+                  value={blockStart}
+                  onChange={(e) => setBlockStart(e.target.value)}
+                  className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                >
+                  {generateTimeSlots().map((t) => (
+                    <option key={t} value={t}>
+                      {formatTime(t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate mb-1 block">To</label>
+                <select
+                  value={blockEnd}
+                  onChange={(e) => setBlockEnd(e.target.value)}
+                  className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+                >
+                  {generateTimeSlots("08:30", "17:30").map((t) => (
+                    <option key={t} value={t}>
+                      {formatTime(t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs text-slate mb-1 block">
+              Title patients will see
+            </label>
+            <input
+              value={blockTitle}
+              onChange={(e) => setBlockTitle(e.target.value)}
+              placeholder='e.g. "Public holiday" or "Lunch break"'
+              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+            />
+          </div>
+
+          {blockError && <p className="text-red text-sm">{blockError}</p>}
+        </div>
+      </Modal>
+
+      {/* Confirm appointment modal — records how the confirmation happened */}
+      <Modal
+        isOpen={!!confirmTarget}
+        onClose={() => setConfirmTarget(null)}
+        title={
+          confirmTarget
+            ? `Confirm ${confirmTarget.patientName}'s appointment`
+            : ""
+        }
+        confirmLabel={confirmingBusy ? "Confirming..." : "Confirm appointment"}
+        onConfirm={handleConfirmAppointment}
+        confirmDisabled={confirmingBusy}
+      >
+        <div className="flex flex-col gap-4">
+          {confirmTarget && (
+            <p className="text-sm text-slate">
+              {formatDisplayDate(confirmTarget.date)} ·{" "}
+              {formatTime(confirmTarget.time)}
+            </p>
+          )}
+          <div>
+            <label className="text-xs text-slate mb-1 block">
+              How was this confirmed?
+            </label>
+            <select
+              value={confirmMethod}
+              onChange={(e) => setConfirmMethod(e.target.value)}
+              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+            >
+              {CONFIRMATION_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </Modal>
     </SecretaryLayout>
   );

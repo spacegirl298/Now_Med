@@ -288,7 +288,11 @@ export default function PatientCalendar() {
             {isDayBlocked ? (
               <EmptyState
                 icon={Ban}
-                title="Not available"
+                title={
+                  blockedSlots.find(
+                    (b) => b.date === selectedDate && b.time === null,
+                  )?.title || "Not available"
+                }
                 message="The practice isn't taking bookings on this day. Please choose another date."
               />
             ) : (
@@ -316,13 +320,20 @@ export default function PatientCalendar() {
                   }
 
                   if (isTaken || isBlockedTime) {
+                    const blockTitle = isBlockedTime
+                      ? blockedSlots.find(
+                          (b) => b.date === selectedDate && b.time === t,
+                        )?.title
+                      : null;
                     return (
                       <div
                         key={t}
                         className="flex items-center justify-between px-5 py-3 opacity-50"
                       >
                         <p className="text-sm text-ink">{formatTime(t)}</p>
-                        <span className="text-xs text-slate">Booked</span>
+                        <span className="text-xs text-slate">
+                          {blockTitle || "Booked"}
+                        </span>
                       </div>
                     );
                   }
@@ -378,7 +389,7 @@ export default function PatientCalendar() {
             <select
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
-              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+              className="w-full border border-stone rounded-xl px-4 py-3 text-ink bg-mist focus:border-rose focus:outline-none"
             >
               <option value="in-person">In-person</option>
               <option value="virtual">Virtual</option>

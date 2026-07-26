@@ -183,7 +183,12 @@ export async function createAppointment(data) {
     time: data.time,
     type: data.type || "in-person",
     practice: data.practice || "",
-    status: data.status || "confirmed",
+    // Defaults to "booked" (on the calendar, not yet confirmed with the
+    // patient) rather than "confirmed". Callers that know the booking is
+    // already confirmed — e.g. a patient booking their own slot — should
+    // pass status: "confirmed" explicitly.
+    status: data.status || "booked",
+    confirmedVia: data.confirmedVia || "",
     notes: data.notes || "",
     delayMinutes: 0,
     delayNote: "",
@@ -321,6 +326,56 @@ export async function markAppointmentDelay(
   }
 }
 
+// Secretary confirms an appointment with the patient, recording how the
+// confirmation happened (whatsapp / call / email) and notifying the patient
+// in-app if they have an account.
+export async function confirmAppointment(appointment, method) {
+  await updateAppointment(appointment.id, {
+    status: "confirmed",
+    confirmedVia: method,
+    confirmedAt: serverTimestamp(),
+  });
+
+  if (appointment.patientId) {
+    const methodLabel =
+      { whatsapp: "WhatsApp", call: "a phone call", email: "email" }[method] ||
+      method;
+    await createNotification({
+      recipientId: appointment.patientId,
+      appointmentId: appointment.id,
+      type: "confirmation",
+      message: `Your appointment on ${appointment.date} at ${appointment.time} has been confirmed via ${methodLabel}.`,
+    });
+  }
+}
+
+// Reverts a confirmed appointment back to "booked" — e.g. if a confirmation
+// was logged in error.
+export async function unconfirmAppointment(appointmentId) {
+  await updateAppointment(appointmentId, {
+    status: "booked",
+    confirmedVia: "",
+  });
+}
+
+// Nudges a patient to confirm an appointment that's still just "booked".
+// Stamps reminderSentAt on the appointment so the secretary UI can show
+// that a reminder has already gone out.
+export async function sendConfirmationReminder(appointment) {
+  await updateAppointment(appointment.id, {
+    reminderSentAt: serverTimestamp(),
+  });
+
+  if (appointment.patientId) {
+    await createNotification({
+      recipientId: appointment.patientId,
+      appointmentId: appointment.id,
+      type: "reminder",
+      message: `Please confirm your appointment on ${appointment.date} at ${appointment.time}. Reply via WhatsApp, call, or email to let us know you'll be attending.`,
+    });
+  }
+}
+
 // ================= NOTIFICATIONS =================
 
 export async function createNotification({
@@ -364,26 +419,66 @@ export function subscribeToBlockedSlots(callback) {
   });
 }
 
-export async function blockDate(dateStr, reason = "") {
+// Blocks an entire day. `title` is shown to patients on the calendar (e.g.
+// "Public holiday", "Doctor on leave") — `reason` is kept as a duplicate
+// field for backwards compatibility with any older code/reads.
+export async function blockDate(dateStr, title = "") {
   await addDoc(blockedSlotsCol, {
     date: dateStr,
     time: null,
-    reason,
+    title,
+    reason: title,
+    groupId: null,
     createdAt: serverTimestamp(),
   });
 }
 
-export async function blockTimeSlot(dateStr, timeStr, reason = "") {
+export async function blockTimeSlot(dateStr, timeStr, title = "") {
   await addDoc(blockedSlotsCol, {
     date: dateStr,
     time: timeStr,
-    reason,
+    title,
+    reason: title,
+    groupId: null,
     createdAt: serverTimestamp(),
   });
+}
+
+// Blocks a set of time slots (e.g. every 30-min slot between 12:00-13:00
+// for a lunch break) as one titled group, so they can be shown and removed
+// together instead of one-by-one. Pass the slot list already computed by
+// the caller (see generateTimeSlots in utils/dateHelpers).
+export async function blockTimeSlots(dateStr, times, title = "") {
+  if (!times || times.length === 0) return null;
+  const groupId = `${dateStr}-${Date.now()}`;
+  const batch = writeBatch(db);
+  times.forEach((timeStr) => {
+    const ref = doc(blockedSlotsCol);
+    batch.set(ref, {
+      date: dateStr,
+      time: timeStr,
+      title,
+      reason: title,
+      groupId,
+      createdAt: serverTimestamp(),
+    });
+  });
+  await batch.commit();
+  return groupId;
 }
 
 export async function unblockSlot(blockedSlotId) {
   await deleteDoc(doc(db, "blockedSlots", blockedSlotId));
+}
+
+// Removes every slot that was created together as an hour-range block.
+export async function unblockGroup(groupId) {
+  if (!groupId) return;
+  const q = query(blockedSlotsCol, where("groupId", "==", groupId));
+  const snap = await getDocs(q);
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
 }
 
 // ================= PRACTICE / DOCTOR PROFILE =================

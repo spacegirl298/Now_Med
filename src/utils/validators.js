@@ -26,4 +26,15 @@ export const DELAY_OPTIONS = [10, 20, 30, 45]
 
 export const APPOINTMENT_TYPES = ['in-person', 'virtual']
 
-export const APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'cancelled', 'delayed', 'no-show']
+// 'booked' = on the calendar but the patient hasn't confirmed yet.
+// 'confirmed' = the practice confirmed attendance with the patient.
+// 'scheduled' is kept only so older records saved before this change still
+// render with a sensible badge — new appointments should use 'booked'.
+export const APPOINTMENT_STATUSES = ['booked', 'confirmed', 'scheduled', 'cancelled', 'delayed', 'no-show']
+
+// How a secretary confirmed an appointment with a patient.
+export const CONFIRMATION_METHODS = [
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'call', label: 'Phone call' },
+  { value: 'email', label: 'Email' },
+]
