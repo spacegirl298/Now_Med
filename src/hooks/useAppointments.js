@@ -20,7 +20,7 @@ export function useAppointments() {
 
   useEffect(() => {
     if (!currentUser) {
-      setAppointments([]) // eslint-disable-line react-hooks/set-state-in-effect -- clearing local state on logout
+      setAppointments([]) 
       setLoading(false)
       return
     }

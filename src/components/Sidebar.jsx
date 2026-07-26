@@ -40,7 +40,7 @@ export default function Sidebar({ role = 'secretary' }) {
       <div className="mb-8 px-2">
         <p className="text-lg font-semibold">Now Med</p>
         <p className="text-xs text-blush">
-          {role === 'secretary' ? 'Secretary Portal' : 'Making now now into now'}
+          {role === 'secretary' ? 'Secretary Portal' : 'Patient Portal'}
         </p>
       </div>
 
