@@ -1,17 +1,18 @@
 // Searchable, alphabetical patient directory with record access (must-have).
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Search, FileText, Calendar as CalendarIcon, Plus, UserCircle2 } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
+import { Search, FileText, Calendar as CalendarIcon, UserCircle2, NotebookPen } from 'lucide-react'
 import {
   subscribeToPatients,
   getPatientRecords,
   getRecordsByIdNumber,
-  addPatientRecord,
+  getPatientProfile,
+  getPatientProfileByIdNumber,
   getUnlinkedWalkInPatients,
 } from '../../firebase/firestore'
 import { useAppointments } from '../../hooks/useAppointments'
 import SecretaryLayout from './SecretaryLayout'
+import PatientRecordModal from './PatientRecordModal'
 import BackButton from '../../components/BackButton'
 import Card from '../../components/Card'
 import Avatar from '../../components/Avatar'
@@ -20,11 +21,8 @@ import Modal from '../../components/Modal'
 import EmptyState from '../../components/EmptyState'
 import { formatShortDate, formatTime, getTodayString } from '../../utils/dateHelpers'
 
-const EMPTY_RECORD_FORM = { title: '', date: getTodayString(), notes: '' }
-
 export default function PatientList() {
   const location = useLocation()
-  const { currentUser } = useAuth()
   const { appointments } = useAppointments()
 
   const [patients, setPatients] = useState([])
@@ -34,13 +32,13 @@ export default function PatientList() {
   const [walkIns, setWalkIns] = useState([])
 
   const [selectedPatient, setSelectedPatient] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [records, setRecords] = useState([])
-  const [recordsLoading, setRecordsLoading] = useState(false)
+  const [overviewLoading, setOverviewLoading] = useState(false)
 
-  const [showRecordForm, setShowRecordForm] = useState(false)
-  const [recordForm, setRecordForm] = useState(EMPTY_RECORD_FORM)
-  const [recordError, setRecordError] = useState('')
-  const [savingRecord, setSavingRecord] = useState(false)
+  const [fullRecordOpen, setFullRecordOpen] = useState(false)
+  const [fullRecordTab, setFullRecordTab] = useState('overview')
+  const [fullRecordAutoAdd, setFullRecordAutoAdd] = useState(false)
 
   useEffect(() => {
     const unsub = subscribeToPatients(list => {
@@ -67,6 +65,7 @@ export default function PatientList() {
       const p = patients.find(p => p.id === openId)
       if (p) openPatient(p)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, patients])
 
   const filteredPatients = useMemo(() => {
@@ -90,19 +89,31 @@ export default function PatientList() {
 
   async function openPatient(patient) {
     setSelectedPatient(patient)
-    setShowRecordForm(false)
-    setRecordForm(EMPTY_RECORD_FORM)
-    setRecordError('')
-    setRecordsLoading(true)
+    setOverviewLoading(true)
     try {
-      const r = patient.id
-        ? await getPatientRecords(patient.id)
-        : await getRecordsByIdNumber(patient.idNumber)
+      const [r, p] = await Promise.all([
+        patient.id ? getPatientRecords(patient.id) : getRecordsByIdNumber(patient.idNumber),
+        patient.id ? getPatientProfile(patient.id) : getPatientProfileByIdNumber(patient.idNumber),
+      ])
       setRecords(r)
+      setProfile(p)
     } catch {
       setRecords([])
+      setProfile(null)
     }
-    setRecordsLoading(false)
+    setOverviewLoading(false)
+  }
+
+  function closeOverview() {
+    setSelectedPatient(null)
+    setProfile(null)
+    setRecords([])
+  }
+
+  function openFullRecord(tab, autoAdd = false) {
+    setFullRecordTab(tab)
+    setFullRecordAutoAdd(autoAdd)
+    setFullRecordOpen(true)
   }
 
   const patientAppointments = useMemo(() => {
@@ -116,33 +127,18 @@ export default function PatientList() {
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
   }, [appointments, selectedPatient])
 
-  async function handleAddRecord() {
-    setRecordError('')
-    if (!recordForm.title.trim()) return setRecordError('Please enter a title for this record.')
-    if (!recordForm.date) return setRecordError('Please choose a date.')
-
-    setSavingRecord(true)
-    try {
-      const newId = await addPatientRecord({
-        patientId: selectedPatient.id || null,
-        patientIdNumber: selectedPatient.idNumber || '',
-        title: recordForm.title.trim(),
-        date: recordForm.date,
-        notes: recordForm.notes.trim(),
-        createdBy: currentUser?.uid || null,
-      })
-      setRecords(prev => [
-        { id: newId, ...recordForm, title: recordForm.title.trim() },
-        ...prev,
-      ])
-      setRecordForm(EMPTY_RECORD_FORM)
-      setShowRecordForm(false)
-    } catch (err) {
-      console.error(err)
-      setRecordError('Could not save this record. Please try again.')
-    }
-    setSavingRecord(false)
-  }
+  const today = getTodayString()
+  const nextAppointment = useMemo(
+    () =>
+      [...patientAppointments]
+        .filter(a => a.date >= today && a.status !== 'cancelled')
+        .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] || null,
+    [patientAppointments, today],
+  )
+  const lastVisit = useMemo(
+    () => patientAppointments.find(a => a.date < today) || null,
+    [patientAppointments, today],
+  )
 
   return (
     <SecretaryLayout>
@@ -226,15 +222,15 @@ export default function PatientList() {
         )}
       </div>
 
-      {/* Patient detail modal */}
+      {/* Quick overview popup */}
       <Modal
         isOpen={!!selectedPatient}
-        onClose={() => setSelectedPatient(null)}
+        onClose={closeOverview}
         title={selectedPatient?.name || 'Patient'}
         hideFooter
       >
         {selectedPatient && (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5">
             <div className="flex items-center gap-4">
               <Avatar name={selectedPatient.name} size={56} />
               <div>
@@ -250,88 +246,122 @@ export default function PatientList() {
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2 flex items-center gap-2">
-                <CalendarIcon size={14} /> Appointment history
-              </p>
-              {patientAppointments.length === 0 ? (
-                <p className="text-sm text-slate">No appointments on record.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {patientAppointments.map(a => (
-                    <div key={a.id} className="flex items-center justify-between bg-mist rounded-lg px-3 py-2">
-                      <p className="text-sm text-ink">{formatShortDate(a.date)} · {formatTime(a.time)}</p>
-                      <Badge status={a.status} />
-                    </div>
-                  ))}
+            {overviewLoading ? (
+              <p className="text-sm text-slate">Loading overview...</p>
+            ) : (
+              <>
+                {/* Quick medical snapshot */}
+                <div className="bg-mist rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-slate">Blood group</p>
+                    <p className="text-ink">{profile?.bloodGroup || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate">Primary doctor</p>
+                    <p className="text-ink">{profile?.primaryDoctor || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate">Last visit</p>
+                    <p className="text-ink">{lastVisit ? formatShortDate(lastVisit.date) : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate">Next appointment</p>
+                    <p className="text-ink">{nextAppointment ? formatShortDate(nextAppointment.date) : '—'}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-slate mb-1">Allergies</p>
+                    {(profile?.allergies || []).length === 0 ? (
+                      <p className="text-ink">None on record</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {profile.allergies.map((a, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-full text-xs font-medium bg-pastel-red text-red">
+                            {a.allergen}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-slate">Chronic conditions</p>
+                    <p className="text-ink">{(profile?.chronicConditions || []).join(', ') || '—'}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-slate">Current medications</p>
+                    <p className="text-ink">
+                      {(profile?.currentMedications || []).map(m => m.name).filter(Boolean).join(', ') || '—'}
+                    </p>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate uppercase tracking-wide flex items-center gap-2">
-                  <FileText size={14} /> Medical records
-                </p>
-                <button
-                  onClick={() => setShowRecordForm(v => !v)}
-                  className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
-                >
-                  <Plus size={13} /> Add record
-                </button>
-              </div>
+                {/* Recent activity */}
+                <div>
+                  <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2 flex items-center gap-2">
+                    <FileText size={14} /> Recent records
+                  </p>
+                  {records.length === 0 ? (
+                    <p className="text-sm text-slate">No records on file yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {records.slice(0, 3).map(r => (
+                        <div key={r.id} className="bg-mist rounded-lg px-3 py-2">
+                          <p className="text-sm text-ink">{r.title}</p>
+                          <p className="text-xs text-slate">{formatShortDate(r.date)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              {showRecordForm && (
-                <div className="bg-mist rounded-xl p-3 mb-3 flex flex-col gap-2">
-                  <input
-                    value={recordForm.title}
-                    onChange={e => setRecordForm({ ...recordForm, title: e.target.value })}
-                    placeholder="Record title, e.g. Blood test results"
-                    className="w-full border border-stone rounded-lg px-3 py-2 text-sm text-ink bg-white focus:border-rose focus:outline-none"
-                  />
-                  <input
-                    type="date"
-                    value={recordForm.date}
-                    onChange={e => setRecordForm({ ...recordForm, date: e.target.value })}
-                    className="w-full border border-stone rounded-lg px-3 py-2 text-sm text-ink bg-white focus:border-rose focus:outline-none"
-                  />
-                  <textarea
-                    value={recordForm.notes}
-                    onChange={e => setRecordForm({ ...recordForm, notes: e.target.value })}
-                    placeholder="Notes (optional)"
-                    rows={2}
-                    className="w-full border border-stone rounded-lg px-3 py-2 text-sm text-ink bg-white focus:border-rose focus:outline-none"
-                  />
-                  {recordError && <p className="text-red text-xs">{recordError}</p>}
+                <div>
+                  <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2 flex items-center gap-2">
+                    <CalendarIcon size={14} /> Appointments
+                  </p>
+                  {patientAppointments.length === 0 ? (
+                    <p className="text-sm text-slate">No appointments on record.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {patientAppointments.slice(0, 3).map(a => (
+                        <div key={a.id} className="flex items-center justify-between bg-mist rounded-lg px-3 py-2">
+                          <p className="text-sm text-ink">{formatShortDate(a.date)} · {formatTime(a.time)}</p>
+                          <Badge status={a.status} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-1">
                   <button
-                    onClick={handleAddRecord}
-                    disabled={savingRecord}
-                    className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors disabled:opacity-60"
+                    onClick={() => openFullRecord('consultations', true)}
+                    className="flex-1 flex items-center justify-center gap-2 border border-stone text-ink rounded-xl py-3 text-sm font-medium hover:border-rose transition-colors"
                   >
-                    {savingRecord ? 'Saving...' : 'Save record'}
+                    <NotebookPen size={16} /> Add note
+                  </button>
+                  <button
+                    onClick={() => openFullRecord('overview', false)}
+                    className="flex-1 bg-rose text-white rounded-xl py-3 text-sm font-medium hover:bg-plum transition-colors"
+                  >
+                    View full record
                   </button>
                 </div>
-              )}
-
-              {recordsLoading ? (
-                <p className="text-sm text-slate">Loading records...</p>
-              ) : records.length === 0 ? (
-                <p className="text-sm text-slate">No records on file for this patient.</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {records.map(r => (
-                    <div key={r.id} className="bg-mist rounded-lg px-3 py-2">
-                      <p className="text-sm text-ink">{r.title}</p>
-                      <p className="text-xs text-slate">{r.date}</p>
-                      {r.notes && <p className="text-xs text-slate mt-0.5">{r.notes}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         )}
       </Modal>
+
+      {/* Full patient record */}
+      {fullRecordOpen && selectedPatient && (
+        <PatientRecordModal
+          patient={selectedPatient}
+          appointments={patientAppointments}
+          initialTab={fullRecordTab}
+          autoOpenAddForm={fullRecordAutoAdd}
+          onClose={() => setFullRecordOpen(false)}
+        />
+      )}
     </SecretaryLayout>
   )
 }

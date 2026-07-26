@@ -24,6 +24,11 @@ const appointmentsCol = collection(db, "appointments");
 const notificationsCol = collection(db, "notifications");
 const blockedSlotsCol = collection(db, "blockedSlots");
 const recordsCol = collection(db, "records");
+// Clinical profile data (medical history, allergies, medications, etc.) that
+// doesn't belong on the users doc and isn't a single dated record. One doc
+// per patient, looked up the same way as records — by patientId once
+// registered, or by patientIdNumber before that (see linkPatientDataByIdNumber).
+const profilesCol = collection(db, "patientProfiles");
 
 // ================= USERS / PATIENTS =================
 
@@ -97,22 +102,92 @@ export async function getRecordsByIdNumber(idNumber) {
 // no account yet, pass patientId: null and patientIdNumber instead — the
 // record will be linked automatically once they register (see
 // linkPatientDataByIdNumber).
+//
+// `type` distinguishes a quick free-text note ("note", the original shape —
+// just title/date/notes) from a full consultation entry ("consultation"),
+// which can also carry doctor, reason for visit, diagnosis, treatment,
+// follow-up flag, and a vitals snapshot. All the consultation-only fields
+// are optional so existing calls that only pass title/date/notes keep working.
 export async function addPatientRecord({
   patientId = null,
   patientIdNumber = "",
+  type = "note",
   title,
   date,
   notes = "",
+  doctor = "",
+  reasonForVisit = "",
+  diagnosis = "",
+  treatment = "",
+  followUpRequired = false,
+  vitals = null,
   createdBy = null,
 }) {
   const ref = await addDoc(recordsCol, {
     patientId,
     patientIdNumber: patientIdNumber || "",
+    type,
     title,
     date,
     notes,
+    doctor,
+    reasonForVisit,
+    diagnosis,
+    treatment,
+    followUpRequired,
+    vitals,
     createdBy,
     createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// ================= PATIENT CLINICAL PROFILE =================
+// Personal/medical-history data shown on the secretary's patient overview:
+// blood group, allergies, chronic conditions, current medications, surgical
+// history, hospital admissions, family history, emergency contact, medical
+// aid, etc. Kept in its own collection (rather than on the users doc) so it
+// can exist for walk-in patients before they have an account, same pattern
+// as records.
+
+export async function getPatientProfile(patientId) {
+  if (!patientId) return null;
+  const q = query(profilesCol, where("patientId", "==", patientId));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+export async function getPatientProfileByIdNumber(idNumber) {
+  if (!idNumber) return null;
+  const q = query(profilesCol, where("patientIdNumber", "==", idNumber));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+// Upsert: pass the existing profile's `id` (as `profileId`) to update it,
+// or omit it to create a new profile doc for this patient/walk-in.
+export async function savePatientProfile({
+  profileId = null,
+  patientId = null,
+  patientIdNumber = "",
+  ...fields
+}) {
+  if (profileId) {
+    await updateDoc(doc(db, "patientProfiles", profileId), {
+      ...fields,
+      updatedAt: serverTimestamp(),
+    });
+    return profileId;
+  }
+  const ref = await addDoc(profilesCol, {
+    patientId,
+    patientIdNumber: patientIdNumber || "",
+    ...fields,
+    updatedAt: serverTimestamp(),
   });
   return ref.id;
 }
@@ -254,13 +329,19 @@ export async function linkPatientDataByIdNumber(uid, idNumber, name) {
     where("patientIdNumber", "==", idNumber),
     where("patientId", "==", null),
   );
+  const profileQ = query(
+    profilesCol,
+    where("patientIdNumber", "==", idNumber),
+    where("patientId", "==", null),
+  );
 
-  const [apptSnap, recordsSnap] = await Promise.all([
+  const [apptSnap, recordsSnap, profileSnap] = await Promise.all([
     getDocs(apptQ),
     getDocs(recordsQ),
+    getDocs(profileQ),
   ]);
 
-  if (apptSnap.empty && recordsSnap.empty) return;
+  if (apptSnap.empty && recordsSnap.empty && profileSnap.empty) return;
 
   const batch = writeBatch(db);
   apptSnap.docs.forEach((d) => {
@@ -270,6 +351,9 @@ export async function linkPatientDataByIdNumber(uid, idNumber, name) {
     });
   });
   recordsSnap.docs.forEach((d) => {
+    batch.update(d.ref, { patientId: uid });
+  });
+  profileSnap.docs.forEach((d) => {
     batch.update(d.ref, { patientId: uid });
   });
   await batch.commit();
