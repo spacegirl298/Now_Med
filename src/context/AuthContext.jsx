@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
-import { linkPatientDataByIdNumber } from '../firebase/firestore'
+import { linkPatientDataByIdNumber, getUserByIdNumber } from '../firebase/firestore'
 
 
 const AuthContext = createContext()
@@ -30,8 +30,34 @@ export function AuthProvider({ children }) {
 
   // Register a new user
   async function register(email, password, idNumber, idType, role, name, practiceCode) {
-    // Create the Firebase Auth account
+    // Create the Firebase Auth account first — the duplicate-ID check below
+    // reads the `users` collection, and Firestore rules require the caller
+    // to be authenticated to do that. Checking before sign-up would fail
+    // with a permission error for every registration, not just duplicates.
     const result = await createUserWithEmailAndPassword(auth, email, password)
+
+    try {
+      // Two different people should never be able to register with the same
+      // ID/passport number. The one deliberate exception: a secretary who
+      // already has a staff account is allowed to register a *patient*
+      // account under that same ID number — that's the same real person
+      // adding a second role, not a duplicate identity.
+      const existingUserWithId = await getUserByIdNumber(idNumber)
+      if (existingUserWithId) {
+        const isSecretarySelfRegisteringAsPatient =
+          existingUserWithId.role === 'secretary' && role === 'patient'
+        if (!isSecretarySelfRegisteringAsPatient) {
+          throw new Error(
+            'An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake.'
+          )
+        }
+      }
+    } catch (err) {
+      // Roll back the auth account we just created so we don't leave an
+      // orphaned login with no matching Firestore user doc.
+      await result.user.delete().catch(() => {})
+      throw err
+    }
 
     // So displayName is available anywhere we read it straight off the Auth
     // user (e.g. profile pages), not just from the Firestore user doc

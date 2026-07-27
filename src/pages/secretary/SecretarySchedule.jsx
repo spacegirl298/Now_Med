@@ -69,6 +69,7 @@ export default function SecretarySchedule() {
     createAppointment,
     updateAppointment,
     deleteAppointment,
+    cancelAppointment,
     markAppointmentDelay,
   } = useAppointments();
 
@@ -90,6 +91,9 @@ export default function SecretarySchedule() {
   const [delayNote, setDelayNote] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
 
   const [patientSearchTerm, setPatientSearchTerm] = useState("");
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
@@ -331,6 +335,24 @@ export default function SecretarySchedule() {
     if (!deleteTarget) return;
     await deleteAppointment(deleteTarget.id);
     setDeleteTarget(null);
+  }
+
+  // Cancelling (unlike deleting) keeps the appointment on record as
+  // "cancelled" and notifies the patient if they have an account — use this
+  // for a patient-initiated or practice-initiated cancellation. Delete is
+  // for permanently removing a mistaken/duplicate entry.
+  async function handleConfirmCancel() {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    setCancelError("");
+    try {
+      await cancelAppointment(cancelTarget);
+      setCancelTarget(null);
+    } catch (err) {
+      console.error("Failed to cancel appointment:", err);
+      setCancelError("Something went wrong cancelling this appointment. Please try again.");
+    }
+    setCancelling(false);
   }
 
   // Quick toggle for the Ban icon: unblocking needs no extra info so it
@@ -693,6 +715,14 @@ export default function SecretarySchedule() {
                       >
                         <Pencil size={13} /> Edit
                       </button>
+                      {a.status !== "cancelled" && (
+                        <button
+                          onClick={() => setCancelTarget(a)}
+                          className="text-xs font-medium text-red hover:underline flex items-center gap-1"
+                        >
+                          <Ban size={13} /> Cancel
+                        </button>
+                      )}
                       <button
                         onClick={() => setDeleteTarget(a)}
                         className="text-xs font-medium text-red hover:underline flex items-center gap-1"
@@ -960,6 +990,30 @@ export default function SecretarySchedule() {
             {formatTime(addMinutesToTime(delayTarget.time, delayMinutes))}.
           </p>
         )}
+      </Modal>
+
+      {/* Cancel confirmation modal */}
+      <Modal
+        isOpen={!!cancelTarget}
+        onClose={() => {
+          setCancelTarget(null);
+          setCancelError("");
+        }}
+        title="Cancel appointment?"
+        confirmLabel={cancelling ? "Cancelling..." : "Cancel appointment"}
+        confirmVariant="danger"
+        onConfirm={handleConfirmCancel}
+        confirmDisabled={cancelling}
+        cancelLabel="Keep it"
+      >
+        <p className="text-sm text-slate">
+          This will mark {cancelTarget?.patientName}'s{" "}
+          {cancelTarget && formatTime(cancelTarget.time)} appointment as
+          cancelled{cancelTarget?.patientId ? " and notify them in-app" : ""}.
+          It stays on record — use Delete instead if you want to remove it
+          entirely.
+        </p>
+        {cancelError && <p className="text-xs text-red mt-3">{cancelError}</p>}
       </Modal>
 
       {/* Delete confirmation modal */}

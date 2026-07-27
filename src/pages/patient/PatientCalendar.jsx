@@ -122,6 +122,7 @@ export default function PatientCalendar() {
 
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
 
   useEffect(() => {
     const unsubBooked = subscribeToBookedSlots(setBookedSlots);
@@ -338,11 +339,17 @@ export default function PatientCalendar() {
   async function handleConfirmCancel() {
     if (!cancelTarget) return;
     setCancelling(true);
+    setCancelError("");
     try {
       await cancelAppointment(cancelTarget);
       setCancelTarget(null);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to cancel appointment:", err);
+      setCancelError(
+        err?.code === "permission-denied"
+          ? "You don't have permission to cancel this appointment. Please contact the practice."
+          : "Something went wrong cancelling this appointment. Please try again."
+      );
     }
     setCancelling(false);
   }
@@ -780,7 +787,10 @@ export default function PatientCalendar() {
       {/* Cancel appointment confirmation */}
       <Modal
         isOpen={!!cancelTarget}
-        onClose={() => setCancelTarget(null)}
+        onClose={() => {
+          setCancelTarget(null);
+          setCancelError("");
+        }}
         title="Cancel appointment?"
         confirmLabel={cancelling ? "Cancelling..." : "Cancel appointment"}
         confirmVariant="danger"
@@ -794,6 +804,9 @@ export default function PatientCalendar() {
           {cancelTarget && formatShortDate(cancelTarget.date)}. You can always
           book a new slot afterwards.
         </p>
+        {cancelError && (
+          <p className="text-xs text-red mt-3">{cancelError}</p>
+        )}
       </Modal>
     </PatientLayout>
   );

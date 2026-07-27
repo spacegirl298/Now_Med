@@ -48,10 +48,7 @@ export default function PatientList() {
     return () => unsub && unsub()
   }, [])
 
-  // Walk-in patients: booked by phone/email/in person but who haven't
-  // created an account yet, so they only exist as an ID number on their
-  // appointments. Refetched whenever the appointment list changes so a
-  // brand-new walk-in booking shows up here right away.
+
   useEffect(() => {
     getUnlinkedWalkInPatients()
       .then(setWalkIns)
@@ -192,10 +189,7 @@ export default function PatientList() {
             <h2 className="text-sm font-semibold text-slate uppercase tracking-wide mb-2">
               Walk-in patients (not yet registered)
             </h2>
-            <p className="text-xs text-slate mb-3">
-              Booked by phone, email, or in person. They'll move into the list above
-              automatically once they create an account with a matching ID number.
-            </p>
+           
             <Card padded={false}>
               <div className="divide-y divide-sand">
                 {filteredWalkIns.map(p => (
