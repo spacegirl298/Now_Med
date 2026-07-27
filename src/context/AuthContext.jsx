@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
 
   // Register a new user
   async function register(email, password, idNumber, idType, role, name, practiceCode) {
-    // Create the Firebase Auth account first — the duplicate-ID check below
+    // Create the Firebase Auth account first - the duplicate-ID check below
     // reads the `users` collection, and Firestore rules require the caller
     // to be authenticated to do that. Checking before sign-up would fail
     // with a permission error for every registration, not just duplicates.
