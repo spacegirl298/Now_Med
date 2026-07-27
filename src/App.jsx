@@ -1,46 +1,49 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useAuth } from './context/AuthContext'
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
 
 // Auth pages
-import Login from './pages/auth/Login'
-import SignUp from './pages/auth/SignUp'
-import ForgotPassword from './pages/auth/ForgotPassword'
-import EmailVerification from './pages/auth/EmailVerfication'
+import Login from "./pages/auth/Login";
+import SignUp from "./pages/auth/SignUp";
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import EmailVerification from "./pages/auth/EmailVerfication";
 
 // Patient pages
-import PatientDashboard from './pages/patient/PatientDashboard'
-import PatientCalendar from './pages/patient/PatientCalendar'
-import PatientRecords from './pages/patient/PatientRecords'
-import PatientProfile from './pages/patient/PatientProfile'
+import PatientDashboard from "./pages/patient/PatientDashboard";
+import PatientCalendar from "./pages/patient/PatientCalendar";
+import PatientRecords from "./pages/patient/PatientRecords";
+import PatientProfile from "./pages/patient/PatientProfile";
 
 // Secretary pages
-import SecretaryDashboard from './pages/secretary/SecretaryDashboard'
-import SecretarySchedule from './pages/secretary/SecretarySchedule'
-import PatientList from './pages/secretary/PatientList'
-import SecretaryProfile from './pages/secretary/SecretaryProfile'
+import SecretaryDashboard from "./pages/secretary/SecretaryDashboard";
+import SecretarySchedule from "./pages/secretary/SecretarySchedule";
+import PatientList from "./pages/secretary/PatientList";
+import SecretaryProfile from "./pages/secretary/SecretaryProfile";
 
-//dev bypass flag that allows us to view the dashboards without having to keep logging back in 
-const DEV_BYPASS_ROLE = 'null'
+//dev bypass flag that allows us to view the dashboards without having to keep logging back in
+const DEV_BYPASS_ROLE = false;
 
 // Protected route wrapper
 function ProtectedRoute({ children, allowedRole }) {
-  const { currentUser, userRole } = useAuth()
+  const { currentUser, userRole } = useAuth();
 
   //Dev bypass
   if (DEV_BYPASS_ROLE) {
-    return children
+    return children;
   }
 
-  if (!currentUser) return <Navigate to="/login" />
+  if (!currentUser) return <Navigate to="/login" />;
 
   if (allowedRole && userRole !== allowedRole) {
-    return <Navigate to={userRole === 'patient' 
-      ? '/patient/dashboard' 
-      : '/secretary/dashboard'} 
-    />
+    return (
+      <Navigate
+        to={
+          userRole === "patient" ? "/patient/dashboard" : "/secretary/dashboard"
+        }
+      />
+    );
   }
 
-  return children
+  return children;
 }
 
 export default function App() {
@@ -55,49 +58,73 @@ export default function App() {
         <Route path="/verify-email" element={<EmailVerification />} />
 
         {/* Patient routes */}
-        <Route path="/patient/dashboard" element={
-          <ProtectedRoute allowedRole="patient">
-            <PatientDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/patient/calendar" element={
-          <ProtectedRoute allowedRole="patient">
-            <PatientCalendar />
-          </ProtectedRoute>
-        } />
-        <Route path="/patient/records" element={
-          <ProtectedRoute allowedRole="patient">
-            <PatientRecords />
-          </ProtectedRoute>
-        } />
-        <Route path="/patient/profile" element={
-          <ProtectedRoute allowedRole="patient">
-            <PatientProfile />
-          </ProtectedRoute>
-        } />
+        <Route
+          path="/patient/dashboard"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <PatientDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/calendar"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <PatientCalendar />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/records"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <PatientRecords />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/profile"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <PatientProfile />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Secretary routes */}
-        <Route path="/secretary/dashboard" element={
-          <ProtectedRoute allowedRole="secretary">
-            <SecretaryDashboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/secretary/schedule" element={
-          <ProtectedRoute allowedRole="secretary">
-            <SecretarySchedule />
-          </ProtectedRoute>
-        } />
-        <Route path="/secretary/patients" element={
-          <ProtectedRoute allowedRole="secretary">
-            <PatientList />
-          </ProtectedRoute>
-        } />
-        <Route path="/secretary/profile" element={
-          <ProtectedRoute allowedRole="secretary">
-            <SecretaryProfile />
-          </ProtectedRoute>
-        } />
+        <Route
+          path="/secretary/dashboard"
+          element={
+            <ProtectedRoute allowedRole="secretary">
+              <SecretaryDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secretary/schedule"
+          element={
+            <ProtectedRoute allowedRole="secretary">
+              <SecretarySchedule />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secretary/patients"
+          element={
+            <ProtectedRoute allowedRole="secretary">
+              <PatientList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secretary/profile"
+          element={
+            <ProtectedRoute allowedRole="secretary">
+              <SecretaryProfile />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
