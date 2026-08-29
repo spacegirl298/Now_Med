@@ -1,1 +1,0 @@
-//renders a BottomTabBar on Mobile and Sidebar on Desktop
