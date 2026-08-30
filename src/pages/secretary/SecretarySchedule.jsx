@@ -341,7 +341,9 @@ export default function SecretarySchedule() {
     } catch (err) {
       console.error(err);
       setFormError(
-        "Something went wrong saving this appointment. Please try again.",
+        err?.code === "slot-taken"
+          ? err.message
+          : "Something went wrong saving this appointment. Please try again.",
       );
     }
   }

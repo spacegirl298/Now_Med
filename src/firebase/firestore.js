@@ -14,6 +14,7 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
+  runTransaction,
   Timestamp,
 } from "firebase/firestore";
 import { db } from "./config";
@@ -290,7 +291,9 @@ export function subscribeToPatientAppointments(patientId, callback, onError) {
 export async function createAppointment(data) {
   const patientId = data.patientId || null;
 
-  const ref = await addDoc(appointmentsCol, {
+  const appointmentRef = doc(appointmentsCol);
+
+  const newAppointment = {
     patientId,
     patientName: data.patientName,
     patientIdNumber: data.patientIdNumber || "",
@@ -319,19 +322,67 @@ export async function createAppointment(data) {
     delayNote: "",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+  };
+
+  // The old version of this function checked bookedSlots on the client
+  // before calling addDoc(). That's a check-then-act race: two people
+  // can both pass the client-side check for the same date+time and both
+  // end up calling addDoc within moments of each other, so both get an
+  // appointment - a double booking. (This is the shared, practice-wide
+  // calendar - the existing UI's own conflict check is date+time only,
+  // not scoped per doctor, so we mirror that here.)
+  //
+  // A Firestore transaction closes that race: the read (checking for an
+  // existing active appointment at this date+time) and the write
+  // (creating this one) happen as a single atomic unit. If two clients
+  // race, Firestore guarantees only one transaction commits - the other
+  // automatically retries, sees the just-created appointment on its
+  // re-read, and fails with 'slot-taken' instead of silently
+  // double-booking the slot.
+  //
+  // Note: this makes concurrent *legitimate app usage* safe. It is not
+  // itself a security rule - a client that bypasses this function and
+  // writes to /appointments directly could still create a conflicting
+  // document, because the current security rules only check who is
+  // allowed to create an appointment, not whether the slot is already
+  // taken. See the note in firestore.rules for how to close that gap
+  // server-side if this needs to be a hard guarantee rather than an
+  // app-level one.
+  await runTransaction(db, async (transaction) => {
+    const conflictQuery = query(
+      appointmentsCol,
+      where("date", "==", data.date),
+      where("time", "==", data.time),
+    );
+    const conflictSnap = await transaction.get(conflictQuery);
+    const hasActiveConflict = conflictSnap.docs.some(
+      (d) => d.data().status !== "cancelled",
+    );
+
+    if (hasActiveConflict) {
+      const error = new Error(
+        "Sorry, that slot was just booked by someone else. Please pick another time.",
+      );
+      error.code = "slot-taken";
+      throw error;
+    }
+
+    transaction.set(appointmentRef, newAppointment);
   });
 
   // Only registered patients (with a uid) can receive an in-app notification.
+  // Kept outside the transaction - it's a side effect of a successful
+  // booking, not something that needs to roll back together with it.
   if (patientId) {
     await createNotification({
       recipientId: patientId,
-      appointmentId: ref.id,
+      appointmentId: appointmentRef.id,
       type: "confirmation",
       message: `Your appointment on ${data.date} at ${data.time} has been confirmed.`,
     });
   }
 
-  return ref.id;
+  return appointmentRef.id;
 }
 
 // Patients booked by a secretary before they've signed up ("walk-ins"),

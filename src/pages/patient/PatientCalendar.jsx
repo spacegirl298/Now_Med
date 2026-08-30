@@ -387,7 +387,15 @@ export default function PatientCalendar() {
       setBookingStep("confirmed");
     } catch (err) {
       console.error(err);
-      setFormError("Something went wrong booking this slot. Please try again.");
+      if (err?.code === "slot-taken") {
+        setFormError(err.message);
+        setBookingStep("time");
+        setBookingTime(null);
+      } else {
+        setFormError(
+          "Something went wrong booking this slot. Please try again.",
+        );
+      }
     }
     setSaving(false);
   }
