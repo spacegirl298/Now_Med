@@ -13,7 +13,6 @@ import {
   where,
   onSnapshot,
   serverTimestamp,
-  setDoc,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./config";
@@ -297,6 +296,8 @@ export async function createAppointment(data) {
     patientPhone: data.patientPhone || "",
     contactMethod: data.contactMethod || "",
     secretaryId: data.secretaryId || null,
+    doctorId: data.doctorId || null,
+    doctorName: data.doctorName || "",
     date: data.date,
     time: data.time,
     type: data.type || "in-person",
@@ -621,23 +622,68 @@ export async function unblockGroup(groupId) {
   await batch.commit();
 }
 
-// ================= PRACTICE / DOCTOR PROFILE =================
-// Single shared document describing the practice's doctor, editable by any secretary.
+// ================= DOCTORS =================
+// One doc per doctor at the practice, editable by any secretary. Patients
+// pick one of these when booking (see createAppointment's doctorId/doctorName),
+// but the schedule/calendar itself stays shared across all doctors rather
+// than being split per-doctor.
 
-const DOCTOR_PROFILE_ID = "doctorProfile";
+const doctorsCol = collection(db, "doctors");
 
-export async function getDoctorProfile() {
-  const snap = await getDoc(doc(db, "practice", DOCTOR_PROFILE_ID));
-  return snap.exists() ? snap.data() : null;
+// Live subscription — used wherever the doctor list should stay in sync as
+// the secretary adds/edits/removes doctors (secretary profile, patient
+// dashboard, booking flow).
+export function subscribeToDoctors(callback, onError) {
+  return onSnapshot(
+    doctorsCol,
+    (snap) => {
+      const doctors = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      callback(doctors);
+    },
+    onError,
+  );
 }
 
-export async function saveDoctorProfile(data) {
-  await setDoc(
-    doc(db, "practice", DOCTOR_PROFILE_ID),
-    {
-      ...data,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+// One-time fetch, for places that don't need live updates.
+export async function getDoctors() {
+  const snap = await getDocs(doctorsCol);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+}
+
+export async function getDoctorById(doctorId) {
+  if (!doctorId) return null;
+  const snap = await getDoc(doc(db, "doctors", doctorId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function addDoctor(data) {
+  const ref = await addDoc(doctorsCol, {
+    name: data.name || "",
+    specialty: data.specialty || "",
+    certifications: data.certifications || "",
+    bio: data.bio || "",
+    contact: data.contact || "",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateDoctor(doctorId, data) {
+  await updateDoc(doc(db, "doctors", doctorId), {
+    name: data.name || "",
+    specialty: data.specialty || "",
+    certifications: data.certifications || "",
+    bio: data.bio || "",
+    contact: data.contact || "",
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteDoctor(doctorId) {
+  await deleteDoc(doc(db, "doctors", doctorId));
 }

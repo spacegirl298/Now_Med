@@ -42,12 +42,12 @@ import {
   MONTH_NAMES,
 } from "../../utils/dateHelpers";
 import {
-  getDoctorProfile,
+  getDoctors,
   subscribeToBookedSlots,
   subscribeToBlockedSlots,
 } from "../../firebase/firestore";
 
-const EMPTY_FORM = { type: "in-person" };
+const EMPTY_FORM = { type: "in-person", doctorId: "" };
 
 // A booking made 3+ days out needs the practice to call and confirm it with
 // the patient before it's locked in; anything sooner is confirmed instantly.
@@ -110,7 +110,7 @@ export default function PatientCalendar() {
 
   const [bookedSlots, setBookedSlots] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
-  const [doctorName, setDoctorName] = useState("");
+  const [doctors, setDoctors] = useState([]);
 
   // Booking flow: null | 'time' | 'confirm' | 'confirmed'
   const [bookingStep, setBookingStep] = useState(null);
@@ -134,10 +134,13 @@ export default function PatientCalendar() {
   }, []);
 
   useEffect(() => {
-    getDoctorProfile()
-      .then((p) => setDoctorName(p?.name || p?.doctorName || ""))
-      .catch(() => setDoctorName(""));
+    getDoctors()
+      .then(setDoctors)
+      .catch(() => setDoctors([]));
   }, []);
+
+  // The doctor currently selected in the booking form, if any.
+  const selectedDoctor = doctors.find((d) => d.id === form.doctorId) || null;
 
   const grid = useMemo(
     () => getMonthGrid(viewYear, viewMonth),
@@ -262,7 +265,13 @@ export default function PatientCalendar() {
     if (isPastDate(dateStr) || isDayBlocked) return;
     setSelectedDate(dateStr);
     setBookingTime(null);
-    setForm(EMPTY_FORM);
+    // Pre-select the doctor when there's only one, so the flow isn't slowed
+    // down for the common single-doctor practice; with several, the patient
+    // picks explicitly.
+    setForm({
+      ...EMPTY_FORM,
+      doctorId: doctors.length === 1 ? doctors[0].id : "",
+    });
     setFormError("");
     setBookingStep("time");
   }
@@ -286,6 +295,10 @@ export default function PatientCalendar() {
 
   function goToConfirmStep() {
     if (!bookingTime) return;
+    if (doctors.length > 0 && !form.doctorId) {
+      setFormError("Please choose a doctor to continue.");
+      return;
+    }
     setFormError("");
     setBookingStep("confirm");
   }
@@ -311,6 +324,8 @@ export default function PatientCalendar() {
         patientId: currentUser.uid,
         patientName: userName || currentUser?.email,
         secretaryId: null,
+        doctorId: selectedDoctor?.id || null,
+        doctorName: selectedDoctor?.name || "",
         date: selectedDate,
         time: bookingTime,
         type: form.type,
@@ -321,6 +336,7 @@ export default function PatientCalendar() {
         time: bookingTime,
         type: form.type,
         status,
+        doctorName: selectedDoctor?.name || "",
       });
       setBookingStep("confirmed");
     } catch (err) {
@@ -584,6 +600,39 @@ export default function PatientCalendar() {
         hideFooter
       >
         <div className="flex flex-col gap-4">
+          {doctors.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-ink mb-2">
+                Who would you like to see?
+              </p>
+              <div className="flex flex-col gap-2">
+                {doctors.map((doc) => (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, doctorId: doc.id })}
+                    className={`text-left rounded-xl border px-4 py-3 transition-colors ${
+                      form.doctorId === doc.id
+                        ? "bg-rose text-white border-rose"
+                        : "border-stone text-ink hover:border-rose"
+                    }`}
+                  >
+                    <p className="text-sm font-medium">{doc.name}</p>
+                    {doc.specialty && (
+                      <p
+                        className={`text-xs ${
+                          form.doctorId === doc.id ? "text-white/80" : "text-slate"
+                        }`}
+                      >
+                        {doc.specialty}
+                      </p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -664,7 +713,7 @@ export default function PatientCalendar() {
 
           <button
             onClick={goToConfirmStep}
-            disabled={!bookingTime}
+            disabled={!bookingTime || (doctors.length > 0 && !form.doctorId)}
             className="w-full bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             Review booking <ArrowRight size={16} />
@@ -687,7 +736,10 @@ export default function PatientCalendar() {
               <p className="text-sm font-semibold text-ink">Booking summary</p>
             </div>
             <div className="divide-y divide-sand">
-              <SummaryRow label="Doctor" value={doctorName || "The practice's doctor"} />
+              <SummaryRow
+                label="Doctor"
+                value={selectedDoctor?.name || "The practice's doctor"}
+              />
               <SummaryRow
                 label="Date"
                 value={`${formatShortDate(selectedDate)} ${parseDate(selectedDate).getFullYear()}`}
@@ -758,7 +810,9 @@ export default function PatientCalendar() {
               >
                 {confirmedBooking.status === "booked" ? "You're on the books!" : "You're booked!"}
               </p>
-              <p className="text-sm text-ink">{doctorName || "The practice's doctor"}</p>
+              <p className="text-sm text-ink">
+                {confirmedBooking.doctorName || "The practice's doctor"}
+              </p>
               <p className="text-sm text-slate">
                 {formatShortDate(confirmedBooking.date)}{" "}
                 {parseDate(confirmedBooking.date).getFullYear()} ·{" "}
@@ -774,7 +828,9 @@ export default function PatientCalendar() {
                 Back to dashboard
               </button>
               <button
-                onClick={() => downloadAppointmentICS(confirmedBooking, doctorName)}
+                onClick={() =>
+                  downloadAppointmentICS(confirmedBooking, confirmedBooking.doctorName)
+                }
                 className="w-full border border-stone text-ink rounded-xl py-3 font-medium hover:border-rose transition-colors"
               >
                 Add to calendar

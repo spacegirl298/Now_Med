@@ -29,7 +29,7 @@ import {
 } from "../../utils/dateHelpers";
 import {
   subscribeToPatientRecords,
-  getDoctorProfile,
+  getDoctors,
 } from "../../firebase/firestore";
 
 export default function PatientDashboard() {
@@ -38,7 +38,7 @@ export default function PatientDashboard() {
   const navigate = useNavigate();
 
   const [records, setRecords] = useState([]);
-  const [doctorProfile, setDoctorProfile] = useState(null);
+  const [doctors, setDoctors] = useState([]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -52,11 +52,11 @@ export default function PatientDashboard() {
   }, [currentUser]);
 
   useEffect(() => {
-    // One-time fetch is enough here - the doctor/practice profile changes
-    // rarely, unlike appointments and records which need live updates.
-    getDoctorProfile()
-      .then(setDoctorProfile)
-      .catch(() => setDoctorProfile(null));
+    // One-time fetch is enough here - the doctor list changes rarely, unlike
+    // appointments and records which need live updates.
+    getDoctors()
+      .then(setDoctors)
+      .catch(() => setDoctors([]));
   }, []);
 
   const today = getTodayString();
@@ -196,41 +196,48 @@ export default function PatientDashboard() {
           </button>
         </Card>
 
-        {/* About your doctor */}
-        {doctorProfile?.name && (
-          <Card className="mb-6">
-            <div className="flex items-start gap-3">
-              <div className="w-11 h-11 rounded-full bg-mist flex items-center justify-center shrink-0">
-                <Stethoscope size={20} className="text-rose" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-ink">{doctorProfile.name}</h2>
-                {doctorProfile.certifications && (
-                  <p className="text-xs text-slate">
-                    {doctorProfile.certifications}
-                  </p>
-                )}
-                {doctorProfile.specialty && (
-                  <span className="inline-block mt-2 px-3 py-1 rounded-full bg-blush text-plum text-xs font-medium">
-                    {doctorProfile.specialty}
-                  </span>
-                )}
-              </div>
+        {/* Our doctors */}
+        {doctors.length > 0 && (
+          <div className="mb-6">
+            <h2 className="font-semibold text-ink mb-3">Our doctors</h2>
+            <div className="flex flex-col gap-4">
+              {doctors.map((doctor) => (
+                <Card key={doctor.id}>
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-full bg-mist flex items-center justify-center shrink-0">
+                      <Stethoscope size={20} className="text-rose" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-ink">{doctor.name}</h3>
+                      {doctor.certifications && (
+                        <p className="text-xs text-slate">
+                          {doctor.certifications}
+                        </p>
+                      )}
+                      {doctor.specialty && (
+                        <span className="inline-block mt-2 px-3 py-1 rounded-full bg-blush text-plum text-xs font-medium">
+                          {doctor.specialty}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {doctor.bio && (
+                    <p className="text-sm text-slate mt-4 leading-relaxed">
+                      {doctor.bio}
+                    </p>
+                  )}
+
+                  {doctor.contact && (
+                    <div className="flex items-center gap-2 mt-4 pt-4 border-t border-sand">
+                      <Phone size={14} className="text-slate shrink-0" />
+                      <p className="text-xs text-slate">{doctor.contact}</p>
+                    </div>
+                  )}
+                </Card>
+              ))}
             </div>
-
-            {doctorProfile.bio && (
-              <p className="text-sm text-slate mt-4 leading-relaxed">
-                {doctorProfile.bio}
-              </p>
-            )}
-
-            {doctorProfile.contact && (
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-sand">
-                <Phone size={14} className="text-slate shrink-0" />
-                <p className="text-xs text-slate">{doctorProfile.contact}</p>
-              </div>
-            )}
-          </Card>
+          </div>
         )}
 
         {/* Upcoming appointments */}
