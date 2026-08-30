@@ -71,6 +71,7 @@ export default function SecretarySchedule() {
     deleteAppointment,
     cancelAppointment,
     markAppointmentDelay,
+    markPatientLate,
   } = useAppointments();
 
   const today = new Date();
@@ -89,6 +90,10 @@ export default function SecretarySchedule() {
   const [delayTarget, setDelayTarget] = useState(null);
   const [delayMinutes, setDelayMinutes] = useState(DELAY_OPTIONS[0]);
   const [delayNote, setDelayNote] = useState("");
+
+  const [lateTarget, setLateTarget] = useState(null);
+  const [lateMinutes, setLateMinutes] = useState(DELAY_OPTIONS[0]);
+  const [lateNote, setLateNote] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
@@ -270,7 +275,9 @@ export default function SecretarySchedule() {
       if (!form.patientName.trim())
         return setFormError("Please enter the patient's name.");
       if (!form.patientIdNumber.trim())
-        return setFormError("Please enter the patient's ID or passport number.");
+        return setFormError(
+          "Please enter the patient's ID or passport number.",
+        );
     }
 
     try {
@@ -331,6 +338,14 @@ export default function SecretarySchedule() {
     setDelayNote("");
   }
 
+  async function handleConfirmLate() {
+    if (!lateTarget) return;
+    await markPatientLate(lateTarget, lateMinutes, lateNote);
+    setLateTarget(null);
+    setLateMinutes(DELAY_OPTIONS[0]);
+    setLateNote("");
+  }
+
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
     await deleteAppointment(deleteTarget.id);
@@ -350,7 +365,9 @@ export default function SecretarySchedule() {
       setCancelTarget(null);
     } catch (err) {
       console.error("Failed to cancel appointment:", err);
-      setCancelError("Something went wrong cancelling this appointment. Please try again.");
+      setCancelError(
+        "Something went wrong cancelling this appointment. Please try again.",
+      );
     }
     setCancelling(false);
   }
@@ -526,7 +543,9 @@ export default function SecretarySchedule() {
                     key={cell.dateStr}
                     onClick={() => setSelectedDate(cell.dateStr)}
                     onDoubleClick={() => handleDayDoubleClick(cell.dateStr)}
-                    title={isPast ? "Past date - view only" : "Double-click to book"}
+                    title={
+                      isPast ? "Past date - view only" : "Double-click to book"
+                    }
                     className={`aspect-square rounded-lg text-sm flex flex-col items-center justify-center gap-0.5 transition-colors
                       ${!cell.inMonth ? "text-stone" : isPast ? "text-slate" : "text-ink"}
                       ${isSelected ? "bg-rose text-white" : isToday(cell.dateStr) ? "bg-blush" : "hover:bg-mist"}`}
@@ -589,9 +608,7 @@ export default function SecretarySchedule() {
                     className="flex items-center justify-between gap-3"
                   >
                     <div>
-                      <p className="text-xs font-medium text-ink">
-                        {g.title}
-                      </p>
+                      <p className="text-xs font-medium text-ink">{g.title}</p>
                       <p className="text-xs text-slate">
                         {formatTime(g.times[0])} –{" "}
                         {formatTime(
@@ -644,7 +661,8 @@ export default function SecretarySchedule() {
                           {formatTime(a.time)} · {a.patientName}
                           {!a.patientId && a.patientIdNumber && (
                             <span className="text-slate font-normal">
-                              {" "}(ID: {a.patientIdNumber})
+                              {" "}
+                              (ID: {a.patientIdNumber})
                             </span>
                           )}
                         </p>
@@ -656,6 +674,12 @@ export default function SecretarySchedule() {
                           <p className="text-xs text-amber mt-1">
                             Running {a.delayMinutes} min late → now{" "}
                             {formatTime(a.delayedTime)}
+                          </p>
+                        )}
+                        {typeof a.patientLateMinutes === "number" && (
+                          <p className="text-xs text-slate mt-1">
+                            Patient arrived {a.patientLateMinutes} min late
+                            {a.patientLateNote ? ` — ${a.patientLateNote}` : ""}
                           </p>
                         )}
                         {a.status === "confirmed" && a.confirmedVia && (
@@ -710,6 +734,12 @@ export default function SecretarySchedule() {
                         <Clock size={13} /> Mark delay
                       </button>
                       <button
+                        onClick={() => setLateTarget(a)}
+                        className="text-xs font-medium text-slate hover:underline flex items-center gap-1"
+                      >
+                        <Clock size={13} /> Mark patient late
+                      </button>
+                      <button
                         onClick={() => openEditModal(a)}
                         className="text-xs font-medium text-slate hover:underline flex items-center gap-1"
                       >
@@ -758,9 +788,13 @@ export default function SecretarySchedule() {
               <button
                 type="button"
                 onClick={() => {
-                  setForm({ ...EMPTY_FORM, bookingMode: "existing", time: form.time })
-                  setPatientSearchTerm("")
-                  setShowPatientDropdown(false)
+                  setForm({
+                    ...EMPTY_FORM,
+                    bookingMode: "existing",
+                    time: form.time,
+                  });
+                  setPatientSearchTerm("");
+                  setShowPatientDropdown(false);
                 }}
                 className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
                   form.bookingMode === "existing"
@@ -773,9 +807,13 @@ export default function SecretarySchedule() {
               <button
                 type="button"
                 onClick={() => {
-                  setForm({ ...EMPTY_FORM, bookingMode: "new", time: form.time })
-                  setPatientSearchTerm("")
-                  setShowPatientDropdown(false)
+                  setForm({
+                    ...EMPTY_FORM,
+                    bookingMode: "new",
+                    time: form.time,
+                  });
+                  setPatientSearchTerm("");
+                  setShowPatientDropdown(false);
                 }}
                 className={`flex-1 rounded-xl py-2.5 text-sm font-medium border transition-colors ${
                   form.bookingMode === "new"
@@ -794,7 +832,10 @@ export default function SecretarySchedule() {
               <div className="w-full border border-stone rounded-xl px-4 py-3 text-ink bg-sand">
                 {form.patientName || "Unnamed patient"}
                 {!form.patientId && form.patientIdNumber && (
-                  <span className="text-slate"> (ID: {form.patientIdNumber})</span>
+                  <span className="text-slate">
+                    {" "}
+                    (ID: {form.patientIdNumber})
+                  </span>
                 )}
               </div>
             </div>
@@ -805,11 +846,17 @@ export default function SecretarySchedule() {
                 value={patientSearchTerm}
                 onChange={(e) => {
                   setPatientSearchTerm(e.target.value);
-                  setForm({ ...form, patientId: "", patientName: e.target.value });
+                  setForm({
+                    ...form,
+                    patientId: "",
+                    patientName: e.target.value,
+                  });
                   setShowPatientDropdown(true);
                 }}
                 onFocus={() => setShowPatientDropdown(true)}
-                onBlur={() => setTimeout(() => setShowPatientDropdown(false), 150)}
+                onBlur={() =>
+                  setTimeout(() => setShowPatientDropdown(false), 150)
+                }
                 placeholder="Search patients by name, email, or ID..."
                 autoComplete="off"
                 className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
@@ -817,20 +864,27 @@ export default function SecretarySchedule() {
               {showPatientDropdown && (
                 <div className="absolute z-10 mt-1 w-full bg-white border border-stone rounded-xl max-h-48 overflow-y-auto shadow-lg">
                   {filteredPatientOptions.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-slate">No patients match that search.</p>
+                    <p className="px-4 py-3 text-sm text-slate">
+                      No patients match that search.
+                    </p>
                   ) : (
                     filteredPatientOptions.map((p) => (
                       <button
                         type="button"
                         key={p.id}
                         onMouseDown={() => {
-                          setForm({ ...form, patientId: p.id, patientName: p.name });
+                          setForm({
+                            ...form,
+                            patientId: p.id,
+                            patientName: p.name,
+                          });
                           setPatientSearchTerm(p.name);
                           setShowPatientDropdown(false);
                         }}
                         className="w-full text-left px-4 py-2.5 text-sm text-ink hover:bg-mist transition-colors"
                       >
-                        {p.name} {p.idNumber ? `· ID: ${p.idNumber}` : `(${p.email})`}
+                        {p.name}{" "}
+                        {p.idNumber ? `· ID: ${p.idNumber}` : `(${p.email})`}
                       </button>
                     ))
                   )}
@@ -840,20 +894,28 @@ export default function SecretarySchedule() {
           ) : (
             <div className="flex flex-col gap-4">
               <div>
-                <label className="text-xs text-slate mb-1 block">Patient's full name</label>
+                <label className="text-xs text-slate mb-1 block">
+                  Patient's full name
+                </label>
                 <input
                   value={form.patientName}
-                  onChange={(e) => setForm({ ...form, patientName: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, patientName: e.target.value })
+                  }
                   placeholder="e.g. Thandiwe Nkosi"
                   className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate mb-1 block">ID type</label>
+                  <label className="text-xs text-slate mb-1 block">
+                    ID type
+                  </label>
                   <select
                     value={form.patientIdType}
-                    onChange={(e) => setForm({ ...form, patientIdType: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, patientIdType: e.target.value })
+                    }
                     className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
                   >
                     <option value="sa_id">SA ID</option>
@@ -861,29 +923,41 @@ export default function SecretarySchedule() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-slate mb-1 block">ID / passport number</label>
+                  <label className="text-xs text-slate mb-1 block">
+                    ID / passport number
+                  </label>
                   <input
                     value={form.patientIdNumber}
-                    onChange={(e) => setForm({ ...form, patientIdNumber: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, patientIdNumber: e.target.value })
+                    }
                     placeholder="e.g. 9001015800086"
                     className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
                   />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate mb-1 block">Phone number</label>
+                <label className="text-xs text-slate mb-1 block">
+                  Phone number
+                </label>
                 <input
                   value={form.patientPhone}
-                  onChange={(e) => setForm({ ...form, patientPhone: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, patientPhone: e.target.value })
+                  }
                   placeholder="e.g. 082 123 4567"
                   className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate mb-1 block">How were they contacted?</label>
+                <label className="text-xs text-slate mb-1 block">
+                  How were they contacted?
+                </label>
                 <select
                   value={form.contactMethod}
-                  onChange={(e) => setForm({ ...form, contactMethod: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, contactMethod: e.target.value })
+                  }
                   className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
                 >
                   <option value="in-person">In person</option>
@@ -990,6 +1064,57 @@ export default function SecretarySchedule() {
             {formatTime(addMinutesToTime(delayTarget.time, delayMinutes))}.
           </p>
         )}
+      </Modal>
+
+      {/* Mark patient late modal - records lateness on the patient's side of
+          the same appointment, for the practice's own record-keeping. Unlike
+          "Mark delay" above, this doesn't change the appointment status or
+          notify the patient (it's a record of something that already
+          happened, not a heads-up about something upcoming). */}
+      <Modal
+        isOpen={!!lateTarget}
+        onClose={() => setLateTarget(null)}
+        title={
+          lateTarget
+            ? `${lateTarget.patientName} · ${formatTime(lateTarget.time)}`
+            : ""
+        }
+        confirmLabel="Confirm patient was late"
+        confirmVariant="primary"
+        onConfirm={handleConfirmLate}
+      >
+        <p className="text-sm text-slate mb-3">
+          How late did the patient arrive?
+        </p>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {DELAY_OPTIONS.map((mins) => (
+            <button
+              key={mins}
+              onClick={() => setLateMinutes(mins)}
+              className={`rounded-xl py-3 text-sm font-medium border transition-colors ${
+                lateMinutes === mins
+                  ? "bg-rose text-white border-rose"
+                  : "border-stone text-ink hover:border-rose"
+              }`}
+            >
+              {mins} min{mins === 45 ? "+" : ""}
+            </button>
+          ))}
+        </div>
+        <label className="text-xs text-slate mb-1 block">
+          Note (optional, for the practice's own record)
+        </label>
+        <textarea
+          value={lateNote}
+          onChange={(e) => setLateNote(e.target.value)}
+          rows={2}
+          placeholder="e.g. Called ahead to say they were running behind"
+          className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+        />
+        <p className="text-xs text-slate mt-3">
+          This is recorded for the practice. The patient will only see a simple
+          "arrived late" note on their own side, not the exact time.
+        </p>
       </Modal>
 
       {/* Cancel confirmation modal */}

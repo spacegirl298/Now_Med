@@ -10,6 +10,7 @@ import {
   deleteAppointment,
   cancelAppointment,
   markAppointmentDelay,
+  markPatientLate,
 } from '../firebase/firestore'
 
 export function useAppointments() {
@@ -57,5 +58,6 @@ export function useAppointments() {
     deleteAppointment,
     cancelAppointment,
     markAppointmentDelay,
+    markPatientLate,
   }
 }

@@ -425,6 +425,19 @@ export async function cancelAppointment(appointment) {
   }
 }
 
+// Secretary marks that the patient arrived late (the reverse of
+// markAppointmentDelay above - "dual accountability" per the PRD, so the
+// practice has a record of lateness on both sides). Deliberately does NOT
+// touch the main `status` field: the patient still attended and whatever
+// status applied before (booked/confirmed) still applies, this is an
+// orthogonal record of lateness, not a replacement status.
+export async function markPatientLate(appointment, minutesLate, note) {
+  await updateAppointment(appointment.id, {
+    patientLateMinutes: minutesLate,
+    patientLateNote: note || "",
+  });
+}
+
 // Secretary marks a delay: updates the appointment and pushes a notification
 // to the affected patient in the same write batch of work.
 export async function markAppointmentDelay(

@@ -549,6 +549,11 @@ export default function PatientCalendar() {
                                 {formatTime(a.delayedTime)}
                               </p>
                             )}
+                            {typeof a.patientLateMinutes === "number" && (
+                              <p className="text-xs text-slate mt-1">
+                                Recorded as arriving late for this appointment
+                              </p>
+                            )}
                           </div>
                           <Badge status={a.status} />
                         </div>
