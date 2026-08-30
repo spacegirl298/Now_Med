@@ -12,6 +12,7 @@ import {
   CalendarCheck,
   CalendarClock,
   Stethoscope,
+  Phone,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -199,24 +200,36 @@ export default function PatientDashboard() {
         {doctorProfile?.name && (
           <Card className="mb-6">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-mist flex items-center justify-center shrink-0">
-                <Stethoscope size={18} className="text-rose" />
+              <div className="w-11 h-11 rounded-full bg-mist flex items-center justify-center shrink-0">
+                <Stethoscope size={20} className="text-rose" />
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className="font-semibold text-ink">{doctorProfile.name}</h2>
                 {doctorProfile.certifications && (
-                  <p className="text-xs text-slate mb-2">
+                  <p className="text-xs text-slate">
                     {doctorProfile.certifications}
                   </p>
                 )}
-                {doctorProfile.bio && (
-                  <p className="text-sm text-slate mb-2">{doctorProfile.bio}</p>
-                )}
-                {doctorProfile.contact && (
-                  <p className="text-xs text-slate">{doctorProfile.contact}</p>
+                {doctorProfile.specialty && (
+                  <span className="inline-block mt-2 px-3 py-1 rounded-full bg-blush text-plum text-xs font-medium">
+                    {doctorProfile.specialty}
+                  </span>
                 )}
               </div>
             </div>
+
+            {doctorProfile.bio && (
+              <p className="text-sm text-slate mt-4 leading-relaxed">
+                {doctorProfile.bio}
+              </p>
+            )}
+
+            {doctorProfile.contact && (
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-sand">
+                <Phone size={14} className="text-slate shrink-0" />
+                <p className="text-xs text-slate">{doctorProfile.contact}</p>
+              </div>
+            )}
           </Card>
         )}
 
