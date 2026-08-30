@@ -420,29 +420,37 @@ export async function deleteAppointment(appointmentId) {
   await deleteDoc(doc(db, "appointments", appointmentId));
 }
 
-export async function cancelAppointment(appointment, userId) {
+export async function cancelAppointment(appointment, userId, options = {}) {
   if (!appointment?.id) throw new Error("Missing appointment id.");
 
-  // The Firestore rule is the final authority. This check is only here so
-  // the patient gets a friendly message instead of a permission error.
-  const appointmentDate = appointment.appointmentAt?.toDate
-    ? appointment.appointmentAt.toDate()
-    : new Date(`${appointment.date}T${appointment.time}:00`);
-  const hoursUntilAppointment =
-    (appointmentDate.getTime() - Date.now()) / (1000 * 60 * 60);
+  // The 3-hour window is a patient-facing rule (don't let someone cancel
+  // online at the last minute) - it was never meant to stop the practice's
+  // own staff from cancelling an appointment whenever they need to. Pass
+  // { isStaff: true } from secretary/staff call sites to skip it.
+  const { isStaff = false } = options;
 
-  if (!Number.isFinite(hoursUntilAppointment)) {
-    throw new Error("This appointment does not have a valid date and time.");
-  }
+  if (!isStaff) {
+    // The Firestore rule is the final authority. This check is only here so
+    // the patient gets a friendly message instead of a permission error.
+    const appointmentDate = appointment.appointmentAt?.toDate
+      ? appointment.appointmentAt.toDate()
+      : new Date(`${appointment.date}T${appointment.time}:00`);
+    const hoursUntilAppointment =
+      (appointmentDate.getTime() - Date.now()) / (1000 * 60 * 60);
 
-  if (hoursUntilAppointment <= 3) {
-    const error = new Error(
-      hoursUntilAppointment <= 2
-        ? "This appointment is within 2 hours and cannot be cancelled online. Please contact the practice to cancel or reschedule."
-        : "This appointment is less than 3 hours away and cannot be cancelled online. Please contact the practice to cancel or reschedule.",
-    );
-    error.code = "late-cancellation";
-    throw error;
+    if (!Number.isFinite(hoursUntilAppointment)) {
+      throw new Error("This appointment does not have a valid date and time.");
+    }
+
+    if (hoursUntilAppointment <= 3) {
+      const error = new Error(
+        hoursUntilAppointment <= 2
+          ? "This appointment is within 2 hours and cannot be cancelled online. Please contact the practice to cancel or reschedule."
+          : "This appointment is less than 3 hours away and cannot be cancelled online. Please contact the practice to cancel or reschedule.",
+      );
+      error.code = "late-cancellation";
+      throw error;
+    }
   }
 
   await updateAppointment(appointment.id, {

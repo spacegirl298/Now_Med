@@ -53,6 +53,16 @@ const EMPTY_FORM = { type: "in-person", doctorId: "" };
 // the patient before it's locked in; anything sooner is confirmed instantly.
 const CONFIRMATION_WINDOW_DAYS = 3;
 
+// Only meaningful for today - any time slot on a future date is fine, and
+// isPastDate() already rules out past dates entirely.
+function isPastTimeSlot(dateStr, timeStr) {
+  if (!isToday(dateStr)) return false;
+  const [h, m] = timeStr.split(":").map(Number);
+  const slot = new Date();
+  slot.setHours(h, m, 0, 0);
+  return slot.getTime() <= Date.now();
+}
+
 function daysFromToday(dateStr) {
   const diffMs = parseDate(dateStr) - parseDate(getTodayString());
   return Math.round(diffMs / 86400000);
@@ -241,10 +251,29 @@ export default function PatientCalendar() {
     [blockedSlots, selectedDate],
   );
 
+  const allTimeSlotsForPastCheck = useMemo(() => generateTimeSlots(), []);
+
+  const pastTimesForSelectedDay = useMemo(() => {
+    if (!isToday(selectedDate)) return new Set();
+    return new Set(
+      allTimeSlotsForPastCheck.filter((t) =>
+        isPastTimeSlot(selectedDate, t),
+      ),
+    );
+  }, [allTimeSlotsForPastCheck, selectedDate]);
+
   const hasUnavailableSlot =
-    takenTimesForSelectedDay.size > 0 || blockedTimesForSelectedDay.size > 0;
+    takenTimesForSelectedDay.size > 0 ||
+    blockedTimesForSelectedDay.size > 0 ||
+    pastTimesForSelectedDay.size > 0;
 
   const selectedDateIsPast = isPastDate(selectedDate);
+
+  // True once every slot today has already gone by, so booking today is no
+  // longer possible even though the date itself isn't "past" yet.
+  const noSlotsLeftToday =
+    isToday(selectedDate) &&
+    pastTimesForSelectedDay.size >= allTimeSlotsForPastCheck.length;
 
   function goToPrevMonth() {
     if (viewMonth === 0) {
@@ -265,6 +294,11 @@ export default function PatientCalendar() {
 
   function openBookingFlow(dateStr = selectedDate) {
     if (isPastDate(dateStr) || isDayBlocked) return;
+    if (
+      isToday(dateStr) &&
+      allTimeSlotsForPastCheck.every((t) => isPastTimeSlot(dateStr, t))
+    )
+      return;
     setSelectedDate(dateStr);
     setBookingTime(null);
     // Pre-select the doctor when there's only one, so the flow isn't slowed
@@ -291,7 +325,11 @@ export default function PatientCalendar() {
   }
 
   function selectTime(t) {
-    if (takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t))
+    if (
+      takenTimesForSelectedDay.has(t) ||
+      blockedTimesForSelectedDay.has(t) ||
+      pastTimesForSelectedDay.has(t)
+    )
       return;
     setBookingTime(t);
   }
@@ -311,10 +349,13 @@ export default function PatientCalendar() {
     if (
       isDayBlocked ||
       takenTimesForSelectedDay.has(bookingTime) ||
-      blockedTimesForSelectedDay.has(bookingTime)
+      blockedTimesForSelectedDay.has(bookingTime) ||
+      pastTimesForSelectedDay.has(bookingTime)
     ) {
       setFormError(
-        "Sorry, that slot was just taken. Please pick another time.",
+        pastTimesForSelectedDay.has(bookingTime)
+          ? "That time has already passed. Please pick another time."
+          : "Sorry, that slot was just taken. Please pick another time.",
       );
       setBookingStep("time");
       setBookingTime(null);
@@ -409,13 +450,15 @@ export default function PatientCalendar() {
           </div>
           <button
             onClick={() => openBookingFlow()}
-            disabled={selectedDateIsPast || isDayBlocked}
+            disabled={selectedDateIsPast || isDayBlocked || noSlotsLeftToday}
             title={
               selectedDateIsPast
                 ? "Can't book a date that has passed"
                 : isDayBlocked
                   ? "The practice isn't taking bookings on this day"
-                  : undefined
+                  : noSlotsLeftToday
+                    ? "No time slots left today"
+                    : undefined
             }
             className="hidden md:flex items-center gap-2 bg-rose text-white rounded-xl px-5 py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose"
           >
@@ -524,8 +567,8 @@ export default function PatientCalendar() {
               </div>
               <button
                 onClick={() => openBookingFlow()}
-                disabled={selectedDateIsPast || isDayBlocked}
-                title="Add appointment"
+                disabled={selectedDateIsPast || isDayBlocked || noSlotsLeftToday}
+                title={noSlotsLeftToday ? "No time slots left today" : "Add appointment"}
                 className="p-2 rounded-lg text-slate hover:bg-mist disabled:opacity-40"
               >
                 <Plus size={18} />
@@ -566,7 +609,7 @@ export default function PatientCalendar() {
 
                 <button
                   onClick={() => openBookingFlow()}
-                  disabled={selectedDateIsPast}
+                  disabled={selectedDateIsPast || noSlotsLeftToday}
                   className="md:hidden w-full flex items-center justify-center gap-2 bg-rose text-white py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus size={18} /> Add appointment
@@ -582,10 +625,14 @@ export default function PatientCalendar() {
                     title="No appointments"
                     message="You don't have anything booked on this day yet."
                     actionLabel={
-                      selectedDateIsPast ? undefined : "Add appointment"
+                      selectedDateIsPast || noSlotsLeftToday
+                        ? undefined
+                        : "Add appointment"
                     }
                     onAction={
-                      selectedDateIsPast ? undefined : () => openBookingFlow()
+                      selectedDateIsPast || noSlotsLeftToday
+                        ? undefined
+                        : () => openBookingFlow()
                     }
                   />
                 ) : (
@@ -717,7 +764,8 @@ export default function PatientCalendar() {
                   selected={bookingTime === t}
                   taken={
                     takenTimesForSelectedDay.has(t) ||
-                    blockedTimesForSelectedDay.has(t)
+                    blockedTimesForSelectedDay.has(t) ||
+                    pastTimesForSelectedDay.has(t)
                   }
                   onClick={() => selectTime(t)}
                 />
@@ -735,7 +783,8 @@ export default function PatientCalendar() {
                   selected={bookingTime === t}
                   taken={
                     takenTimesForSelectedDay.has(t) ||
-                    blockedTimesForSelectedDay.has(t)
+                    blockedTimesForSelectedDay.has(t) ||
+                    pastTimesForSelectedDay.has(t)
                   }
                   onClick={() => selectTime(t)}
                 />
@@ -753,14 +802,14 @@ export default function PatientCalendar() {
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-mist inline-block" />
-                Taken
+                Unavailable
               </span>
             </div>
           </div>
 
           {hasUnavailableSlot && (
             <p className="text-xs text-rose bg-blush rounded-xl px-4 py-2 text-center">
-              Taken slots are visible but not selectable
+              Unavailable slots are visible but not selectable
             </p>
           )}
 
@@ -977,7 +1026,7 @@ function TimeSlotButton({ time, selected, taken, onClick }) {
       <button
         type="button"
         disabled
-        title="Taken"
+        title="Unavailable"
         className={`${base} bg-mist text-stone border-mist cursor-not-allowed`}
       >
         {formatTime(time)}

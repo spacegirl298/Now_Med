@@ -47,6 +47,16 @@ import {
   sendConfirmationReminder,
 } from "../../firebase/firestore";
 
+// Only meaningful for today - any time slot on a future date is fine, and
+// isPastDate() already rules out past dates entirely.
+function isPastTimeSlot(dateStr, timeStr) {
+  if (!isToday(dateStr)) return false;
+  const [h, m] = timeStr.split(":").map(Number);
+  const slot = new Date();
+  slot.setHours(h, m, 0, 0);
+  return slot.getTime() <= Date.now();
+}
+
 const EMPTY_FORM = {
   bookingMode: "existing", // 'existing' patient on file, or a 'new' walk-in/phone/email patient
   patientId: "",
@@ -184,7 +194,9 @@ export default function SecretarySchedule() {
       .map((a) => a.time),
   );
   const availableTimeOptions = generateTimeSlots().filter(
-    (t) => !bookedTimesForSelectedDay.has(t),
+    (t) =>
+      !bookedTimesForSelectedDay.has(t) &&
+      !isPastTimeSlot(selectedDate, t),
   );
 
   const filteredPatientOptions = useMemo(() => {
@@ -267,6 +279,11 @@ export default function SecretarySchedule() {
       );
     }
     if (!form.time) return setFormError("Please select a time.");
+    if (isPastTimeSlot(selectedDate, form.time)) {
+      return setFormError(
+        "That time has already passed today - please choose a later slot.",
+      );
+    }
 
     if (form.bookingMode === "existing" && !editingAppointment) {
       if (!form.patientId) return setFormError("Please select a patient.");
@@ -361,12 +378,14 @@ export default function SecretarySchedule() {
     setCancelling(true);
     setCancelError("");
     try {
-      await cancelAppointment(cancelTarget);
+      await cancelAppointment(cancelTarget, currentUser?.uid, { isStaff: true });
       setCancelTarget(null);
     } catch (err) {
       console.error("Failed to cancel appointment:", err);
       setCancelError(
-        "Something went wrong cancelling this appointment. Please try again.",
+        err?.code === "late-cancellation"
+          ? err.message
+          : "Something went wrong cancelling this appointment. Please try again.",
       );
     }
     setCancelling(false);
