@@ -14,6 +14,7 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "./config";
 
@@ -300,6 +301,11 @@ export async function createAppointment(data) {
     doctorName: data.doctorName || "",
     date: data.date,
     time: data.time,
+    // Store the exact appointment date/time as a Firestore Timestamp so
+    // security rules can enforce the 3-hour patient cancellation window.
+    appointmentAt:
+      data.appointmentAt ||
+      Timestamp.fromDate(new Date(`${data.date}T${data.time}:00`)),
     type: data.type || "in-person",
     practice: data.practice || "",
     // Defaults to "booked" (on the calendar, not yet confirmed with the
@@ -414,8 +420,37 @@ export async function deleteAppointment(appointmentId) {
   await deleteDoc(doc(db, "appointments", appointmentId));
 }
 
-export async function cancelAppointment(appointment) {
-  await updateAppointment(appointment.id, { status: "cancelled" });
+export async function cancelAppointment(appointment, userId) {
+  if (!appointment?.id) throw new Error("Missing appointment id.");
+
+  // The Firestore rule is the final authority. This check is only here so
+  // the patient gets a friendly message instead of a permission error.
+  const appointmentDate = appointment.appointmentAt?.toDate
+    ? appointment.appointmentAt.toDate()
+    : new Date(`${appointment.date}T${appointment.time}:00`);
+  const hoursUntilAppointment =
+    (appointmentDate.getTime() - Date.now()) / (1000 * 60 * 60);
+
+  if (!Number.isFinite(hoursUntilAppointment)) {
+    throw new Error("This appointment does not have a valid date and time.");
+  }
+
+  if (hoursUntilAppointment <= 3) {
+    const error = new Error(
+      hoursUntilAppointment <= 2
+        ? "This appointment is within 2 hours and cannot be cancelled online. Please contact the practice to cancel or reschedule."
+        : "This appointment is less than 3 hours away and cannot be cancelled online. Please contact the practice to cancel or reschedule.",
+    );
+    error.code = "late-cancellation";
+    throw error;
+  }
+
+  await updateAppointment(appointment.id, {
+    status: "cancelled",
+    cancelledAt: serverTimestamp(),
+    cancelledBy: userId || appointment.patientId || null,
+  });
+
   if (appointment.patientId) {
     await createNotification({
       recipientId: appointment.patientId,

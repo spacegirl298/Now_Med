@@ -59,7 +59,9 @@ function daysFromToday(dateStr) {
 }
 
 function computeBookingStatus(dateStr) {
-  return daysFromToday(dateStr) >= CONFIRMATION_WINDOW_DAYS ? "booked" : "confirmed";
+  return daysFromToday(dateStr) >= CONFIRMATION_WINDOW_DAYS
+    ? "booked"
+    : "confirmed";
 }
 
 // 'Monday, 30 March' - used in the modal header, deliberately without the
@@ -289,7 +291,8 @@ export default function PatientCalendar() {
   }
 
   function selectTime(t) {
-    if (takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t)) return;
+    if (takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t))
+      return;
     setBookingTime(t);
   }
 
@@ -310,7 +313,9 @@ export default function PatientCalendar() {
       takenTimesForSelectedDay.has(bookingTime) ||
       blockedTimesForSelectedDay.has(bookingTime)
     ) {
-      setFormError("Sorry, that slot was just taken. Please pick another time.");
+      setFormError(
+        "Sorry, that slot was just taken. Please pick another time.",
+      );
       setBookingStep("time");
       setBookingTime(null);
       return;
@@ -352,20 +357,41 @@ export default function PatientCalendar() {
     navigate("/patient/dashboard");
   }
 
+  function getHoursUntilAppointment(appointment) {
+    if (!appointment) return null;
+    const appointmentDate = appointment.appointmentAt?.toDate
+      ? appointment.appointmentAt.toDate()
+      : new Date(`${appointment.date}T${appointment.time}:00`);
+    const hours = (appointmentDate.getTime() - Date.now()) / (1000 * 60 * 60);
+    return Number.isFinite(hours) ? hours : null;
+  }
+
+  const cancelHoursRemaining = getHoursUntilAppointment(cancelTarget);
+  const cancelIsTooLate =
+    cancelHoursRemaining !== null && cancelHoursRemaining <= 3;
+  const cancelIsVeryLate =
+    cancelHoursRemaining !== null && cancelHoursRemaining <= 2;
+
   async function handleConfirmCancel() {
     if (!cancelTarget) return;
     setCancelling(true);
     setCancelError("");
     try {
-      await cancelAppointment(cancelTarget);
+      await cancelAppointment(cancelTarget, currentUser?.uid);
       setCancelTarget(null);
     } catch (err) {
       console.error("Failed to cancel appointment:", err);
-      setCancelError(
-        err?.code === "permission-denied"
-          ? "You don't have permission to cancel this appointment. Please contact the practice."
-          : "Something went wrong cancelling this appointment. Please try again."
-      );
+      if (err?.code === "late-cancellation") {
+        setCancelError(err.message);
+      } else if (err?.code === "permission-denied") {
+        setCancelError(
+          "This appointment cannot be cancelled online. Please contact the practice.",
+        );
+      } else {
+        setCancelError(
+          "Something went wrong cancelling this appointment. Please try again.",
+        );
+      }
     }
     setCancelling(false);
   }
@@ -376,10 +402,10 @@ export default function PatientCalendar() {
         <BackButton />
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-ink">Book an appointment</h1>
-            <p className="text-slate text-sm">
-             
-            </p>
+            <h1 className="text-2xl font-semibold text-ink">
+              Book an appointment
+            </h1>
+            <p className="text-slate text-sm"></p>
           </div>
           <button
             onClick={() => openBookingFlow()}
@@ -388,8 +414,8 @@ export default function PatientCalendar() {
               selectedDateIsPast
                 ? "Can't book a date that has passed"
                 : isDayBlocked
-                ? "The practice isn't taking bookings on this day"
-                : undefined
+                  ? "The practice isn't taking bookings on this day"
+                  : undefined
             }
             className="hidden md:flex items-center gap-2 bg-rose text-white rounded-xl px-5 py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose"
           >
@@ -443,8 +469,8 @@ export default function PatientCalendar() {
                   blockedSlots.some(
                     (b) => b.date === cell.dateStr && b.time !== null,
                   );
-                const hasOwnAppt = (ownAppointmentsByDate[cell.dateStr] || [])
-                  .length > 0;
+                const hasOwnAppt =
+                  (ownAppointmentsByDate[cell.dateStr] || []).length > 0;
                 const isSelected = cell.dateStr === selectedDate;
                 const isPast = isPastDate(cell.dateStr);
                 return (
@@ -456,14 +482,18 @@ export default function PatientCalendar() {
                       fullyBlocked
                         ? dayBlockRecord.title || "Not available"
                         : isPast
-                        ? "Past date - view only"
-                        : "Double-click to book"
+                          ? "Past date - view only"
+                          : "Double-click to book"
                     }
                     className={`aspect-square rounded-lg text-sm flex flex-col items-center justify-center gap-0.5 transition-colors
                       ${!cell.inMonth ? "text-stone" : isPast ? "text-slate" : "text-ink"}
                       ${isSelected ? "bg-rose text-white" : isToday(cell.dateStr) ? "bg-blush" : "hover:bg-mist"}`}
                   >
-                    <span className={fullyBlocked ? "line-through decoration-2" : ""}>
+                    <span
+                      className={
+                        fullyBlocked ? "line-through decoration-2" : ""
+                      }
+                    >
                       {cell.day}
                     </span>
                     {fullyBlocked && (
@@ -513,12 +543,19 @@ export default function PatientCalendar() {
                 {blockedHourGroupsForSelectedDay.length > 0 && (
                   <div className="px-5 py-3 bg-mist flex flex-col gap-2">
                     {blockedHourGroupsForSelectedDay.map((g) => (
-                      <div key={g.key} className="flex items-center justify-between gap-3">
+                      <div
+                        key={g.key}
+                        className="flex items-center justify-between gap-3"
+                      >
                         <div>
-                          <p className="text-xs font-medium text-ink">{g.title}</p>
+                          <p className="text-xs font-medium text-ink">
+                            {g.title}
+                          </p>
                           <p className="text-xs text-slate">
                             {formatTime(g.times[0])} –{" "}
-                            {formatTime(addMinutesToTime(g.times[g.times.length - 1], 30))}{" "}
+                            {formatTime(
+                              addMinutesToTime(g.times[g.times.length - 1], 30),
+                            )}{" "}
                             unavailable
                           </p>
                         </div>
@@ -544,8 +581,12 @@ export default function PatientCalendar() {
                     icon={Clock}
                     title="No appointments"
                     message="You don't have anything booked on this day yet."
-                    actionLabel={selectedDateIsPast ? undefined : "Add appointment"}
-                    onAction={selectedDateIsPast ? undefined : () => openBookingFlow()}
+                    actionLabel={
+                      selectedDateIsPast ? undefined : "Add appointment"
+                    }
+                    onAction={
+                      selectedDateIsPast ? undefined : () => openBookingFlow()
+                    }
                   />
                 ) : (
                   <div className="divide-y divide-sand">
@@ -621,7 +662,9 @@ export default function PatientCalendar() {
                     {doc.specialty && (
                       <p
                         className={`text-xs ${
-                          form.doctorId === doc.id ? "text-white/80" : "text-slate"
+                          form.doctorId === doc.id
+                            ? "text-white/80"
+                            : "text-slate"
                         }`}
                       >
                         {doc.specialty}
@@ -659,29 +702,41 @@ export default function PatientCalendar() {
           </div>
 
           <div className="border border-blush rounded-2xl p-4">
-            <p className="text-sm font-semibold text-ink mb-3">Select a time slot</p>
+            <p className="text-sm font-semibold text-ink mb-3">
+              Select a time slot
+            </p>
 
-            <p className="text-xs text-slate uppercase tracking-wide mb-2">Morning</p>
+            <p className="text-xs text-slate uppercase tracking-wide mb-2">
+              Morning
+            </p>
             <div className="grid grid-cols-3 gap-2 mb-4">
               {morningSlots.map((t) => (
                 <TimeSlotButton
                   key={t}
                   time={t}
                   selected={bookingTime === t}
-                  taken={takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t)}
+                  taken={
+                    takenTimesForSelectedDay.has(t) ||
+                    blockedTimesForSelectedDay.has(t)
+                  }
                   onClick={() => selectTime(t)}
                 />
               ))}
             </div>
 
-            <p className="text-xs text-slate uppercase tracking-wide mb-2">Afternoon</p>
+            <p className="text-xs text-slate uppercase tracking-wide mb-2">
+              Afternoon
+            </p>
             <div className="grid grid-cols-3 gap-2">
               {afternoonSlots.map((t) => (
                 <TimeSlotButton
                   key={t}
                   time={t}
                   selected={bookingTime === t}
-                  taken={takenTimesForSelectedDay.has(t) || blockedTimesForSelectedDay.has(t)}
+                  taken={
+                    takenTimesForSelectedDay.has(t) ||
+                    blockedTimesForSelectedDay.has(t)
+                  }
                   onClick={() => selectTime(t)}
                 />
               ))}
@@ -747,7 +802,11 @@ export default function PatientCalendar() {
               <SummaryRow label="Time" value={formatTime(bookingTime)} />
               <SummaryRow
                 label="Type"
-                value={form.type === "virtual" ? "Virtual consult" : "In-person consult"}
+                value={
+                  form.type === "virtual"
+                    ? "Virtual consult"
+                    : "In-person consult"
+                }
               />
             </div>
           </div>
@@ -769,8 +828,8 @@ export default function PatientCalendar() {
               {saving
                 ? "Saving..."
                 : computeBookingStatus(selectedDate) === "booked"
-                ? "Book appointment"
-                : "Confirm appointment"}
+                  ? "Book appointment"
+                  : "Confirm appointment"}
             </button>
             <button
               onClick={() => setBookingStep("time")}
@@ -786,7 +845,11 @@ export default function PatientCalendar() {
       <Modal
         isOpen={bookingStep === "confirmed"}
         onClose={handleBackToDashboard}
-        title={confirmedBooking?.status === "booked" ? "Appointment requested" : "Booking confirmed"}
+        title={
+          confirmedBooking?.status === "booked"
+            ? "Appointment requested"
+            : "Booking confirmed"
+        }
         headerVariant="dark"
         hideClose
         hideFooter
@@ -805,10 +868,14 @@ export default function PatientCalendar() {
             <div>
               <p
                 className={`font-semibold text-lg mb-1 ${
-                  confirmedBooking.status === "booked" ? "text-amber" : "text-green"
+                  confirmedBooking.status === "booked"
+                    ? "text-amber"
+                    : "text-green"
                 }`}
               >
-                {confirmedBooking.status === "booked" ? "You're on the books!" : "You're booked!"}
+                {confirmedBooking.status === "booked"
+                  ? "You're on the books!"
+                  : "You're booked!"}
               </p>
               <p className="text-sm text-ink">
                 {confirmedBooking.doctorName || "The practice's doctor"}
@@ -829,7 +896,10 @@ export default function PatientCalendar() {
               </button>
               <button
                 onClick={() =>
-                  downloadAppointmentICS(confirmedBooking, confirmedBooking.doctorName)
+                  downloadAppointmentICS(
+                    confirmedBooking,
+                    confirmedBooking.doctorName,
+                  )
                 }
                 className="w-full border border-stone text-ink rounded-xl py-3 font-medium hover:border-rose transition-colors"
               >
@@ -856,18 +926,34 @@ export default function PatientCalendar() {
         confirmLabel={cancelling ? "Cancelling..." : "Cancel appointment"}
         confirmVariant="danger"
         onConfirm={handleConfirmCancel}
-        confirmDisabled={cancelling}
+        confirmDisabled={cancelling || cancelIsTooLate}
         cancelLabel="Keep it"
       >
         <p className="text-sm text-slate">
-          This will cancel your{" "}
-          {cancelTarget && formatTime(cancelTarget.time)} appointment on{" "}
-          {cancelTarget && formatShortDate(cancelTarget.date)}. You can always
-          book a new slot afterwards.
+          This will cancel your {cancelTarget && formatTime(cancelTarget.time)}{" "}
+          appointment on {cancelTarget && formatShortDate(cancelTarget.date)}.
         </p>
-        {cancelError && (
-          <p className="text-xs text-red mt-3">{cancelError}</p>
+
+        {cancelIsTooLate ? (
+          <div className="mt-3 rounded-xl bg-pastel-red px-4 py-3">
+            <p className="text-sm font-medium text-red">
+              {cancelIsVeryLate
+                ? "Late cancellation"
+                : "Cancellation window closed"}
+            </p>
+            <p className="text-xs text-red mt-1">
+              {cancelIsVeryLate
+                ? "This appointment is within 2 hours. You cannot cancel online. Please contact the practice to cancel or reschedule. A late-cancellation warning or fee may apply."
+                : "This appointment is less than 3 hours away. You cannot cancel online. Please contact the practice to cancel or reschedule."}
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-slate mt-3">
+            You can cancel online up to 3 hours before your appointment.
+          </p>
         )}
+
+        {cancelError && <p className="text-xs text-red mt-3">{cancelError}</p>}
       </Modal>
     </PatientLayout>
   );
@@ -877,7 +963,11 @@ function TimeSlotButton({ time, selected, taken, onClick }) {
   const base = "rounded-xl py-2.5 text-sm font-medium border transition-colors";
   if (selected) {
     return (
-      <button type="button" onClick={onClick} className={`${base} bg-rose text-white border-rose`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${base} bg-rose text-white border-rose`}
+      >
         {formatTime(time)}
       </button>
     );
