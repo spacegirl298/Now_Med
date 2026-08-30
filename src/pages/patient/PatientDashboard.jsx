@@ -11,6 +11,7 @@ import {
   FileText,
   CalendarCheck,
   CalendarClock,
+  Stethoscope,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -25,7 +26,10 @@ import {
   formatDisplayDate,
   greetingForNow,
 } from "../../utils/dateHelpers";
-import { subscribeToPatientRecords } from "../../firebase/firestore";
+import {
+  subscribeToPatientRecords,
+  getDoctorProfile,
+} from "../../firebase/firestore";
 
 export default function PatientDashboard() {
   const { currentUser, userName } = useAuth();
@@ -33,6 +37,7 @@ export default function PatientDashboard() {
   const navigate = useNavigate();
 
   const [records, setRecords] = useState([]);
+  const [doctorProfile, setDoctorProfile] = useState(null);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -44,6 +49,14 @@ export default function PatientDashboard() {
     );
     return () => unsub && unsub();
   }, [currentUser]);
+
+  useEffect(() => {
+    // One-time fetch is enough here - the doctor/practice profile changes
+    // rarely, unlike appointments and records which need live updates.
+    getDoctorProfile()
+      .then(setDoctorProfile)
+      .catch(() => setDoctorProfile(null));
+  }, []);
 
   const today = getTodayString();
   const displayName = userName || currentUser?.email?.split("@")[0] || "there";
@@ -137,7 +150,11 @@ export default function PatientDashboard() {
                     <Clock size={12} />
                     Running {nextAppointment.delayMinutes} min late
                     {nextAppointment.delayedTime && (
-                      <> - now expected at {formatTime(nextAppointment.delayedTime)}</>
+                      <>
+                        {" "}
+                        - now expected at{" "}
+                        {formatTime(nextAppointment.delayedTime)}
+                      </>
                     )}
                   </p>
                 )}
@@ -161,9 +178,12 @@ export default function PatientDashboard() {
         {/* Book an appointment CTA */}
         <Card className="mb-6 flex items-center justify-between gap-4">
           <div>
-            <p className="font-semibold text-ink mb-1">Need to see the doctor?</p>
+            <p className="font-semibold text-ink mb-1">
+              Need to see the doctor?
+            </p>
             <p className="text-sm text-slate">
-              Check the calendar for open slots and confirm a booking in a few taps.
+              Check the calendar for open slots and confirm a booking in a few
+              taps.
             </p>
           </div>
           <button
@@ -174,6 +194,31 @@ export default function PatientDashboard() {
             Book
           </button>
         </Card>
+
+        {/* About your doctor */}
+        {doctorProfile?.name && (
+          <Card className="mb-6">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-mist flex items-center justify-center shrink-0">
+                <Stethoscope size={18} className="text-rose" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="font-semibold text-ink">{doctorProfile.name}</h2>
+                {doctorProfile.certifications && (
+                  <p className="text-xs text-slate mb-2">
+                    {doctorProfile.certifications}
+                  </p>
+                )}
+                {doctorProfile.bio && (
+                  <p className="text-sm text-slate mb-2">{doctorProfile.bio}</p>
+                )}
+                {doctorProfile.contact && (
+                  <p className="text-xs text-slate">{doctorProfile.contact}</p>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Upcoming appointments */}
         <Card padded={false}>

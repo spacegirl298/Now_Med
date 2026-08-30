@@ -2,7 +2,7 @@
 
 **Now Med** is a web application designed to improve communication and transparency between patients and reception staff regarding medical appointments and scheduling delays. It addresses a documented problem in South African healthcare — long, uncommunicated waiting times — by giving patients real-time visibility into their appointment status and giving reception staff a single, structured place to manage the practice's schedule.
 
-This repository contains the **Alpha (first iteration)** of the application, built with **React**, **Vite**, **Firebase Authentication**, and **Cloud Firestore**, submitted for DIGA4004A / DIGA4005A, Assignment 2 (Project Check-In).
+This repository contains the **Beta (second iteration)** of the application, built with **React**, **Vite**, **Firebase Authentication**, and **Cloud Firestore**, submitted for DIGA4004A / DIGA4005A, Progress Report (Beta).
 
 A full account of the development process, technical decisions, deviations from the original PRD, and known limitations is in the accompanying **Individual Progress Report**. This README is a practical guide to running and testing the build.
 
@@ -96,7 +96,7 @@ firebase.json        Deployment config for Hosting + Firestore rules
 
 ---
 
-## Alpha Feature Status
+## Beta Feature Status
 
 All nine must-have features from the PRD are implemented against live Firestore data. See the Progress Report for the detailed status table and evaluation.
 
@@ -129,10 +129,10 @@ All nine must-have features from the PRD are implemented against live Firestore 
 
 ## Current Status & Known Limitations
 
-The Alpha successfully implements all core functionality defined in the PRD's must-have scope, and the primary workflow is navigable end-to-end for both roles. Remaining work before final submission is focused on deployment, verification, and polish rather than new features:
+The current iteration successfully implements all core functionality defined in the PRD's must-have scope, and the primary workflow is navigable end-to-end for both roles. Remaining work before final submission is focused on deployment, verification, and polish rather than new features:
 
 - Firestore security rules are written and tested locally but still need to be deployed to the live project.
-- A temporary login bypass exists for local development only (active only in `npm run dev`, never in a production build) — it is not relevant to testing this build via the instructions above, which use real accounts.
+- A temporary login bypass exists (`DEV_BYPASS_ROLE` in `App.jsx`), but it is a hardcoded constant currently set to `false` — it is not gated by an environment variable or build mode. It is safe because it is set to `false` at submission, not because of how it is wired into the build.
 - Verification emails may land in spam by default; this requires a custom sending domain to resolve, which is out of scope for this iteration's budget.
 
 ## Future Improvements

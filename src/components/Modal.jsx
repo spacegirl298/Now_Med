@@ -1,4 +1,4 @@
-import { X, ChevronLeft } from 'lucide-react'
+import { X, ChevronLeft } from "lucide-react";
 
 // Generic confirmation / form modal. Confirming and cancelling always use
 // visually distinct buttons so a destructive action is never ambiguous.
@@ -11,49 +11,60 @@ export default function Modal({
   onClose,
   title,
   children,
-  confirmLabel = 'Confirm',
+  confirmLabel = "Confirm",
   onConfirm = null,
-  confirmVariant = 'primary',
-  cancelLabel = 'Cancel',
+  confirmVariant = "primary",
+  cancelLabel = "Cancel",
   hideFooter = false,
   confirmDisabled = false,
-  headerVariant = 'light', // 'light' (default) | 'dark'
+  headerVariant = "light", // 'light' (default) | 'dark'
   onBack = null, // if set, shows a back chevron instead of the close X
   hideClose = false, // hide the header icon entirely (back or close)
 }) {
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
-  const confirmClasses = confirmVariant === 'danger'
-    ? 'bg-red text-white hover:opacity-90'
-    : 'bg-rose text-white hover:bg-plum'
+  const confirmClasses =
+    confirmVariant === "danger"
+      ? "bg-red text-white hover:opacity-90"
+      : "bg-rose text-white hover:bg-plum";
 
-  const isDark = headerVariant === 'dark'
+  const isDark = headerVariant === "dark";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-lg max-h-[90vh] overflow-y-auto">
         <div
           className={`flex items-center gap-3 px-6 py-4 border-b ${
-            isDark ? 'bg-rose border-rose' : 'border-sand'
+            isDark ? "bg-rose border-rose" : "border-sand"
           }`}
         >
           {!hideClose && onBack && (
             <button
               onClick={onBack}
               aria-label="Back"
-              className={isDark ? 'text-white hover:opacity-80' : 'text-slate hover:text-ink'}
+              className={`w-11 h-11 -m-2 flex items-center justify-center rounded-full transition-colors shrink-0 ${
+                isDark
+                  ? "text-white hover:bg-white/10"
+                  : "text-slate hover:text-ink hover:bg-mist"
+              }`}
             >
               <ChevronLeft size={20} />
             </button>
           )}
-          <h2 className={`text-lg font-semibold flex-1 ${isDark ? 'text-white' : 'text-ink'}`}>
+          <h2
+            className={`text-lg font-semibold flex-1 ${isDark ? "text-white" : "text-ink"}`}
+          >
             {title}
           </h2>
           {!hideClose && !onBack && (
             <button
               onClick={onClose}
-              className={isDark ? 'text-white hover:opacity-80' : 'text-slate hover:text-ink'}
               aria-label="Close"
+              className={`w-11 h-11 -m-2 flex items-center justify-center rounded-full transition-colors shrink-0 ${
+                isDark
+                  ? "text-white hover:bg-white/10"
+                  : "text-slate hover:text-ink hover:bg-mist"
+              }`}
             >
               <X size={20} />
             </button>
@@ -83,5 +94,5 @@ export default function Modal({
         )}
       </div>
     </div>
-  )
+  );
 }
