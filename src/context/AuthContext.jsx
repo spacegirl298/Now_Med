@@ -9,7 +9,7 @@ import {
   sendEmailVerification,
   updateProfile
 } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
 import { linkPatientDataByIdNumber, getUserByIdNumber } from '../firebase/firestore'
 
@@ -26,6 +26,10 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
   const [userName, setUserName] = useState(null)
+  // Read from the user doc at login; only relevant for patients. Undefined
+  // until the doc has loaded, so RequireIntake (App.jsx) can tell "still
+  // loading" apart from "definitely hasn't done intake yet".
+  const [hasCompletedIntake, setHasCompletedIntake] = useState(undefined)
   const [loading, setLoading] = useState(true)
 
   // Register a new user
@@ -107,6 +111,18 @@ export function AuthProvider({ children }) {
     return sendPasswordResetEmail(auth, email)
   }
 
+  // Marks the first-time intake form as done so RequireIntake stops
+  // redirecting this patient to it. Called by PatientIntake.jsx on both
+  // "save and continue" and "skip for now" — skipping still counts as
+  // "shown once", per the PRD's "prompt appears on first login only".
+  async function completeIntake() {
+    if (!currentUser) return
+    await updateDoc(doc(db, 'users', currentUser.uid), {
+      hasCompletedIntake: true,
+    })
+    setHasCompletedIntake(true)
+  }
+
 useEffect(() => {
   const unsubscribe = onAuthStateChanged(auth, async (user) => {
     if (user) {
@@ -115,6 +131,10 @@ useEffect(() => {
         if (userDoc.exists()) {
           setUserRole(userDoc.data().role)
           setUserName(userDoc.data().name)
+          // Older accounts created before this field existed won't have it —
+          // treat missing as "already done" so nobody who registered before
+          // this feature shipped gets an unexpected intake prompt.
+          setHasCompletedIntake(userDoc.data().hasCompletedIntake ?? true)
         }
         setCurrentUser(user)
       } catch (error) {
@@ -127,6 +147,7 @@ useEffect(() => {
       setCurrentUser(null)
       setUserRole(null)
       setUserName(null)
+      setHasCompletedIntake(undefined)
     }
     setLoading(false)
   })
@@ -138,10 +159,12 @@ useEffect(() => {
     currentUser,
     userRole,
     userName,
+    hasCompletedIntake,
     register,
     login,
     logout,
-    resetPassword
+    resetPassword,
+    completeIntake
   }
 
   return (

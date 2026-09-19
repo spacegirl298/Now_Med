@@ -12,6 +12,7 @@ import PatientDashboard from "./pages/patient/PatientDashboard";
 import PatientCalendar from "./pages/patient/PatientCalendar";
 import PatientRecords from "./pages/patient/PatientRecords";
 import PatientProfile from "./pages/patient/PatientProfile";
+import PatientIntake from "./pages/patient/PatientIntake";
 
 // Secretary pages
 import SecretaryDashboard from "./pages/secretary/SecretaryDashboard";
@@ -46,6 +47,23 @@ function ProtectedRoute({ children, allowedRole }) {
   return children;
 }
 
+// Redirects a patient who hasn't completed the first-time intake form to
+// it, before they can reach any other patient page. Only meaningful for
+// the patient role — nest this INSIDE ProtectedRoute allowedRole="patient"
+// so userRole is already guaranteed to be "patient" by the time this runs.
+// While hasCompletedIntake is still loading (undefined) we render nothing
+// rather than redirecting, to avoid a flash-redirect to /patient/intake on
+// every page load before the user doc has come back.
+function RequireIntake({ children }) {
+  const { hasCompletedIntake } = useAuth();
+
+  if (hasCompletedIntake === undefined) return null;
+  if (hasCompletedIntake === false) {
+    return <Navigate to="/patient/intake" />;
+  }
+  return children;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -58,11 +76,23 @@ export default function App() {
         <Route path="/verify-email" element={<EmailVerification />} />
 
         {/* Patient routes */}
+        {/* Intake itself is NOT wrapped in RequireIntake - that would be a
+            redirect loop for the exact patients who need to see it. */}
+        <Route
+          path="/patient/intake"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <PatientIntake />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/patient/dashboard"
           element={
             <ProtectedRoute allowedRole="patient">
-              <PatientDashboard />
+              <RequireIntake>
+                <PatientDashboard />
+              </RequireIntake>
             </ProtectedRoute>
           }
         />
@@ -70,7 +100,9 @@ export default function App() {
           path="/patient/calendar"
           element={
             <ProtectedRoute allowedRole="patient">
-              <PatientCalendar />
+              <RequireIntake>
+                <PatientCalendar />
+              </RequireIntake>
             </ProtectedRoute>
           }
         />
@@ -78,7 +110,9 @@ export default function App() {
           path="/patient/records"
           element={
             <ProtectedRoute allowedRole="patient">
-              <PatientRecords />
+              <RequireIntake>
+                <PatientRecords />
+              </RequireIntake>
             </ProtectedRoute>
           }
         />
@@ -86,6 +120,8 @@ export default function App() {
           path="/patient/profile"
           element={
             <ProtectedRoute allowedRole="patient">
+              {/* Profile is reachable even mid-intake-skip so a patient can
+                  always find/edit these fields later - not gated. */}
               <PatientProfile />
             </ProtectedRoute>
           }
