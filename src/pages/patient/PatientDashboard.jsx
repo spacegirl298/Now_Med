@@ -13,6 +13,7 @@ import {
   CalendarClock,
   Stethoscope,
   Phone,
+  ClipboardList,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -33,7 +34,7 @@ import {
 } from "../../firebase/firestore";
 
 export default function PatientDashboard() {
-  const { currentUser, userName } = useAuth();
+  const { currentUser, userName, intakeCompleted } = useAuth();
   const { appointments, loading, error } = useAppointments();
   const navigate = useNavigate();
 
@@ -71,6 +72,27 @@ export default function PatientDashboard() {
   const nextAppointment = upcomingAppointments[0] || null;
   const isNextDelayed = nextAppointment?.status === "delayed";
 
+  // Nudge them if their very next visit is within 24 hours and they still
+  // haven't done their first-time intake form. There's no server-side
+  // scheduler in this app to fire this the day before on its own, so it
+  // shows every time they open the dashboard in that window instead - the
+  // floating clipboard button (IntakeFormButton) covers the rest of the
+  // time before that.
+  const hoursUntilNext = nextAppointment
+    ? (new Date(
+        nextAppointment.appointmentAt?.toDate
+          ? nextAppointment.appointmentAt.toDate()
+          : `${nextAppointment.date}T${nextAppointment.time}:00`,
+      ).getTime() -
+        Date.now()) /
+      (1000 * 60 * 60)
+    : null;
+  const needsIntakeReminder =
+    intakeCompleted === false &&
+    hoursUntilNext !== null &&
+    hoursUntilNext > 0 &&
+    hoursUntilNext <= 24;
+
   return (
     <PatientLayout>
       <div className="p-6 md:p-8 max-w-5xl mx-auto">
@@ -95,6 +117,19 @@ export default function PatientDashboard() {
               ? ` - now expected at ${formatTime(nextAppointment.delayedTime)}.`
               : "."}
           </div>
+        )}
+
+        {needsIntakeReminder && (
+          <button
+            onClick={() => navigate("/patient/intake")}
+            className="w-full text-left bg-pastel-amber text-amber text-sm rounded-xl px-4 py-3 mb-6 flex items-center gap-3 hover:brightness-95 transition-[filter]"
+          >
+            <ClipboardList size={16} className="shrink-0" />
+            <span>
+              Your appointment is coming up and you haven't finished your
+              intake form yet - tap here to complete it now.
+            </span>
+          </button>
         )}
 
         {/* Stat cards */}

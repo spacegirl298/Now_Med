@@ -16,8 +16,11 @@ import {
   writeBatch,
   runTransaction,
   Timestamp,
+  orderBy,
+  limit,
+  increment,
 } from "firebase/firestore";
-import { db } from "./config";
+import { db, auth } from "./config";
 
 // ---------- Collections ----------
 const usersCol = collection(db, "users");
@@ -30,6 +33,18 @@ const recordsCol = collection(db, "records");
 // per patient, looked up the same way as records — by patientId once
 // registered, or by patientIdNumber before that (see linkPatientDataByIdNumber).
 const profilesCol = collection(db, "patientProfiles");
+// Full first-time intake form answers (one doc per patient). Kept separate
+// from patientProfiles because patients may only write a handful of
+// non-clinical profile fields, but the intake form also collects
+// patient-reported clinical history. A secretary reviews it and can import it
+// into the verified profile from the patient's record.
+const intakeFormsCol = collection(db, "intakeForms");
+// Patient requests to change details they can't edit themselves (clinical
+// data, date of birth, gender...). A secretary actions them from the record.
+const changeRequestsCol = collection(db, "changeRequests");
+// One chat per patient: conversations/{patientId} holds the summary + unread
+// counters, conversations/{patientId}/messages holds the messages.
+const conversationsCol = collection(db, "conversations");
 
 // ================= USERS / PATIENTS =================
 
@@ -69,6 +84,54 @@ export async function getUserByIdNumber(idNumber) {
   if (snap.empty) return null;
   const d = snap.docs[0];
   return { id: d.id, ...d.data() };
+}
+
+// Reserves this ID/passport number for a new account, using the
+// idNumberIndex collection instead of querying `users` directly (a
+// brand-new registrant can't query `users` — see the firestore.rules
+// comment on idNumberIndex). Mirrors the rules exactly:
+//   - a role slot that's already taken -> rejected
+//   - the one exception: an existing secretary may also claim the
+//     patient slot under the same ID number
+// Throws an Error with code 'duplicate-id-number' on any other clash,
+// so SignUp.jsx's existing catch for that code keeps working unchanged.
+export async function reserveIdNumberIndexSlot(idNumber, uid, role) {
+  const ref = doc(db, "idNumberIndex", idNumber);
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+
+    if (!snap.exists()) {
+      transaction.set(ref, {
+        patientUid: role === "patient" ? uid : null,
+        secretaryUid: role === "secretary" ? uid : null,
+      });
+      return;
+    }
+
+    const existing = snap.data();
+
+    if (role === "patient") {
+      if (existing.patientUid) {
+        const err = new Error(
+          "An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake."
+        );
+        err.code = "duplicate-id-number";
+        throw err;
+      }
+      // existing.secretaryUid must be set (doc exists) — matches the
+      // rule's allowed update path.
+      transaction.update(ref, { patientUid: uid });
+      return;
+    }
+
+    // role === 'secretary': rules have no update path for the secretary
+    // slot at all, so any existing doc means this ID number is taken.
+    const err = new Error(
+      "An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake."
+    );
+    err.code = "duplicate-id-number";
+    throw err;
+  });
 }
 
 export async function updateUserProfile(uid, data) {
@@ -436,13 +499,26 @@ export async function linkPatientDataByIdNumber(uid, idNumber, name) {
     where("patientId", "==", null),
   );
 
-  const [apptSnap, recordsSnap, profileSnap] = await Promise.all([
+  const intakeQ = query(
+    intakeFormsCol,
+    where("patientIdNumber", "==", idNumber),
+    where("patientId", "==", null),
+  );
+
+  const [apptSnap, recordsSnap, profileSnap, intakeSnap] = await Promise.all([
     getDocs(apptQ),
     getDocs(recordsQ),
     getDocs(profileQ),
+    getDocs(intakeQ),
   ]);
 
-  if (apptSnap.empty && recordsSnap.empty && profileSnap.empty) return;
+  if (
+    apptSnap.empty &&
+    recordsSnap.empty &&
+    profileSnap.empty &&
+    intakeSnap.empty
+  )
+    return;
 
   const batch = writeBatch(db);
   apptSnap.docs.forEach((d) => {
@@ -455,6 +531,9 @@ export async function linkPatientDataByIdNumber(uid, idNumber, name) {
     batch.update(d.ref, { patientId: uid });
   });
   profileSnap.docs.forEach((d) => {
+    batch.update(d.ref, { patientId: uid });
+  });
+  intakeSnap.docs.forEach((d) => {
     batch.update(d.ref, { patientId: uid });
   });
   await batch.commit();
@@ -602,12 +681,30 @@ export async function sendConfirmationReminder(appointment) {
   });
 
   if (appointment.patientId) {
+    const message = `Please confirm your appointment on ${appointment.date} at ${appointment.time}. Reply via WhatsApp, call, or email to let us know you'll be attending.`;
     await createNotification({
       recipientId: appointment.patientId,
       appointmentId: appointment.id,
       type: "reminder",
-      message: `Please confirm your appointment on ${appointment.date} at ${appointment.time}. Reply via WhatsApp, call, or email to let us know you'll be attending.`,
+      message,
     });
+
+    // Also drop the reminder into the patient's chat so it's part of the
+    // conversation history. A chat failure must never undo the reminder
+    // itself, so it's logged rather than thrown.
+    try {
+      await sendMessage({
+        patientId: appointment.patientId,
+        patientName: appointment.patientName,
+        senderRole: "secretary",
+        senderName: "Practice",
+        text: message,
+        kind: "reminder",
+        appointmentId: appointment.id,
+      });
+    } catch (err) {
+      console.error("Reminder sent, but could not post it to chat:", err);
+    }
   }
 }
 
@@ -780,4 +877,265 @@ export async function updateDoctor(doctorId, data) {
 
 export async function deleteDoctor(doctorId) {
   await deleteDoc(doc(db, "doctors", doctorId));
+}
+// ================= INTAKE FORMS =================
+// `answers` is the raw output of the digital intake wizard (see
+// utils/intakeQuestions.js). Like records/profiles, a form can be attached
+// to an ID number before the patient has an account (patientId: null) and is
+// linked to their uid at registration by linkPatientDataByIdNumber.
+
+export async function getIntakeForm(patientId) {
+  if (!patientId) return null;
+  const q = query(intakeFormsCol, where("patientId", "==", patientId));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+export async function getIntakeFormByIdNumber(idNumber) {
+  if (!idNumber) return null;
+  const q = query(intakeFormsCol, where("patientIdNumber", "==", idNumber));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+// The first-login check: is there already an intake form for this patient,
+// either under their uid or linked to their ID/passport number?
+export async function getIntakeFormForPatient(patientId, idNumber) {
+  const byUid = await getIntakeForm(patientId);
+  if (byUid) return byUid;
+  return getIntakeFormByIdNumber(idNumber);
+}
+
+export async function saveIntakeForm({
+  patientId,
+  patientIdNumber = "",
+  answers,
+  submittedBy = "patient",
+}) {
+  const ref = await addDoc(intakeFormsCol, {
+    patientId,
+    patientIdNumber: patientIdNumber || "",
+    answers,
+    submittedBy,
+    importedAt: null,
+    submittedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+// Attaches an existing ID-number-only form to a registered patient's uid.
+export async function linkIntakeFormToPatient(intakeId, patientId) {
+  await updateDoc(doc(db, "intakeForms", intakeId), { patientId });
+}
+
+// Secretary copied the patient-reported answers into the verified profile.
+export async function markIntakeImported(intakeId, staffUid) {
+  await updateDoc(doc(db, "intakeForms", intakeId), {
+    importedAt: serverTimestamp(),
+    importedBy: staffUid || null,
+  });
+}
+
+// ================= CHANGE REQUESTS =================
+// Patients can directly edit non-clinical details only. For anything else
+// they file a request here; a secretary makes the change on the record (or
+// declines it) and the patient is notified either way.
+
+export async function createChangeRequest({
+  patientId,
+  patientName = "",
+  patientIdNumber = "",
+  section,
+  currentValue = "",
+  requestedChange,
+}) {
+  const ref = await addDoc(changeRequestsCol, {
+    patientId,
+    patientName,
+    patientIdNumber,
+    section,
+    currentValue,
+    requestedChange,
+    status: "pending", // 'pending' | 'completed' | 'declined'
+    resolutionNote: "",
+    resolvedBy: null,
+    resolvedAt: null,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+const byNewest = (a, b) =>
+  (b.createdAt?.seconds || Number.MAX_SAFE_INTEGER) -
+  (a.createdAt?.seconds || Number.MAX_SAFE_INTEGER);
+
+// One patient's requests (patient view and the secretary's patient record).
+export function subscribeToPatientChangeRequests(patientId, callback, onError) {
+  if (!patientId) return () => {};
+  const q = query(changeRequestsCol, where("patientId", "==", patientId));
+  return onSnapshot(
+    q,
+    (snap) =>
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest)),
+    onError,
+  );
+}
+
+// Every request still waiting on a secretary (dashboard).
+export function subscribeToPendingChangeRequests(callback, onError) {
+  const q = query(changeRequestsCol, where("status", "==", "pending"));
+  return onSnapshot(
+    q,
+    (snap) =>
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest)),
+    onError,
+  );
+}
+
+export async function resolveChangeRequest({
+  request,
+  status,
+  note = "",
+  resolvedBy = null,
+}) {
+  await updateDoc(doc(db, "changeRequests", request.id), {
+    status,
+    resolutionNote: note,
+    resolvedBy,
+    resolvedAt: serverTimestamp(),
+  });
+
+  const what = (request.section || "details").toLowerCase();
+  await createNotification({
+    recipientId: request.patientId,
+    type: "change_request",
+    message:
+      status === "completed"
+        ? `Your request to update your ${what} has been completed.`
+        : `Your request to update your ${what} could not be actioned.${note ? ` Note: ${note}` : ""}`,
+  });
+}
+
+// ================= MESSAGING =================
+// A patient has one chat with "the practice" (any secretary can read and
+// reply). Unread counters live on the conversation doc so the sidebar badge
+// and the inbox list don't have to read every message.
+
+export function subscribeToConversation(patientId, callback, onError) {
+  if (!patientId) return () => {};
+  return onSnapshot(
+    doc(db, "conversations", patientId),
+    (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    onError,
+  );
+}
+
+// Secretary inbox: every conversation, most recent activity first.
+export function subscribeToAllConversations(callback, onError) {
+  return onSnapshot(
+    conversationsCol,
+    (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort(
+          (a, b) =>
+            (b.lastMessageAt?.seconds || Number.MAX_SAFE_INTEGER) -
+            (a.lastMessageAt?.seconds || Number.MAX_SAFE_INTEGER),
+        );
+      callback(list);
+    },
+    onError,
+  );
+}
+
+// Latest 200 messages, oldest first.
+export function subscribeToMessages(patientId, callback, onError) {
+  if (!patientId) return () => {};
+  const q = query(
+    collection(db, "conversations", patientId, "messages"),
+    orderBy("createdAt", "desc"),
+    limit(200),
+  );
+  return onSnapshot(
+    q,
+    (snap) =>
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse()),
+    onError,
+  );
+}
+
+// Posts a message and updates the conversation summary + the *other* side's
+// unread counter in one batch. `kind: "reminder"` marks system reminders so
+// the chat can style them differently. Pass `notify: true` when a secretary
+// is writing a normal message and the patient should also get a bell
+// notification (reminders create their own notification, so they don't).
+export async function sendMessage({
+  patientId,
+  patientName = "",
+  senderRole,
+  senderName = "",
+  text,
+  kind = "message",
+  appointmentId = null,
+  notify = false,
+}) {
+  const body = (text || "").trim();
+  if (!patientId || !body) {
+    throw new Error("A patient and some message text are required.");
+  }
+  const fromPatient = senderRole === "patient";
+
+  const conversationRef = doc(db, "conversations", patientId);
+  const messageRef = doc(collection(db, "conversations", patientId, "messages"));
+
+  const batch = writeBatch(db);
+  batch.set(messageRef, {
+    senderId: auth.currentUser?.uid || null,
+    senderRole,
+    senderName,
+    text: body,
+    kind,
+    appointmentId,
+    createdAt: serverTimestamp(),
+  });
+  batch.set(
+    conversationRef,
+    {
+      patientId,
+      ...(patientName ? { patientName } : {}),
+      lastMessage: body.slice(0, 140),
+      lastMessageAt: serverTimestamp(),
+      lastSenderRole: senderRole,
+      ...(fromPatient
+        ? { unreadForStaff: increment(1) }
+        : { unreadForPatient: increment(1) }),
+    },
+    { merge: true },
+  );
+  await batch.commit();
+
+  if (notify && !fromPatient) {
+    try {
+      await createNotification({
+        recipientId: patientId,
+        type: "message",
+        message: `New message from the practice: ${body.slice(0, 100)}`,
+      });
+    } catch (err) {
+      console.error("Message sent, but the notification failed:", err);
+    }
+  }
+  return messageRef.id;
+}
+
+// Resets the unread counter for whoever just opened the chat.
+export async function markConversationRead(patientId, role) {
+  if (!patientId) return;
+  await updateDoc(doc(db, "conversations", patientId), {
+    [role === "patient" ? "unreadForPatient" : "unreadForStaff"]: 0,
+  });
 }

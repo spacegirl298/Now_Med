@@ -2,9 +2,10 @@
 // patient search bar (must-have - see PRD section "Home Dashboard").
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Clock } from "lucide-react";
+import { Search, Clock, MessageSquare, ClipboardList } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
+import { useUnreadMessages } from "../../hooks/useUnreadMessages";
 import SecretaryLayout from "./SecretaryLayout";
 import Card from "../../components/Card";
 import Badge from "../../components/Badge";
@@ -16,7 +17,10 @@ import {
   formatDisplayDate,
   greetingForNow,
 } from "../../utils/dateHelpers";
-import { getAllPatients } from "../../firebase/firestore";
+import {
+  getAllPatients,
+  subscribeToPendingChangeRequests,
+} from "../../firebase/firestore";
 
 export default function SecretaryDashboard() {
   const { currentUser, userName } = useAuth();
@@ -25,11 +29,22 @@ export default function SecretaryDashboard() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [patients, setPatients] = useState([]);
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const unreadMessages = useUnreadMessages();
 
   useEffect(() => {
     getAllPatients()
       .then(setPatients)
       .catch(() => setPatients([]));
+  }, []);
+
+  // Patient requests to change details they can't edit themselves.
+  useEffect(() => {
+    const unsub = subscribeToPendingChangeRequests(
+      setPendingRequests,
+      (err) => console.error(err),
+    );
+    return () => unsub && unsub();
   }, []);
 
   const today = getTodayString();
@@ -133,6 +148,56 @@ export default function SecretaryDashboard() {
             </div>
           )}
         </Card>
+
+        {/* Needs attention: unread chat + pending record-change requests */}
+        {(unreadMessages > 0 || pendingRequests.length > 0) && (
+          <Card padded={false} className="mb-6">
+            <div className="px-5 py-4 border-b border-sand">
+              <h2 className="font-semibold text-ink">Needs your attention</h2>
+            </div>
+            <div className="divide-y divide-sand">
+              {unreadMessages > 0 && (
+                <button
+                  onClick={() => navigate("/secretary/messages")}
+                  className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-mist transition-colors"
+                >
+                  <MessageSquare size={18} className="text-rose shrink-0" />
+                  <p className="text-sm text-ink">
+                    {unreadMessages} unread message
+                    {unreadMessages === 1 ? "" : "s"} from patients
+                  </p>
+                </button>
+              )}
+              {pendingRequests.slice(0, 5).map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() =>
+                    navigate("/secretary/patients", {
+                      state: { openPatientId: r.patientId, openTab: "requests" },
+                    })
+                  }
+                  className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-mist transition-colors"
+                >
+                  <ClipboardList size={18} className="text-amber shrink-0" />
+                  <div>
+                    <p className="text-sm text-ink">
+                      {r.patientName || "A patient"} asked to change their{" "}
+                      {(r.section || "details").toLowerCase()}
+                    </p>
+                    <p className="text-xs text-slate truncate">
+                      {r.requestedChange}
+                    </p>
+                  </div>
+                </button>
+              ))}
+              {pendingRequests.length > 5 && (
+                <p className="px-5 py-3 text-xs text-slate">
+                  + {pendingRequests.length - 5} more pending requests
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Today's schedule */}
         <Card padded={false}>

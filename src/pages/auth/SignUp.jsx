@@ -111,8 +111,14 @@ export default function SignUp() {
         setError('Password must be at least 6 characters.')
       } else if (err.code === 'auth/invalid-email') {
         setError('Please enter a valid email address.')
+      } else if (err.code === 'duplicate-id-number') {
+        setError(err.message)
       } else {
         setError('Something went wrong. Please try again.')
+        // Anything landing here is unexpected — log it so it's not a
+        // silent dead end next time (e.g. permission-denied from a rules
+        // change, a network error, etc).
+        console.error('Sign up failed:', err)
       }
     }
 

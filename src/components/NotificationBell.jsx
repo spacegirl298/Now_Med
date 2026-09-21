@@ -4,16 +4,30 @@
 // markNotificationRead) rather than introducing a second notification
 // system - see useNotifications.js for the actual data source.
 import { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bell } from "lucide-react";
 import { useNotifications } from "../hooks/useNotifications";
 import { formatTimeAgo } from "../utils/dateHelpers";
 import EmptyState from "./EmptyState";
+
+// Where tapping a notification should take the patient - a message or a
+// reminder both land in the same chat thread (see kind: "reminder" in
+// ChatThread.jsx), so anything chat-shaped should open Messages instead of
+// just marking itself read and going nowhere.
+const CHAT_NOTIFICATION_TYPES = new Set(["message", "reminder", "intake_reminder"]);
+
+function routeFor(notification) {
+  return CHAT_NOTIFICATION_TYPES.has(notification.type)
+    ? "/patient/messages"
+    : "/patient/dashboard";
+}
 
 export default function NotificationBell() {
   const { notifications, unreadCount, markNotificationRead } =
     useNotifications();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
+  const navigate = useNavigate();
 
   // Close the dropdown on an outside click, same pattern as a native <select>.
   useEffect(() => {
@@ -63,7 +77,11 @@ export default function NotificationBell() {
               notifications.map((n) => (
                 <button
                   key={n.id}
-                  onClick={() => !n.read && markNotificationRead(n.id)}
+                  onClick={() => {
+                    if (!n.read) markNotificationRead(n.id);
+                    setOpen(false);
+                    navigate(routeFor(n));
+                  }}
                   className={`w-full text-left px-4 py-3 hover:bg-mist transition-colors ${
                     n.read ? "" : "bg-blush/20"
                   }`}

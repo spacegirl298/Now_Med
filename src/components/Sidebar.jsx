@@ -1,12 +1,14 @@
 // Desktop navigation. Persistent left sidebar, links vary by role.
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Calendar, Users, User, LayoutDashboard, LogOut } from 'lucide-react'
+import { Calendar, Users, User, LayoutDashboard, LogOut, MessageSquare } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useUnreadMessages } from '../hooks/useUnreadMessages'
 
 const PATIENT_LINKS = [
   { to: '/patient/dashboard', label: 'Home', icon: LayoutDashboard },
   { to: '/patient/calendar', label: 'Calendar', icon: Calendar },
   { to: '/patient/records', label: 'Records', icon: Users },
+  { to: '/patient/messages', label: 'Messages', icon: MessageSquare, showUnread: true },
   { to: '/patient/profile', label: 'Profile', icon: User },
 ]
 
@@ -14,12 +16,14 @@ const SECRETARY_LINKS = [
   { to: '/secretary/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/secretary/schedule', label: 'Schedule', icon: Calendar },
   { to: '/secretary/patients', label: 'Patients', icon: Users },
+  { to: '/secretary/messages', label: 'Messages', icon: MessageSquare, showUnread: true },
   { to: '/secretary/profile', label: 'Profile', icon: User },
 ]
 
 export default function Sidebar({ role = 'secretary' }) {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const unread = useUnreadMessages()
   const links = role === 'patient' ? PATIENT_LINKS : SECRETARY_LINKS
 
   // logout() only signs the user out of Firebase — it doesn't navigate
@@ -45,7 +49,7 @@ export default function Sidebar({ role = 'secretary' }) {
       </div>
 
       <nav className="flex-1 flex flex-col gap-1">
-        {links.map(({ to, label, icon: Icon }) => (
+        {links.map(({ to, label, icon: Icon, showUnread }) => (
           <NavLink
             key={to}
             to={to}
@@ -57,6 +61,14 @@ export default function Sidebar({ role = 'secretary' }) {
           >
             <Icon size={18} />
             {label}
+            {showUnread && unread > 0 && (
+              <span
+                className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-white text-plum text-[11px] font-semibold flex items-center justify-center"
+                aria-label={`${unread} unread messages`}
+              >
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

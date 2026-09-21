@@ -16,6 +16,13 @@
 // Records tagged internalOnly by a secretary (staff notes not meant for the
 // patient) are filtered out before anything ever reaches this screen.
 //
+// Anything a patient can't edit directly (date of birth, gender, allergies,
+// medications, ...) is changed by filing a request from the "Request a
+// change" button. A secretary makes the correction on the record, or
+// declines it, and the patient is notified; their requests and outcomes are
+// listed at the bottom of the Overview tab. The intake form they filled in on
+// first login appears read-only under "Intake form".
+//
 // If this patient's history was originally logged as a walk-in (booked by
 // phone/email/in person before they had an account), it was linked to their
 // uid automatically at registration - see linkPatientDataByIdNumber in
@@ -28,6 +35,7 @@ import {
   ShieldAlert,
   Stethoscope,
   Edit2,
+  MessageSquarePlus,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useAppointments } from '../../hooks/useAppointments'
@@ -35,13 +43,17 @@ import {
   subscribeToPatientProfile,
   subscribeToPatientRecords,
   savePatientProfile,
+  createChangeRequest,
+  subscribeToPatientChangeRequests,
+  getIntakeFormForPatient,
 } from '../../firebase/firestore'
 import PatientLayout from './PatientLayout'
 import BackButton from '../../components/BackButton'
 import Card from '../../components/Card'
 import Modal from '../../components/Modal'
 import EmptyState from '../../components/EmptyState'
-import { formatShortDate, getTodayString } from '../../utils/dateHelpers'
+import IntakeSummary from '../../components/IntakeSummary'
+import { formatShortDate, formatDisplayDate, formatDate, getTodayString } from '../../utils/dateHelpers'
 import { isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
 
 const TABS = [
@@ -51,6 +63,66 @@ const TABS = [
   { id: 'medications', label: 'Medications' },
   { id: 'visits', label: 'Visit History' },
 ]
+const INTAKE_TAB = { id: 'intake', label: 'Intake form' }
+
+// What a patient can ask the practice to change. Editable-by-patient details
+// (occupation, emergency contact, medical aid) are deliberately not listed:
+// they have the Edit button for those.
+const REQUEST_SECTIONS = [
+  'Date of birth',
+  'Gender',
+  'Name or ID number',
+  'Blood group',
+  'Allergies',
+  'Medications',
+  'Chronic conditions',
+  'Previous surgeries',
+  'Hospital admissions',
+  'Family history',
+  'Primary doctor',
+  'Something else',
+]
+
+const REQUEST_STATUS = {
+  pending: { label: 'Pending', classes: 'bg-pastel-amber text-amber' },
+  completed: { label: 'Updated', classes: 'bg-sand text-green' },
+  declined: { label: 'Declined', classes: 'bg-pastel-red text-red' },
+}
+
+// Snapshot of what the record says right now, so the secretary can see what
+// the patient is referring to without opening another tab.
+function currentValueFor(section, profile) {
+  if (!profile) return ''
+  switch (section) {
+    case 'Date of birth':
+      return profile.dateOfBirth ? formatDisplayDate(profile.dateOfBirth) : ''
+    case 'Gender':
+      return profile.gender || ''
+    case 'Blood group':
+      return profile.bloodGroup || ''
+    case 'Primary doctor':
+      return profile.primaryDoctor || ''
+    case 'Allergies':
+      return (profile.allergies || []).map((a) => a.allergen).join(', ')
+    case 'Medications':
+      return (profile.currentMedications || []).map((m) => m.name).join(', ')
+    case 'Chronic conditions':
+      return (profile.chronicConditions || []).join(', ')
+    case 'Previous surgeries':
+      return (profile.previousSurgeries || []).map((x) => x.procedure).join(', ')
+    case 'Hospital admissions':
+      return (profile.hospitalAdmissions || []).map((x) => x.hospital).join(', ')
+    case 'Family history':
+      return (profile.familyHistory || []).join(', ')
+    default:
+      return ''
+  }
+}
+
+function tsToDisplay(ts) {
+  const d = ts?.toDate ? ts.toDate() : null
+  return d ? formatShortDate(formatDate(d)) : ''
+}
 
 const SEVERITY_BADGE = {
   Mild: 'bg-pastel-blue text-blue',
@@ -110,10 +182,18 @@ function Field({ label, children }) {
 }
 
 export default function PatientRecords() {
-  const { currentUser } = useAuth()
+  const { currentUser, userName, userIdNumber } = useAuth()
   const { appointments } = useAppointments()
 
   const [activeTab, setActiveTab] = useState('overview')
+
+  const [intake, setIntake] = useState(null)
+  const [requests, setRequests] = useState([])
+  const [reqOpen, setReqOpen] = useState(false)
+  const [reqSection, setReqSection] = useState(REQUEST_SECTIONS[0])
+  const [reqText, setReqText] = useState('')
+  const [reqError, setReqError] = useState('')
+  const [reqSaving, setReqSaving] = useState(false)
 
   const [profile, setProfile] = useState(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
@@ -160,11 +240,21 @@ export default function PatientRecords() {
         setLoadingRecords(false)
       },
     )
+    const unsubRequests = subscribeToPatientChangeRequests(
+      currentUser.uid,
+      setRequests,
+      (err) => console.error(err),
+    )
+    // One-time fetch: the form is immutable once submitted.
+    getIntakeFormForPatient(currentUser.uid, userIdNumber)
+      .then(setIntake)
+      .catch((err) => console.error(err))
     return () => {
       unsubProfile && unsubProfile()
       unsubRecords && unsubRecords()
+      unsubRequests && unsubRequests()
     }
-  }, [currentUser])
+  }, [currentUser, userIdNumber])
 
   const today = getTodayString()
   const myAppointments = useMemo(
@@ -260,20 +350,64 @@ export default function PatientRecords() {
     setSaving(false)
   }
 
+  function openRequest() {
+    setReqSection(REQUEST_SECTIONS[0])
+    setReqText('')
+    setReqError('')
+    setReqOpen(true)
+  }
+
+  async function submitRequest() {
+    if (!reqText.trim()) {
+      setReqError('Tell us what needs to change.')
+      return
+    }
+    setReqSaving(true)
+    setReqError('')
+    try {
+      await createChangeRequest({
+        patientId: currentUser.uid,
+        patientName: userName || '',
+        patientIdNumber: userIdNumber || '',
+        section: reqSection,
+        currentValue: currentValueFor(reqSection, profile),
+        requestedChange: reqText.trim(),
+      })
+      setReqOpen(false)
+    } catch (err) {
+      console.error(err)
+      setReqError(
+        err?.code === 'permission-denied'
+          ? "You don't have permission to send this request. Please contact the practice."
+          : 'Could not send your request. Please try again.',
+      )
+    }
+    setReqSaving(false)
+  }
+
+  const tabs = intake ? [...TABS, INTAKE_TAB] : TABS
   const loading = loadingProfile || loadingRecords
 
   return (
     <PatientLayout>
       <div className="p-6 md:p-8 max-w-4xl mx-auto">
         <BackButton />
-        <h1 className="text-2xl font-semibold text-ink mb-1">Medical records</h1>
+        <div className="flex items-start justify-between gap-4 mb-1">
+          <h1 className="text-2xl font-semibold text-ink">Medical records</h1>
+          <button
+            onClick={openRequest}
+            className="shrink-0 flex items-center gap-1.5 border border-stone text-ink rounded-xl px-3 py-2 text-xs font-medium hover:border-rose transition-colors"
+          >
+            <MessageSquarePlus size={14} /> Request a change
+          </button>
+        </div>
         <p className="text-slate text-sm mb-6">
-          Your health information on file with the practice. Clinical details are entered by your
-          doctor's practice - contact them if anything needs correcting.
+          Your health information on file with the practice. You can edit your contact details
+          yourself; for anything clinical, use “Request a change” and the practice will update it.
         </p>
 
         <div className="flex gap-2 mb-6 overflow-x-auto">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -327,8 +461,8 @@ export default function PatientRecords() {
                     />
                   </div>
                   <p className="text-xs text-slate mt-3">
-                    Date of birth and gender are set by the practice. Everything else here you can
-                    update yourself.
+                    Date of birth and gender are set by the practice - use “Request a change” to
+                    correct them. Everything else here you can update yourself.
                   </p>
                 </SectionCard>
 
@@ -354,6 +488,41 @@ export default function PatientRecords() {
                     <InfoItem label="Chronic conditions" value={(profile?.chronicConditions || []).join(', ') || '-'} />
                   </div>
                 </SectionCard>
+
+                {requests.length > 0 && (
+                  <SectionCard title="Your change requests">
+                    <div className="flex flex-col gap-2">
+                      {requests.map((r) => {
+                        const status = REQUEST_STATUS[r.status] || REQUEST_STATUS.pending
+                        return (
+                          <div key={r.id} className="bg-white rounded-lg px-3 py-2">
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <p className="text-sm font-medium text-ink">{r.section}</p>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${status.classes}`}>
+                                {status.label}
+                              </span>
+                            </div>
+                            <p className="text-sm text-ink">{r.requestedChange}</p>
+                            {r.resolutionNote && (
+                              <p className="text-xs text-slate mt-1">Practice note: {r.resolutionNote}</p>
+                            )}
+                            <p className="text-xs text-slate mt-1">Sent {tsToDisplay(r.createdAt)}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </SectionCard>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'intake' && intake && (
+              <div className="flex flex-col gap-4">
+                <p className="text-xs text-slate">
+                  You submitted this on {tsToDisplay(intake.submittedAt) || 'sign-up'}. To correct
+                  something, use “Request a change”.
+                </p>
+                <IntakeSummary answers={intake.answers} />
               </div>
             )}
 
@@ -594,6 +763,55 @@ export default function PatientRecords() {
           <p className="text-xs text-slate">
             Need to correct your date of birth, gender, or clinical details? Contact the practice -
             those are managed on their side.
+          </p>
+        </div>
+      </Modal>
+
+      {/* Ask the practice to change something patients can't edit themselves. */}
+      <Modal
+        isOpen={reqOpen}
+        onClose={() => setReqOpen(false)}
+        title="Request a change"
+        onConfirm={submitRequest}
+        confirmLabel={reqSaving ? 'Sending...' : 'Send request'}
+        confirmDisabled={reqSaving}
+      >
+        <div className="grid grid-cols-1 gap-3">
+          {reqError && <p className="text-red text-xs">{reqError}</p>}
+          <Field label="What needs changing?">
+            <select
+              value={reqSection}
+              onChange={(e) => setReqSection(e.target.value)}
+              className={inputClasses}
+            >
+              {REQUEST_SECTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {currentValueFor(reqSection, profile) && (
+            <p className="text-xs text-slate">
+              On file now: <span className="text-ink">{currentValueFor(reqSection, profile)}</span>
+            </p>
+          )}
+          <Field label="What should it say?">
+            <textarea
+              value={reqText}
+              onChange={(e) => {
+                setReqText(e.target.value)
+                setReqError('')
+              }}
+              rows={4}
+              maxLength={1000}
+              className={inputClasses}
+              placeholder="Describe the correction or addition"
+            />
+          </Field>
+          <p className="text-xs text-slate">
+            The practice will review this and update your record. You'll get a notification when
+            it's done. To change your contact details, use “Edit contact details” instead.
           </p>
         </div>
       </Modal>

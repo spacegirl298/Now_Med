@@ -4,7 +4,7 @@
 // by the secretary - clinical data entered from paper forms or after a
 // consultation, not just viewed.
 import { useEffect, useMemo, useState } from 'react'
-import { X, Plus, Trash2 } from 'lucide-react'
+import { X, Plus, Trash2, ClipboardList, Bell } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
   getPatientProfile,
@@ -13,9 +13,15 @@ import {
   getPatientRecords,
   getRecordsByIdNumber,
   addPatientRecord,
+  getIntakeFormForPatient,
+  getIntakeFormByIdNumber,
+  markIntakeImported,
+  sendIntakeReminder,
 } from '../../firebase/firestore'
-import { formatShortDate, formatDisplayDate, getTodayString } from '../../utils/dateHelpers'
+import { formatShortDate, formatDisplayDate, formatDate, getTodayString } from '../../utils/dateHelpers'
 import { GENDER_OPTIONS, isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
+import { intakeToProfileUpdates } from '../../utils/intakeQuestions'
+import IntakeSummary from '../../components/IntakeSummary'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -24,12 +30,24 @@ const TABS = [
   { id: 'medications', label: 'Medications' },
   { id: 'consultations', label: 'Consultations' },
 ]
+// Only shown once we know there's actually an intake form to review - see
+// how `tabs` is built below. Mirrors the "Intake form" tab on the
+// patient's own PatientRecords.jsx page.
+const INTAKE_TAB = { id: 'intake', label: 'Intake form' }
 
 const CHRONIC_CONDITIONS = ['Diabetes', 'Hypertension', 'Asthma', 'Heart Disease', 'Epilepsy', 'Mental Health Conditions']
 const FAMILY_HISTORY_OPTIONS = ['Diabetes', 'Cancer', 'Stroke', 'Heart Disease', 'High Blood Pressure', 'Mental Illness']
 const ALLERGY_TYPES = ['Medication', 'Food', 'Environmental']
 const SEVERITIES = ['Mild', 'Moderate', 'Severe']
 const SEVERITY_BADGE = { Mild: 'bg-pastel-blue text-blue', Moderate: 'bg-pastel-amber text-amber', Severe: 'bg-pastel-red text-red' }
+
+// Same conversion PatientRecords.jsx uses for its own "submitted on" line,
+// kept local here since this file doesn't otherwise need a Firestore
+// Timestamp -> display-date helper.
+function tsToDisplay(ts) {
+  const d = ts?.toDate ? ts.toDate() : null
+  return d ? formatShortDate(formatDate(d)) : ''
+}
 
 function calculateAge(dob) {
   if (!dob) return null
@@ -80,6 +98,10 @@ export default function PatientRecordModal({ patient, appointments = [], initial
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [records, setRecords] = useState([])
   const [loadingRecords, setLoadingRecords] = useState(true)
+  const [intake, setIntake] = useState(null)
+  const [loadingIntake, setLoadingIntake] = useState(true)
+  const [importingIntake, setImportingIntake] = useState(false)
+  const [importError, setImportError] = useState('')
 
   const [editingOverview, setEditingOverview] = useState(false)
   const [overviewForm, setOverviewForm] = useState({})
@@ -107,6 +129,15 @@ export default function PatientRecordModal({ patient, appointments = [], initial
       .then(setRecords)
       .catch(() => setRecords([]))
       .finally(() => setLoadingRecords(false))
+
+    setLoadingIntake(true)
+    const intakePromise = patient.id
+      ? getIntakeFormForPatient(patient.id, patient.idNumber)
+      : getIntakeFormByIdNumber(patient.idNumber)
+    intakePromise
+      .then(setIntake)
+      .catch(() => setIntake(null))
+      .finally(() => setLoadingIntake(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientKey])
 
@@ -118,6 +149,38 @@ export default function PatientRecordModal({ patient, appointments = [], initial
       ...updates,
     })
     setProfile((prev) => ({ id, ...(prev || {}), ...updates }))
+  }
+
+  // What the intake answers would add to the verified profile right now -
+  // computed live so the "Import into profile" button can tell the
+  // secretary up front whether there's actually anything new (intake
+  // answers never overwrite a field the practice already filled in - see
+  // intakeToProfileUpdates in utils/intakeQuestions.js).
+  const pendingImportUpdates = useMemo(
+    () => (intake ? intakeToProfileUpdates(intake.answers, profile || {}) : {}),
+    [intake, profile],
+  )
+
+  async function handleImportIntake() {
+    if (!intake) return
+    setImportingIntake(true)
+    setImportError('')
+    try {
+      if (Object.keys(pendingImportUpdates).length > 0) {
+        await persistProfile(pendingImportUpdates)
+      }
+      await markIntakeImported(intake.id, currentUser?.uid || null)
+      // Optimistic local update rather than a refetch, same pattern as
+      // persistProfile above - importedAt just needs to look like a
+      // Firestore Timestamp for tsToDisplay() to render it.
+      setIntake((prev) =>
+        prev ? { ...prev, importedAt: { toDate: () => new Date() }, importedBy: currentUser?.uid || null } : prev,
+      )
+    } catch (err) {
+      console.error(err)
+      setImportError('Could not import this into the profile. Please try again.')
+    }
+    setImportingIntake(false)
   }
 
   const today = getTodayString()
@@ -155,6 +218,8 @@ export default function PatientRecordModal({ patient, appointments = [], initial
 
   if (!patient) return null
 
+  const tabs = intake ? [...TABS, INTAKE_TAB] : TABS
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40">
       <div className="bg-white rounded-2xl w-full max-w-4xl shadow-lg max-h-[90vh] flex flex-col overflow-hidden">
@@ -169,7 +234,7 @@ export default function PatientRecordModal({ patient, appointments = [], initial
         </div>
 
         <div className="flex gap-2 px-6 py-3 border-b border-sand overflow-x-auto shrink-0">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -201,7 +266,38 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                   }}
                   nextAppointment={nextAppointment}
                   lastVisit={lastVisit}
+                  intake={intake}
+                  loadingIntake={loadingIntake}
                 />
+              )}
+
+              {activeTab === 'intake' && intake && (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-xs text-slate">
+                      Submitted {intake.submittedBy === 'patient' ? 'by the patient' : 'by the practice'} on{' '}
+                      {tsToDisplay(intake.submittedAt) || '-'}.
+                      {intake.importedAt ? ` Imported into the profile on ${tsToDisplay(intake.importedAt)}.` : ''}
+                    </p>
+                    {!intake.importedAt && (
+                      <button
+                        onClick={handleImportIntake}
+                        disabled={importingIntake}
+                        className="shrink-0 text-xs font-medium text-rose hover:underline disabled:opacity-60"
+                      >
+                        {importingIntake ? 'Importing...' : 'Import into profile'}
+                      </button>
+                    )}
+                  </div>
+                  {importError && <p className="text-xs text-red">{importError}</p>}
+                  {!intake.importedAt && Object.keys(pendingImportUpdates).length === 0 && (
+                    <p className="text-xs text-slate">
+                      Nothing new here — it already matches what's on this patient's profile. You can still mark it
+                      as reviewed.
+                    </p>
+                  )}
+                  <IntakeSummary answers={intake.answers} />
+                </div>
               )}
 
               {activeTab === 'history' && (
@@ -238,7 +334,7 @@ export default function PatientRecordModal({ patient, appointments = [], initial
 
 // ---------------- Overview ----------------
 
-function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit }) {
+function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit, intake, loadingIntake }) {
   const age = calculateAge(overviewForm.dateOfBirth || profile?.dateOfBirth)
   const [fieldErrors, setFieldErrors] = useState({})
   const [saving, setSaving] = useState(false)
@@ -277,6 +373,8 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
 
   return (
     <div className="flex flex-col gap-6">
+      <IntakeStatusCard patient={patient} intake={intake} loadingIntake={loadingIntake} />
+
       <SectionCard
         title="Personal information"
         action={
@@ -410,6 +508,72 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
         <p className="text-xs text-slate mt-3">Allergies, conditions and medications are managed from their own tabs.</p>
       </SectionCard>
     </div>
+  )
+}
+
+// "Has this patient done their first-time intake form?" at a glance, so
+// the secretary knows to hand them a paper form / sit them down with the
+// tablet in person if not - without having to dig into their record. See
+// the "Intake form" tab (only rendered once a form actually exists) for
+// the full read-only answers.
+function IntakeStatusCard({ patient, intake, loadingIntake }) {
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
+
+  const completed = loadingIntake ? null : !!intake || patient.hasCompletedIntake === true
+
+  async function handleSendReminder() {
+    setSending(true)
+    setError('')
+    try {
+      await sendIntakeReminder(patient)
+      setSent(true)
+    } catch (err) {
+      console.error(err)
+      setError(err?.message || 'Could not send the reminder. Please try again.')
+    }
+    setSending(false)
+  }
+
+  return (
+    <SectionCard
+      title="Intake form"
+      action={
+        completed === false && patient.id && (
+          <button
+            onClick={handleSendReminder}
+            disabled={sending || sent}
+            className="text-xs font-medium text-rose hover:underline disabled:opacity-60 flex items-center gap-1"
+          >
+            <Bell size={12} />
+            {sent ? 'Reminder sent' : sending ? 'Sending...' : 'Send reminder'}
+          </button>
+        )
+      }
+    >
+      {loadingIntake ? (
+        <p className="text-sm text-slate">Checking...</p>
+      ) : completed ? (
+        <p className="text-sm text-ink flex items-center gap-2">
+          <ClipboardList size={16} className="text-green shrink-0" />
+          Completed{intake?.submittedBy === 'secretary' ? ' (captured by the practice)' : ''}.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-amber flex items-center gap-2">
+            <ClipboardList size={16} className="shrink-0" />
+            Not completed yet.
+          </p>
+          <p className="text-xs text-slate">
+            {patient.id
+              ? "They still see the reminder icon in their app until it's done. If they're in front of you, it's quickest to have them fill it in now."
+              : "This patient doesn't have an account yet, so have them complete it on paper or in person at their next visit."}
+          </p>
+          {error && <p className="text-xs text-red">{error}</p>}
+        </div>
+      )}
+    </SectionCard>
   )
 }
 

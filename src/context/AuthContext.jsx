@@ -11,7 +11,12 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
-import { linkPatientDataByIdNumber, getUserByIdNumber } from '../firebase/firestore'
+import {
+  linkPatientDataByIdNumber,
+  getIntakeFormForPatient,
+  linkIntakeFormToPatient,
+  reserveIdNumberIndexSlot,
+} from '../firebase/firestore'
 
 
 const AuthContext = createContext()
@@ -26,10 +31,15 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
   const [userName, setUserName] = useState(null)
-  // Read from the user doc at login; only relevant for patients. Undefined
-  // until the doc has loaded, so RequireIntake (App.jsx) can tell "still
-  // loading" apart from "definitely hasn't done intake yet".
-  const [hasCompletedIntake, setHasCompletedIntake] = useState(undefined)
+  const [userIdNumber, setUserIdNumber] = useState('')
+  // Intake state (patients only). Both are undefined until the user doc has
+  // loaded, so callers can tell "still loading" from "not done yet".
+  //   intakeCompleted - a full intake form exists for this patient
+  //   intakeDeferred  - they chose "Do this later" on the first-login prompt.
+  //                     They are not prompted again, but the floating intake
+  //                     button stays visible until the form is completed.
+  const [intakeCompleted, setIntakeCompleted] = useState(undefined)
+  const [intakeDeferred, setIntakeDeferred] = useState(undefined)
   const [loading, setLoading] = useState(true)
 
   // Register a new user
@@ -45,17 +55,13 @@ export function AuthProvider({ children }) {
       // ID/passport number. The one deliberate exception: a secretary who
       // already has a staff account is allowed to register a *patient*
       // account under that same ID number — that's the same real person
-      // adding a second role, not a duplicate identity.
-      const existingUserWithId = await getUserByIdNumber(idNumber)
-      if (existingUserWithId) {
-        const isSecretarySelfRegisteringAsPatient =
-          existingUserWithId.role === 'secretary' && role === 'patient'
-        if (!isSecretarySelfRegisteringAsPatient) {
-          throw new Error(
-            'An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake.'
-          )
-        }
-      }
+      // adding a second role, not a duplicate identity. This is enforced
+      // by reserveIdNumberIndexSlot against idNumberIndex/{idNumber},
+      // which mirrors the firestore.rules logic for that collection.
+      // (A direct query against `users` won't work here — a brand-new
+      // registrant has no user doc yet, so isSecretary()/isOwner() in the
+      // rules can't be satisfied and the query is denied.)
+      await reserveIdNumberIndexSlot(idNumber, result.user.uid, role)
     } catch (err) {
       // Roll back the auth account we just created so we don't leave an
       // orphaned login with no matching Firestore user doc.
@@ -79,6 +85,7 @@ export function AuthProvider({ children }) {
       idType, // 'sa_id' or 'passport'
       practiceCode: practiceCode || '',
       hasCompletedIntake: false,
+      intakeDeferred: false,
       createdAt: new Date()
     })
 
@@ -111,16 +118,50 @@ export function AuthProvider({ children }) {
     return sendPasswordResetEmail(auth, email)
   }
 
-  // Marks the first-time intake form as done so RequireIntake stops
-  // redirecting this patient to it. Called by PatientIntake.jsx on both
-  // "save and continue" and "skip for now" — skipping still counts as
-  // "shown once", per the PRD's "prompt appears on first login only".
+  // Called by PatientIntake.jsx after the form has been saved.
   async function completeIntake() {
     if (!currentUser) return
     await updateDoc(doc(db, 'users', currentUser.uid), {
       hasCompletedIntake: true,
+      intakeDeferred: false,
     })
-    setHasCompletedIntake(true)
+    setIntakeCompleted(true)
+    setIntakeDeferred(false)
+  }
+
+  // "Do this later" on the intake prompt. Stops the automatic redirect
+  // (so the prompt really is only shown once) without pretending the form
+  // was filled in. State is set even if the write fails so this session
+  // isn't stuck in a redirect loop.
+  async function deferIntake() {
+    setIntakeDeferred(true)
+    if (!currentUser) return
+    try {
+      await updateDoc(doc(db, 'users', currentUser.uid), { intakeDeferred: true })
+    } catch (error) {
+      console.error('Could not save intake deferral:', error)
+    }
+  }
+
+  // First-login check: is there already an intake form for this patient,
+  // either under their uid or attached to their ID/passport number (e.g. the
+  // practice captured one before they registered)? If so they never see the
+  // prompt.
+  async function resolveIntakeCompleted(uid, data) {
+    try {
+      const existing = await getIntakeFormForPatient(uid, data.idNumber)
+      if (!existing) return false
+      if (!existing.patientId) {
+        await linkIntakeFormToPatient(existing.id, uid).catch((e) =>
+          console.error('Could not link intake form to account:', e),
+        )
+      }
+      await updateDoc(doc(db, 'users', uid), { hasCompletedIntake: true })
+      return true
+    } catch (error) {
+      console.error('Could not check for an existing intake form:', error)
+      return false
+    }
   }
 
 useEffect(() => {
@@ -129,12 +170,21 @@ useEffect(() => {
       try {
         const userDoc = await getDoc(doc(db, 'users', user.uid))
         if (userDoc.exists()) {
-          setUserRole(userDoc.data().role)
-          setUserName(userDoc.data().name)
+          const data = userDoc.data()
+          setUserRole(data.role)
+          setUserName(data.name)
+          setUserIdNumber(data.idNumber || '')
           // Older accounts created before this field existed won't have it —
           // treat missing as "already done" so nobody who registered before
-          // this feature shipped gets an unexpected intake prompt.
-          setHasCompletedIntake(userDoc.data().hasCompletedIntake ?? true)
+          // this feature shipped gets an unexpected intake prompt. Staff never
+          // do intake.
+          let completed =
+            data.role === 'patient' ? (data.hasCompletedIntake ?? true) : true
+          if (data.role === 'patient' && completed === false) {
+            completed = await resolveIntakeCompleted(user.uid, data)
+          }
+          setIntakeCompleted(completed)
+          setIntakeDeferred(!!data.intakeDeferred)
         }
         setCurrentUser(user)
       } catch (error) {
@@ -147,7 +197,9 @@ useEffect(() => {
       setCurrentUser(null)
       setUserRole(null)
       setUserName(null)
-      setHasCompletedIntake(undefined)
+      setUserIdNumber('')
+      setIntakeCompleted(undefined)
+      setIntakeDeferred(undefined)
     }
     setLoading(false)
   })
@@ -159,12 +211,20 @@ useEffect(() => {
     currentUser,
     userRole,
     userName,
-    hasCompletedIntake,
+    userIdNumber,
+    intakeCompleted,
+    intakeDeferred,
+    // Kept under its old name so App.jsx's RequireIntake works unchanged: it
+    // redirects to the intake page only while this is === false, i.e. only
+    // for a patient who has neither completed nor deferred the form.
+    hasCompletedIntake:
+      intakeCompleted === undefined ? undefined : intakeCompleted || !!intakeDeferred,
     register,
     login,
     logout,
     resetPassword,
-    completeIntake
+    completeIntake,
+    deferIntake
   }
 
   return (

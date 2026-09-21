@@ -13,12 +13,14 @@ import PatientCalendar from "./pages/patient/PatientCalendar";
 import PatientRecords from "./pages/patient/PatientRecords";
 import PatientProfile from "./pages/patient/PatientProfile";
 import PatientIntake from "./pages/patient/PatientIntake";
+import PatientMessages from "./pages/patient/PatientMessages";
 
 // Secretary pages
 import SecretaryDashboard from "./pages/secretary/SecretaryDashboard";
 import SecretarySchedule from "./pages/secretary/SecretarySchedule";
 import PatientList from "./pages/secretary/PatientList";
 import SecretaryProfile from "./pages/secretary/SecretaryProfile";
+import SecretaryMessages from "./pages/secretary/SecretaryMessages";
 
 //dev bypass flag that allows us to view the dashboards without having to keep logging back in
 const DEV_BYPASS_ROLE = false;
@@ -51,6 +53,12 @@ function ProtectedRoute({ children, allowedRole }) {
 // it, before they can reach any other patient page. Only meaningful for
 // the patient role — nest this INSIDE ProtectedRoute allowedRole="patient"
 // so userRole is already guaranteed to be "patient" by the time this runs.
+//
+// hasCompletedIntake (from AuthContext) means "don't force the form": it is
+// true once the form is submitted OR the patient chose "Do this later", so
+// the redirect below only ever fires on a patient's first login. After a
+// deferral, the floating IntakeFormButton (in PatientLayout) brings them back.
+//
 // While hasCompletedIntake is still loading (undefined) we render nothing
 // rather than redirecting, to avoid a flash-redirect to /patient/intake on
 // every page load before the user doc has come back.
@@ -117,6 +125,16 @@ export default function App() {
           }
         />
         <Route
+          path="/patient/messages"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <RequireIntake>
+                <PatientMessages />
+              </RequireIntake>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/patient/profile"
           element={
             <ProtectedRoute allowedRole="patient">
@@ -149,6 +167,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRole="secretary">
               <PatientList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secretary/messages"
+          element={
+            <ProtectedRoute allowedRole="secretary">
+              <SecretaryMessages />
             </ProtectedRoute>
           }
         />

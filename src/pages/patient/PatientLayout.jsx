@@ -4,6 +4,7 @@
 import Sidebar from "../../components/Sidebar";
 import BottomTabBar from "../../components/BottomTabBar";
 import NotificationBell from "../../components/NotificationBell";
+import IntakeFormButton from "../../components/IntakeFormButton";
 
 export default function PatientLayout({ children }) {
   return (
@@ -13,6 +14,8 @@ export default function PatientLayout({ children }) {
           usage in firebase/firestore.js) so the bell lives here rather
           than in the shared Sidebar both roles use. */}
       <NotificationBell />
+      {/* Only rendered while the patient still owes us their intake form. */}
+      <IntakeFormButton />
       <main className="flex-1 pb-20 md:pb-0">{children}</main>
       <BottomTabBar role="patient" />
     </div>
