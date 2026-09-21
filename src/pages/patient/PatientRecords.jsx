@@ -45,7 +45,7 @@ import {
   savePatientProfile,
   createChangeRequest,
   subscribeToPatientChangeRequests,
-  getIntakeFormForPatient,
+  getIntakeForm,
 } from '../../firebase/firestore'
 import PatientLayout from './PatientLayout'
 import BackButton from '../../components/BackButton'
@@ -246,7 +246,7 @@ export default function PatientRecords() {
       (err) => console.error(err),
     )
     // One-time fetch: the form is immutable once submitted.
-    getIntakeFormForPatient(currentUser.uid, userIdNumber)
+    getIntakeForm(currentUser.uid)
       .then(setIntake)
       .catch((err) => console.error(err))
     return () => {

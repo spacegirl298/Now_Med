@@ -25,7 +25,7 @@ import {
   saveIntakeForm,
   savePatientProfile,
   getPatientProfile,
-  getIntakeFormForPatient,
+  getIntakeForm,
 } from '../../firebase/firestore'
 import Card from '../../components/Card'
 import IntakeSummary from '../../components/IntakeSummary'
@@ -418,9 +418,11 @@ export default function PatientIntake() {
         clean[k] = typeof v === 'string' ? v.trim() : v
       })
 
-      // Guard against a double submit (or a form linked by ID number since
-      // this page loaded).
-      const existing = await getIntakeFormForPatient(currentUser.uid, userIdNumber)
+      // Patient rules allow a query for the authenticated patient's UID, but
+      // may not allow an ID-number query across the whole intakeForms
+      // collection. Any pre-registration form is linked during authentication,
+      // so the UID lookup is the correct double-submit guard here.
+      const existing = await getIntakeForm(currentUser.uid)
       if (!existing) {
         await saveIntakeForm({
           patientId: currentUser.uid,
