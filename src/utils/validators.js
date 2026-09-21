@@ -17,6 +17,13 @@ export function isValidPhone(phone) {
   return /^[0-9+\s()-]{7,15}$/.test(phone);
 }
 
+export function isValidInternationalPhone(phone) {
+  const value = String(phone || '').trim()
+  if (!/^[0-9\s().-]+$/.test(value)) return false
+  const digits = value.replace(/\D/g, '')
+  return digits.length >= 7 && digits.length <= 15
+}
+
 // Digits only (with optional spaces/dashes, since some schemes print numbers
 // like "1234 5678" or "1234-5678"). Used for fields like medical aid number
 // that should be numeric but aren't phone numbers, so don't need +()  etc.

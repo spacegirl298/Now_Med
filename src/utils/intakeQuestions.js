@@ -19,7 +19,8 @@
 //   fields / noneLabel / summarize   list-type config (see the list questions)
 import {
   GENDER_OPTIONS,
-  isValidPhone,
+  isValidEmail,
+  isValidInternationalPhone,
   isValidMedicalAidNumber,
 } from './validators'
 import { formatDisplayDate } from './dateHelpers'
@@ -63,6 +64,17 @@ export const PROFILE_SYNC_FIELDS = [
   'medicalAidNumber',
 ]
 
+export const PHONE_COUNTRIES = [
+  { value: '+27', label: 'South Africa (+27)' },
+  { value: '+1', label: 'United States / Canada (+1)' },
+  { value: '+44', label: 'United Kingdom (+44)' },
+  { value: '+61', label: 'Australia (+61)' },
+  { value: '+91', label: 'India (+91)' },
+  { value: '+234', label: 'Nigeria (+234)' },
+  { value: '+263', label: 'Zimbabwe (+263)' },
+  { value: 'other', label: 'Other country' },
+]
+
 function validateDob(value) {
   if (!value) return ''
   const d = new Date(value)
@@ -72,7 +84,17 @@ function validateDob(value) {
   return ''
 }
 
-const phoneRule = (v) => (isValidPhone(v) ? '' : 'Numbers only, 7–15 digits.')
+const phoneRule = (v) => (isValidInternationalPhone(v?.number || v) ? '' : 'Enter 7–15 digits.')
+const emailRule = (v) => (isValidEmail(v) ? '' : 'Enter a valid email address.')
+const isMinor = (answers) => {
+  if (!answers.dateOfBirth) return false
+  const dob = new Date(`${answers.dateOfBirth}T00:00:00`)
+  const today = new Date()
+  let age = today.getFullYear() - dob.getFullYear()
+  const beforeBirthday = today < new Date(today.getFullYear(), dob.getMonth(), dob.getDate())
+  if (beforeBirthday) age -= 1
+  return age < 18
+}
 
 const fmtDate = (v) => (v ? formatDisplayDate(v) : '')
 const joinParts = (parts, sep = ' · ') => parts.filter(Boolean).join(sep)
@@ -94,6 +116,24 @@ export const QUESTIONS = [
     type: 'single',
     label: 'What is your gender?',
     options: GENDER_OPTIONS,
+    required: true,
+  },
+  {
+    id: 'sexAtBirth',
+    section: 'About you',
+    type: 'single',
+    label: 'What sex were you assigned at birth?',
+    help: 'This can affect screening, diagnosis, and medication safety.',
+    options: opts(['Female', 'Male', 'Intersex', 'Prefer not to say']),
+    required: true,
+  },
+  {
+    id: 'preferredName',
+    section: 'About you',
+    type: 'text',
+    label: 'What name should our staff use when speaking with you?',
+    placeholder: 'Preferred name',
+    required: true,
   },
   {
     id: 'maritalStatus',
@@ -122,13 +162,52 @@ export const QUESTIONS = [
     type: 'textarea',
     label: 'What is your home address?',
     placeholder: 'Street, suburb, city',
+    required: true,
   },
   {
     id: 'contactNumber',
     section: 'About you',
-    type: 'tel',
+    type: 'phone',
     label: 'What is the best number to reach you on?',
+    required: true,
     validate: phoneRule,
+  },
+
+  {
+    id: 'guardianName',
+    section: 'Parent or guardian',
+    type: 'text',
+    label: 'What is your parent or legal guardian’s full name?',
+    showIf: isMinor,
+    required: true,
+  },
+  {
+    id: 'guardianRelationship',
+    section: 'Parent or guardian',
+    type: 'single',
+    label: 'What is their relationship to you?',
+    options: opts(['Parent', 'Legal guardian', 'Foster parent', 'Other']),
+    showIf: isMinor,
+    required: true,
+  },
+  {
+    id: 'guardianPhone',
+    section: 'Parent or guardian',
+    type: 'phone',
+    label: 'What is your parent or guardian’s phone number?',
+    showIf: isMinor,
+    required: true,
+    validate: phoneRule,
+  },
+  {
+    id: 'guardianEmail',
+    section: 'Parent or guardian',
+    type: 'text',
+    label: 'What is your parent or guardian’s email address?',
+    placeholder: 'name@example.com',
+    showIf: isMinor,
+    required: true,
+    validate: emailRule,
   },
 
   // ---- Emergency contact ----
@@ -138,12 +217,14 @@ export const QUESTIONS = [
     type: 'text',
     label: 'Who should we contact in an emergency?',
     help: 'Their full name.',
+    required: true,
   },
   {
     id: 'emergencyContactPhone',
     section: 'Emergency contact',
-    type: 'tel',
+    type: 'phone',
     label: 'What is their phone number?',
+    required: true,
     validate: phoneRule,
   },
   {
@@ -152,6 +233,7 @@ export const QUESTIONS = [
     type: 'text',
     label: 'How are they related to you?',
     placeholder: 'e.g. Spouse, parent, friend',
+    required: true,
   },
 
   // ---- Medical aid ----
@@ -162,6 +244,7 @@ export const QUESTIONS = [
     label: 'Do you have medical aid?',
     options: YES_NO,
     affectsFlow: true,
+    required: true,
   },
   {
     id: 'medicalAidProvider',
@@ -170,6 +253,7 @@ export const QUESTIONS = [
     label: 'Which medical aid are you with?',
     placeholder: 'e.g. Discovery, Bonitas',
     showIf: (a) => a.hasMedicalAid === 'yes',
+    required: true,
   },
   {
     id: 'medicalAidNumber',
@@ -179,6 +263,34 @@ export const QUESTIONS = [
     help: 'Numbers only.',
     showIf: (a) => a.hasMedicalAid === 'yes',
     validate: (v) => (isValidMedicalAidNumber(v) ? '' : 'Numbers only.'),
+    required: true,
+  },
+  {
+    id: 'medicalAidPlan',
+    section: 'Medical aid',
+    type: 'text',
+    label: 'What is your medical aid plan or option?',
+    placeholder: 'e.g. Classic Smart, Essential Medical',
+    showIf: (a) => a.hasMedicalAid === 'yes',
+    required: true,
+  },
+  {
+    id: 'medicalAidDependentCode',
+    section: 'Medical aid',
+    type: 'text',
+    label: 'What is your dependent code?',
+    help: 'Usually 00 for the main member, 01 for the first dependent, and so on.',
+    placeholder: 'e.g. 00',
+    showIf: (a) => a.hasMedicalAid === 'yes',
+    required: true,
+  },
+  {
+    id: 'medicalAidPrincipalName',
+    section: 'Medical aid',
+    type: 'text',
+    label: 'If you are not the main member, what is the main member’s full name?',
+    showIf: (a) => a.hasMedicalAid === 'yes' && isMinor(a),
+    required: true,
   },
 
   // ---- Your health ----
@@ -315,6 +427,9 @@ export function formatAnswer(q, answers = {}) {
   switch (q.type) {
     case 'date':
       return v ? [formatDisplayDate(v)] : null
+    case 'phone':
+      if (typeof v === 'string') return v.trim() ? [v.trim()] : null
+      return v?.number?.trim() ? [`${v.country || ''} ${v.number.trim()}`.trim()] : null
     case 'single': {
       if (!v) return null
       return [q.options.find((o) => o.value === v)?.label || v]

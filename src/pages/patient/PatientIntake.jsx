@@ -32,6 +32,7 @@ import IntakeSummary from '../../components/IntakeSummary'
 import {
   getVisibleQuestions,
   PROFILE_SYNC_FIELDS,
+  PHONE_COUNTRIES,
 } from '../../utils/intakeQuestions'
 
 const inputClasses =
@@ -204,6 +205,36 @@ function QuestionInput({ q, answers, setAnswer, onDirtyChange }) {
           autoFocus
         />
       )
+    case 'phone': {
+      const phone = typeof value === 'string'
+        ? { country: PHONE_COUNTRIES[0].value, number: value }
+        : value || { country: PHONE_COUNTRIES[0].value, number: '' }
+      return (
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-2">
+          <select
+            value={phone.country || PHONE_COUNTRIES[0].value}
+            onChange={(e) => setAnswer(q.id, { ...phone, country: e.target.value })}
+            className={inputClasses}
+            aria-label="Country calling code"
+          >
+            {PHONE_COUNTRIES.map((country) => (
+              <option key={country.value} value={country.value}>
+                {country.label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="tel"
+            inputMode="tel"
+            value={phone.number || ''}
+            onChange={(e) => setAnswer(q.id, { ...phone, number: e.target.value })}
+            placeholder="Phone number"
+            className={inputClasses}
+            autoFocus
+          />
+        </div>
+      )
+    }
     case 'textarea':
       return (
         <textarea
@@ -360,7 +391,7 @@ export default function PatientIntake() {
   function validateStep() {
     if (dirty) return 'Tap “Add” to keep this entry, or clear it, before continuing.'
     const v = answers[q.id]
-    const empty = v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0)
+    const empty = v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0 && q.type !== 'list')
     if (q.required && empty) return 'This question is required.'
     if (q.validate && v) return q.validate(typeof v === 'string' ? v.trim() : v)
     return ''
@@ -415,7 +446,11 @@ export default function PatientIntake() {
       Object.entries(answers).forEach(([k, v]) => {
         const isOtherKey = allQuestions.some((s) => s.otherKey === k)
         if (!visibleIds.has(k) && !isOtherKey) return
-        clean[k] = typeof v === 'string' ? v.trim() : v
+        if (allQuestions.find((question) => question.id === k)?.type === 'phone' && v?.number) {
+          clean[k] = `${v.country || ''} ${v.number.trim()}`.trim()
+        } else {
+          clean[k] = typeof v === 'string' ? v.trim() : v
+        }
       })
 
       // Patient rules allow a query for the authenticated patient's UID, but
@@ -478,7 +513,8 @@ export default function PatientIntake() {
             <p className="text-sm text-slate mb-2">
               Before your first visit, we'd like to get to know you a little.
               We'll ask one question at a time about your details and your
-              health, and you can skip anything you're not sure about.
+              health. Questions marked required must be completed; optional
+              questions can be skipped.
             </p>
             <p className="text-sm text-slate mb-6">
               It takes about five minutes. Your answers go into your medical
@@ -553,7 +589,9 @@ export default function PatientIntake() {
                 goNext()
               }}
             >
-              <h1 className="text-xl font-semibold text-ink mb-1">{q.label}</h1>
+              <h1 className="text-xl font-semibold text-ink mb-1">
+                {q.label} {q.required && <span className="text-rose">*</span>}
+              </h1>
               {q.help && <p className="text-sm text-slate mb-4">{q.help}</p>}
               {!q.help && <div className="mb-4" />}
 
