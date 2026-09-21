@@ -213,7 +213,7 @@ export default function PatientRecords() {
 
   useEffect(() => {
     if (!currentUser) return
-    setLoadError('')
+    setLoadError('') // eslint-disable-line react-hooks/set-state-in-effect -- clear the previous subscription error
     const unsubProfile = subscribeToPatientProfile(
       currentUser.uid,
       (p) => {

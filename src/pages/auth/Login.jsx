@@ -19,7 +19,7 @@ export default function Login() {
   useEffect(() => {
     const saved = localStorage.getItem('rememberedEmail')
     if (saved) {
-      setEmail(saved)
+      setEmail(saved) // eslint-disable-line react-hooks/set-state-in-effect -- initialize the form from browser storage
       setRememberMe(true)
     }
   }, [])

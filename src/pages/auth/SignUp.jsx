@@ -26,7 +26,7 @@ export default function SignUp() {
   useEffect(() => {
     if (step !== 3) return
 
-    setCountdown(60)
+    setCountdown(60) // eslint-disable-line react-hooks/set-state-in-effect -- reset the timer when verification step opens
     setCanResend(false)
 
     const timer = setInterval(() => {

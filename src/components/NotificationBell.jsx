@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell } from "lucide-react";
 import { useNotifications } from "../hooks/useNotifications";
+import { useAuth } from "../context/AuthContext";
 import { formatTimeAgo } from "../utils/dateHelpers";
 import EmptyState from "./EmptyState";
 
@@ -16,15 +17,20 @@ import EmptyState from "./EmptyState";
 // just marking itself read and going nowhere.
 const CHAT_NOTIFICATION_TYPES = new Set(["message", "reminder", "intake_reminder"]);
 
-function routeFor(notification) {
+function routeFor(notification, userRole) {
   return CHAT_NOTIFICATION_TYPES.has(notification.type)
-    ? "/patient/messages"
-    : "/patient/dashboard";
+    ? userRole === "secretary"
+      ? "/secretary/messages"
+      : "/patient/messages"
+    : userRole === "secretary"
+      ? "/secretary/dashboard"
+      : "/patient/dashboard";
 }
 
 export default function NotificationBell() {
   const { notifications, unreadCount, markNotificationRead } =
     useNotifications();
+  const { userRole } = useAuth();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
   const navigate = useNavigate();
@@ -80,7 +86,9 @@ export default function NotificationBell() {
                   onClick={() => {
                     if (!n.read) markNotificationRead(n.id);
                     setOpen(false);
-                    navigate(routeFor(n));
+                    navigate(routeFor(n, userRole), {
+                      state: n.patientId ? { patientId: n.patientId } : undefined,
+                    });
                   }}
                   className={`w-full text-left px-4 py-3 hover:bg-mist transition-colors ${
                     n.read ? "" : "bg-blush/20"

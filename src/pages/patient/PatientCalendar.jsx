@@ -114,6 +114,7 @@ export default function PatientCalendar() {
   const { appointments, loading, error, createAppointment, cancelAppointment } =
     useAppointments();
   const navigate = useNavigate();
+  const [now] = useState(() => Date.now());
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -411,7 +412,7 @@ export default function PatientCalendar() {
     const appointmentDate = appointment.appointmentAt?.toDate
       ? appointment.appointmentAt.toDate()
       : new Date(`${appointment.date}T${appointment.time}:00`);
-    const hours = (appointmentDate.getTime() - Date.now()) / (1000 * 60 * 60);
+    const hours = (appointmentDate.getTime() - now) / (1000 * 60 * 60);
     return Number.isFinite(hours) ? hours : null;
   }
 

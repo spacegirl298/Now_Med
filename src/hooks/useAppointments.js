@@ -21,7 +21,7 @@ export function useAppointments() {
 
   useEffect(() => {
     if (!currentUser) {
-      setAppointments([]) 
+      setAppointments([]) // eslint-disable-line react-hooks/set-state-in-effect -- clear stale data when auth ends
       setLoading(false)
       return
     }

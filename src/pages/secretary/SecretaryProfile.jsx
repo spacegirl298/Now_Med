@@ -31,7 +31,7 @@ const EMPTY_DOCTOR = {
 };
 
 export default function SecretaryProfile() {
-  const { currentUser, userRole, userName, logout } = useAuth();
+  const { currentUser, userRole, userName } = useAuth();
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");

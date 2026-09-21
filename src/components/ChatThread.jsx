@@ -6,7 +6,7 @@
 // kind === 'reminder' (sent by the practice via "Send reminder") get their
 // own amber style so they stand out from normal chat.
 import { useEffect, useRef, useState } from 'react'
-import { Bell, Send } from 'lucide-react'
+import { AlertTriangle, Bell, Send } from 'lucide-react'
 import { formatDate, formatShortDate, formatTime, isToday } from '../utils/dateHelpers'
 
 const MAX_LENGTH = 1000
@@ -32,6 +32,7 @@ export default function ChatThread({
   loading = false,
   emptyMessage = 'No messages yet.',
   placeholder = 'Write a message...',
+  showModerationFlags = false,
 }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -54,9 +55,11 @@ export default function ChatThread({
     } catch (err) {
       console.error(err)
       setError(
-        err?.code === 'permission-denied'
-          ? "You don't have permission to send messages here."
-          : 'Could not send your message. Please try again.',
+        err?.code === 'inappropriate-language'
+          ? "This message can't be sent because it contains inappropriate language."
+          : err?.code === 'permission-denied'
+            ? "You don't have permission to send messages here."
+            : 'Could not send your message. Please try again.',
       )
     }
     setSending(false)
@@ -86,6 +89,7 @@ export default function ChatThread({
             lastDay = day
             const mine = m.senderRole === myRole
             const isReminder = m.kind === 'reminder'
+            const isFlagged = showModerationFlags && m.explicitLanguage
 
             return (
               <div key={m.id} className="flex flex-col gap-2">
@@ -111,6 +115,11 @@ export default function ChatThread({
                     )}
                     {!mine && !isReminder && m.senderName && (
                       <p className="text-xs font-medium text-slate mb-0.5">{m.senderName}</p>
+                    )}
+                    {isFlagged && (
+                      <p className="text-xs font-medium text-red flex items-center gap-1 mb-1" title="This message contains language that may need review">
+                        <AlertTriangle size={12} /> Flagged language
+                      </p>
                     )}
                     <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
                     <p className={`text-[11px] mt-1 ${mine && !isReminder ? 'text-white/70' : 'text-slate'}`}>

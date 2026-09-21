@@ -443,6 +443,9 @@ export async function createAppointment(data) {
       type: "confirmation",
       message: `Your appointment on ${data.date} at ${data.time} has been confirmed.`,
     });
+    // Fire-and-forget - a slow/failed intake check should never hold up
+    // returning the new appointment id to the caller.
+    notifyIfIntakeIncomplete(patientId, data.patientName, data.date, data.time);
   }
 
   return appointmentRef.id;
@@ -710,15 +713,39 @@ export async function sendConfirmationReminder(appointment) {
 
 // ================= NOTIFICATIONS =================
 
+// The notifications collection is per-recipient (recipientId), so there's no
+// built-in "everyone with this role" broadcast. This fans a single alert out
+// to every secretary account by creating one notification doc each. Used for
+// things any secretary should see and act on (a patient's intake still isn't
+// done ahead of their visit, a message got flagged for review), rather than
+// things tied to one specific patient's own chat/booking.
+async function notifyAllSecretaries({ type, message, appointmentId = null, patientId = null }) {
+  const q = query(usersCol, where("role", "==", "secretary"));
+  const snap = await getDocs(q);
+  await Promise.all(
+    snap.docs.map((d) =>
+      createNotification({
+        recipientId: d.id,
+        appointmentId,
+        patientId,
+        type,
+        message,
+      }),
+    ),
+  );
+}
+
 export async function createNotification({
   recipientId,
   appointmentId = null,
+  patientId = null,
   type,
   message,
 }) {
   await addDoc(notificationsCol, {
     recipientId,
     appointmentId,
+    patientId,
     type,
     message,
     read: false,
@@ -740,6 +767,28 @@ export function subscribeToNotifications(recipientId, callback) {
 
 export async function markNotificationRead(notificationId) {
   await updateDoc(doc(db, "notifications", notificationId), { read: true });
+}
+
+// Bulk-clears every unread "new message" bell notification for one user.
+// The chat page itself only resets the conversation's unreadForPatient/
+// unreadForStaff counter (see markConversationRead) - that's a different
+// piece of state to the individual notification docs sendMessage() creates
+// for the bell, so without this those kept piling up as unread even after
+// the patient had already read the message in the chat.
+export async function markMessageNotificationsRead(recipientId, patientId) {
+  if (!recipientId || !patientId) return;
+  const q = query(
+    notificationsCol,
+    where("recipientId", "==", recipientId),
+    where("type", "==", "message"),
+    where("read", "==", false),
+  );
+  const snap = await getDocs(q);
+  const matchingDocs = snap.docs.filter((d) => d.data().patientId === patientId);
+  if (matchingDocs.length === 0) return;
+  const batch = writeBatch(db);
+  matchingDocs.forEach((d) => batch.update(d.ref, { read: true }));
+  await batch.commit();
 }
 
 // ================= AVAILABILITY / BLOCKED SLOTS =================
@@ -940,6 +989,54 @@ export async function markIntakeImported(intakeId, staffUid) {
   });
 }
 
+// "Send reminder" button on a patient's record (see IntakeStatusCard). Only
+// meaningful for a registered patient - a walk-in with no account has
+// nowhere for the reminder to land, so the caller should keep that button
+// hidden for them (it already does: `patient.id &&` guards it).
+export async function sendIntakeReminder(patient) {
+  if (!patient?.id) {
+    throw new Error("This patient doesn't have an account yet to send a reminder to.");
+  }
+  await createNotification({
+    recipientId: patient.id,
+    type: "intake_reminder",
+    message: "Please complete your first-time patient intake form before your next visit.",
+  });
+  // Also drop it in their chat with the practice, same as an appointment
+  // reminder, so it's hard to miss even if they don't check the bell.
+  await sendMessage({
+    patientId: patient.id,
+    patientName: patient.name || "",
+    senderRole: "secretary",
+    senderName: "Practice",
+    text: "Hi! Could you please complete your first-time patient intake form before your next visit? You can find it from your dashboard.",
+    kind: "reminder",
+  });
+}
+
+// Checked right after booking a *registered* patient's appointment. If they
+// still haven't completed (or even started) their intake form, every
+// secretary gets a heads-up now rather than finding out when the patient
+// arrives. There's no server-side scheduler in this app to fire this closer
+// to the actual visit, so "at booking time" is the one reliable moment we
+// know both facts (a real upcoming appointment, and intake status) at once.
+async function notifyIfIntakeIncomplete(patientId, patientName, date, time) {
+  try {
+    const userDoc = await getDoc(doc(db, "users", patientId));
+    const data = userDoc.exists() ? userDoc.data() : null;
+    if (data && data.hasCompletedIntake) return;
+    const form = await getIntakeFormForPatient(patientId, data?.idNumber);
+    if (form) return; // form exists but the user doc hasn't caught up yet
+    await notifyAllSecretaries({
+      type: "intake_incomplete",
+      message: `${patientName || "A patient"} has an appointment on ${date} at ${time} but hasn't completed their intake form yet.`,
+    });
+  } catch (err) {
+    // Best-effort - never let a notification failure block a booking.
+    console.error("Could not check/notify about intake status:", err);
+  }
+}
+
 // ================= CHANGE REQUESTS =================
 // Patients can directly edit non-clinical details only. For anything else
 // they file a request here; a secretary makes the change on the record (or
@@ -1068,6 +1165,19 @@ export function subscribeToMessages(patientId, callback, onError) {
   );
 }
 
+// Deliberately short and conservative - this is a first pass at flagging
+// obvious explicit language for a secretary to glance at, not a full
+// profanity/moderation service. It never blocks sending: a patient in
+// distress or pain shouldn't be stopped from reaching the practice, but the
+// practice should be able to see at a glance which messages used explicit
+// language so they can follow up with care if needed.
+const EXPLICIT_LANGUAGE_PATTERN =
+  /\b(fuck(ing|er|ed)?|shit(ty)?|bitch(es)?|asshole|bastard|cunt|dick(head)?|piss(ed)?off|whore|slut)\b/i;
+
+function containsExplicitLanguage(text) {
+  return EXPLICIT_LANGUAGE_PATTERN.test(text || "");
+}
+
 // Posts a message and updates the conversation summary + the *other* side's
 // unread counter in one batch. `kind: "reminder"` marks system reminders so
 // the chat can style them differently. Pass `notify: true` when a secretary
@@ -1087,6 +1197,11 @@ export async function sendMessage({
   if (!patientId || !body) {
     throw new Error("A patient and some message text are required.");
   }
+  if (containsExplicitLanguage(body)) {
+    const error = new Error("This message can't be sent because it contains inappropriate language.");
+    error.code = "inappropriate-language";
+    throw error;
+  }
   const fromPatient = senderRole === "patient";
 
   const conversationRef = doc(db, "conversations", patientId);
@@ -1099,6 +1214,7 @@ export async function sendMessage({
     senderName,
     text: body,
     kind,
+    explicitLanguage: containsExplicitLanguage(body),
     appointmentId,
     createdAt: serverTimestamp(),
   });
@@ -1122,11 +1238,23 @@ export async function sendMessage({
     try {
       await createNotification({
         recipientId: patientId,
+        patientId,
         type: "message",
         message: `New message from the practice: ${body.slice(0, 100)}`,
       });
     } catch (err) {
       console.error("Message sent, but the notification failed:", err);
+    }
+  }
+  if (fromPatient) {
+    try {
+      await notifyAllSecretaries({
+        patientId,
+        type: "message",
+        message: `New message from ${patientName || "a patient"}: ${body.slice(0, 100)}`,
+      });
+    } catch (err) {
+      console.error("Message sent, but the secretary notification failed:", err);
     }
   }
   return messageRef.id;

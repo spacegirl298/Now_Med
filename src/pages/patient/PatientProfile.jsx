@@ -11,7 +11,7 @@ import Button from '../../components/Button'
 import { isValidName, isValidPhone } from '../../utils/validators'
 
 export default function PatientProfile() {
-  const { currentUser, userRole, userName, logout } = useAuth()
+  const { currentUser, userRole, userName } = useAuth()
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')

@@ -40,6 +40,7 @@ export default function PatientDashboard() {
 
   const [records, setRecords] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     if (!currentUser) return;
@@ -84,7 +85,7 @@ export default function PatientDashboard() {
           ? nextAppointment.appointmentAt.toDate()
           : `${nextAppointment.date}T${nextAppointment.time}:00`,
       ).getTime() -
-        Date.now()) /
+        now) /
       (1000 * 60 * 60)
     : null;
   const needsIntakeReminder =

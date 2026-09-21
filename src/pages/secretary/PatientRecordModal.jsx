@@ -113,7 +113,7 @@ export default function PatientRecordModal({ patient, appointments = [], initial
 
   useEffect(() => {
     if (!patient) return
-    setLoadingProfile(true)
+    setLoadingProfile(true) // eslint-disable-line react-hooks/set-state-in-effect -- reset async loading state for the selected patient
     const profilePromise = patient.id ? getPatientProfile(patient.id) : getPatientProfileByIdNumber(patient.idNumber)
     profilePromise
       .then((p) => {

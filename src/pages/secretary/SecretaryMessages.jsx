@@ -3,8 +3,8 @@
 // in the same thread. Walk-in patients without an account have no chat (there
 // is nobody to receive it) - contact them by phone instead.
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { ArrowLeft, MessageSquare, Search } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ArrowLeft, FileText, MessageSquare, Search } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
   subscribeToAllConversations,
@@ -12,6 +12,7 @@ import {
   subscribeToMessages,
   sendMessage,
   markConversationRead,
+  markMessageNotificationsRead,
 } from '../../firebase/firestore'
 import SecretaryLayout from './SecretaryLayout'
 import ChatThread from '../../components/ChatThread'
@@ -19,8 +20,9 @@ import Avatar from '../../components/Avatar'
 import { formatTimeAgo } from '../../utils/dateHelpers'
 
 export default function SecretaryMessages() {
-  const { userName } = useAuth()
+  const { currentUser, userName } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
 
   const [conversations, setConversations] = useState([])
   const [patients, setPatients] = useState([])
@@ -67,8 +69,10 @@ export default function SecretaryMessages() {
   const activeConversation = conversations.find((c) => c.id === activeId)
   const activeUnread = activeConversation?.unreadForStaff || 0
   useEffect(() => {
-    if (activeId && activeUnread > 0) markConversationRead(activeId, 'secretary').catch(console.error)
-  }, [activeId, activeUnread])
+    if (!activeId) return
+    if (activeUnread > 0) markConversationRead(activeId, 'secretary').catch(console.error)
+    if (currentUser?.uid) markMessageNotificationsRead(currentUser.uid, activeId).catch(console.error)
+  }, [activeId, activeUnread, currentUser])
 
   const listItems = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -114,6 +118,10 @@ export default function SecretaryMessages() {
       text,
       notify: true, // also shows in the patient's notification bell
     })
+  }
+
+  function openPatientRecord() {
+    navigate('/secretary/patients', { state: { openPatientId: activeId } })
   }
 
   return (
@@ -196,6 +204,14 @@ export default function SecretaryMessages() {
                     <p className="text-xs text-slate">{patientById[activeId].phone}</p>
                   )}
                 </div>
+                <button
+                  onClick={openPatientRecord}
+                  aria-label={`View ${activeName}'s medical record`}
+                  title="View medical record"
+                  className="ml-auto shrink-0 text-slate hover:text-rose"
+                >
+                  <FileText size={20} />
+                </button>
               </div>
               <div className="flex-1 min-h-0">
                 <ChatThread
@@ -203,6 +219,7 @@ export default function SecretaryMessages() {
                   myRole="secretary"
                   loading={loadingMessages}
                   onSend={handleSend}
+                  showModerationFlags
                   emptyMessage="No messages yet. Say hello below."
                   placeholder={`Message ${activeName}...`}
                 />
