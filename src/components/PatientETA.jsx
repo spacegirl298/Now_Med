@@ -180,36 +180,36 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
             </span>
           </div>
           {assessment && (
-            <div
-              className={`flex items-start gap-1.5 text-xs rounded-lg px-2.5 py-2 ${
-                assessment.level === "ontrack"
-                  ? "bg-pastel-green text-green"
-                  : assessment.level === "tight"
-                    ? "bg-pastel-amber text-amber"
-                    : "bg-pastel-red text-red"
-              }`}
-            >
-              {assessment.level === "ontrack" ? (
-                <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-              )}
-              <span>{assessment.message}</span>
-            </div>
-          )}
-          {assessment?.level === "late" && (
-            <div className="flex justify-end">
-              <button
-                onClick={handleReportLate}
-                disabled={reporting || reported}
-                className="text-xs font-medium rounded-lg px-3 py-2 mt-0.5 transition-colors disabled:opacity-50 bg-rose text-white hover:bg-plum disabled:hover:bg-rose"
+            <div className="flex items-stretch gap-2">
+              <div
+                className={`flex-1 min-w-0 flex items-start gap-1.5 text-xs rounded-lg px-2.5 py-2 ${
+                  assessment.level === "ontrack"
+                    ? "bg-pastel-green text-green"
+                    : assessment.level === "tight"
+                      ? "bg-pastel-amber text-amber"
+                      : "bg-pastel-red text-red"
+                }`}
               >
-                {reported
-                  ? "Practice notified that you're running late"
-                  : reporting
-                    ? "Letting the practice know..."
-                    : "Let the practice know you're running late"}
-              </button>
+                {assessment.level === "ontrack" ? (
+                  <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                )}
+                <span>{assessment.message}</span>
+              </div>
+              {assessment.level === "late" && (
+                <button
+                  onClick={handleReportLate}
+                  disabled={reporting || reported}
+                  className="shrink-0 self-center text-xs font-medium rounded-lg px-3 py-2 leading-tight text-center max-w-[110px] transition-colors disabled:opacity-50 bg-rose text-white hover:bg-plum disabled:hover:bg-rose"
+                >
+                  {reported
+                    ? "Practice notified"
+                    : reporting
+                      ? "Notifying..."
+                      : "Let the practice know you're running late"}
+                </button>
+              )}
             </div>
           )}
         </div>
