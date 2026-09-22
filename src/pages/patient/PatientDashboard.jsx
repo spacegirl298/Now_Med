@@ -14,6 +14,8 @@ import {
   Stethoscope,
   Phone,
   ClipboardList,
+  MessageSquare,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -21,6 +23,8 @@ import PatientLayout from "./PatientLayout";
 import Card from "../../components/Card";
 import Badge from "../../components/Badge";
 import EmptyState from "../../components/EmptyState";
+import StarRating from "../../components/StarRating";
+import ReviewPrompt from "../../components/ReviewPrompt";
 import {
   getTodayString,
   formatTime,
@@ -30,6 +34,7 @@ import {
 } from "../../utils/dateHelpers";
 import {
   subscribeToPatientRecords,
+  subscribeToDoctorRatings,
   getDoctors,
 } from "../../firebase/firestore";
 
@@ -41,6 +46,8 @@ export default function PatientDashboard() {
   const [records, setRecords] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [now] = useState(() => Date.now());
+  const [ratingsByDoctor, setRatingsByDoctor] = useState({}); // doctorId -> reviews[]
+  const [expandedReviews, setExpandedReviews] = useState(null); // doctorId or null
 
   useEffect(() => {
     if (!currentUser) return;
@@ -60,6 +67,16 @@ export default function PatientDashboard() {
       .then(setDoctors)
       .catch(() => setDoctors([]));
   }, []);
+
+  useEffect(() => {
+    if (doctors.length === 0) return;
+    const unsubs = doctors.map((d) =>
+      subscribeToDoctorRatings(d.id, (reviews) => {
+        setRatingsByDoctor((prev) => ({ ...prev, [d.id]: reviews }));
+      }),
+    );
+    return () => unsubs.forEach((unsub) => unsub && unsub());
+  }, [doctors]);
 
   const today = getTodayString();
   const displayName = userName || currentUser?.email?.split("@")[0] || "there";
@@ -107,6 +124,8 @@ export default function PatientDashboard() {
             {error} Check the browser console for the full Firestore error.
           </div>
         )}
+
+        <ReviewPrompt appointments={appointments} patientId={currentUser?.uid} />
 
         {isNextDelayed && (
           <div className="bg-pastel-amber text-amber text-sm rounded-xl px-4 py-3 mb-6 flex items-center gap-2">
@@ -237,41 +256,98 @@ export default function PatientDashboard() {
           <div className="mb-6">
             <h2 className="font-semibold text-ink mb-3">Our doctors</h2>
             <div className="flex flex-col gap-4">
-              {doctors.map((doctor) => (
-                <Card key={doctor.id}>
-                  <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-full bg-mist flex items-center justify-center shrink-0">
-                      <Stethoscope size={20} className="text-rose" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-ink">{doctor.name}</h3>
-                      {doctor.certifications && (
-                        <p className="text-xs text-slate">
-                          {doctor.certifications}
-                        </p>
-                      )}
-                      {doctor.specialty && (
-                        <span className="inline-block mt-2 px-3 py-1 rounded-full bg-blush text-plum text-xs font-medium">
-                          {doctor.specialty}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+              {doctors.map((doctor) => {
+                const reviews = ratingsByDoctor[doctor.id] || [];
+                const avgRating =
+                  reviews.length > 0
+                    ? reviews.reduce((sum, r) => sum + r.rating, 0) /
+                      reviews.length
+                    : 0;
+                const isExpanded = expandedReviews === doctor.id;
 
-                  {doctor.bio && (
-                    <p className="text-sm text-slate mt-4 leading-relaxed">
-                      {doctor.bio}
-                    </p>
-                  )}
-
-                  {doctor.contact && (
-                    <div className="flex items-center gap-2 mt-4 pt-4 border-t border-sand">
-                      <Phone size={14} className="text-slate shrink-0" />
-                      <p className="text-xs text-slate">{doctor.contact}</p>
+                return (
+                  <Card key={doctor.id}>
+                    <div className="flex items-start gap-3">
+                      <div className="w-11 h-11 rounded-full bg-mist flex items-center justify-center shrink-0">
+                        <Stethoscope size={20} className="text-rose" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-ink">
+                          {doctor.name}
+                        </h3>
+                        {doctor.certifications && (
+                          <p className="text-xs text-slate">
+                            {doctor.certifications}
+                          </p>
+                        )}
+                        <div className="mt-1.5">
+                          <StarRating
+                            value={avgRating}
+                            size={14}
+                            showValue
+                            count={reviews.length}
+                          />
+                        </div>
+                        {doctor.specialty && (
+                          <span className="inline-block mt-2 px-3 py-1 rounded-full bg-blush text-plum text-xs font-medium">
+                            {doctor.specialty}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </Card>
-              ))}
+
+                    {doctor.bio && (
+                      <p className="text-sm text-slate mt-4 leading-relaxed">
+                        {doctor.bio}
+                      </p>
+                    )}
+
+                    {doctor.contact && (
+                      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-sand">
+                        <Phone size={14} className="text-slate shrink-0" />
+                        <p className="text-xs text-slate">{doctor.contact}</p>
+                      </div>
+                    )}
+
+                    {reviews.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-sand">
+                        <button
+                          onClick={() =>
+                            setExpandedReviews(isExpanded ? null : doctor.id)
+                          }
+                          className="flex items-center gap-1.5 text-xs font-medium text-rose"
+                        >
+                          <MessageSquare size={14} />
+                          {isExpanded
+                            ? "Hide reviews"
+                            : `See ${reviews.length} review${reviews.length > 1 ? "s" : ""}`}
+                          <ChevronDown
+                            size={14}
+                            className={isExpanded ? "rotate-180" : ""}
+                          />
+                        </button>
+                        {isExpanded && (
+                          <div className="flex flex-col gap-3 mt-3">
+                            {reviews.map((r) => (
+                              <div
+                                key={r.id}
+                                className="bg-mist rounded-xl px-3 py-2.5"
+                              >
+                                <StarRating value={r.rating} size={12} />
+                                {r.comment && (
+                                  <p className="text-xs text-ink mt-1.5">
+                                    {r.comment}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           </div>
         )}

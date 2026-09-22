@@ -3,7 +3,7 @@
 // the `doctors` collection (see firestore.js) rather than a single shared
 // profile, so patients can pick between them when booking.
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Stethoscope, Trash2 } from "lucide-react";
+import { Pencil, Plus, Stethoscope, Trash2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import {
   updateUserProfile,
@@ -12,6 +12,9 @@ import {
   addDoctor,
   updateDoctor,
   deleteDoctor,
+  subscribeToAllDoctorRatings,
+  setDoctorRatingHidden,
+  deleteDoctorRating,
 } from "../../firebase/firestore";
 import SecretaryLayout from "./SecretaryLayout";
 import BackButton from "../../components/BackButton";
@@ -20,7 +23,9 @@ import Avatar from "../../components/Avatar";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import EmptyState from "../../components/EmptyState";
+import StarRating from "../../components/StarRating";
 import { isValidName, isValidPhone } from "../../utils/validators";
+import { geocodeAddress } from "../../utils/googleMaps";
 
 const EMPTY_DOCTOR = {
   name: "",
@@ -28,6 +33,10 @@ const EMPTY_DOCTOR = {
   certifications: "",
   bio: "",
   contact: "",
+  address: "",
+  lat: null,
+  lng: null,
+  _geocodedFrom: "", // local-only, never sent to Firestore - see handleSaveDoctor
 };
 
 export default function SecretaryProfile() {
@@ -48,6 +57,11 @@ export default function SecretaryProfile() {
   const [deleteTarget, setDeleteTarget] = useState(null); // doctor being confirmed for deletion
   const [deleting, setDeleting] = useState(false);
 
+  const [reviews, setReviews] = useState([]);
+  const [reviewActionId, setReviewActionId] = useState(null); // id currently being hidden/deleted
+  const [reviewDeleteTarget, setReviewDeleteTarget] = useState(null);
+  const [expandedDoctorReviews, setExpandedDoctorReviews] = useState(null); // doctorId currently expanded, or null
+
   useEffect(() => {
     if (!currentUser) return;
 
@@ -66,13 +80,39 @@ export default function SecretaryProfile() {
         email: data.email || currentUser.email || "",
       });
     });
-
   }, [currentUser, userName]);
 
   useEffect(() => {
     const unsub = subscribeToDoctors(setDoctors);
     return () => unsub && unsub();
   }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToAllDoctorRatings(setReviews);
+    return () => unsub && unsub();
+  }, []);
+
+  async function handleToggleReviewHidden(review) {
+    setReviewActionId(review.id);
+    try {
+      await setDoctorRatingHidden(review.id, !review.hidden);
+    } catch (error) {
+      console.error("Could not update review visibility:", error);
+    }
+    setReviewActionId(null);
+  }
+
+  async function handleDeleteReview() {
+    if (!reviewDeleteTarget) return;
+    setReviewActionId(reviewDeleteTarget.id);
+    try {
+      await deleteDoctorRating(reviewDeleteTarget.id);
+      setReviewDeleteTarget(null);
+    } catch (error) {
+      console.error("Could not remove review:", error);
+    }
+    setReviewActionId(null);
+  }
 
   async function handleSaveProfile() {
     setProfileMessage("");
@@ -106,6 +146,10 @@ export default function SecretaryProfile() {
       certifications: doc.certifications || "",
       bio: doc.bio || "",
       contact: doc.contact || "",
+      address: doc.address || "",
+      lat: doc.lat ?? null,
+      lng: doc.lng ?? null,
+      _geocodedFrom: doc.address || "",
     });
     setDoctorFormError("");
     setDoctorModalOpen(true);
@@ -123,11 +167,38 @@ export default function SecretaryProfile() {
     }
     setDoctorFormError("");
     setSavingDoctor(true);
+
+    let formToSave = doctorForm;
+    // Only re-geocode when there's an address AND it's not already the one
+    // these coordinates came from - editing an existing doctor without
+    // touching the address shouldn't cost an API call or risk overwriting
+    // good coordinates with a slightly different geocoder result.
+    if (
+      doctorForm.address.trim() &&
+      doctorForm.address.trim() !== doctorForm._geocodedFrom
+    ) {
+      try {
+        const { lat, lng, formattedAddress } = await geocodeAddress(
+          doctorForm.address.trim(),
+        );
+        formToSave = { ...doctorForm, address: formattedAddress, lat, lng };
+      } catch (err) {
+        console.error("Geocoding failed:", err);
+        setDoctorFormError(
+          err.message ||
+            "Could not locate that address. The doctor will still be saved without map coordinates.",
+        );
+        formToSave = { ...doctorForm, lat: null, lng: null };
+      }
+    } else if (!doctorForm.address.trim()) {
+      formToSave = { ...doctorForm, lat: null, lng: null };
+    }
+
     try {
       if (editingDoctorId) {
-        await updateDoctor(editingDoctorId, doctorForm);
+        await updateDoctor(editingDoctorId, formToSave);
       } else {
-        await addDoctor(doctorForm);
+        await addDoctor(formToSave);
       }
       setDoctorModalOpen(false);
     } catch (error) {
@@ -233,43 +304,165 @@ export default function SecretaryProfile() {
             />
           ) : (
             <div className="flex flex-col gap-3">
-              {doctors.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="border border-sand rounded-xl p-4 flex items-start gap-3"
-                >
-                  <Avatar name={doc.name || "Doctor"} size={44} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-ink truncate">
-                      {doc.name || "Unnamed doctor"}
-                    </p>
-                    {doc.certifications && (
-                      <p className="text-xs text-slate">{doc.certifications}</p>
-                    )}
-                    {doc.specialty && (
-                      <span className="inline-block mt-1.5 px-2.5 py-0.5 rounded-full bg-blush text-plum text-xs font-medium">
-                        {doc.specialty}
-                      </span>
+              {doctors.map((doc) => {
+                const doctorReviews = reviews.filter(
+                  (r) => r.doctorId === doc.id,
+                );
+                const visibleCount = doctorReviews.filter(
+                  (r) => !r.hidden,
+                ).length;
+                const avgRating =
+                  visibleCount > 0
+                    ? doctorReviews
+                        .filter((r) => !r.hidden)
+                        .reduce((sum, r) => sum + r.rating, 0) / visibleCount
+                    : 0;
+                const isExpanded = expandedDoctorReviews === doc.id;
+
+                return (
+                  <div
+                    key={doc.id}
+                    className="border border-sand rounded-xl p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Avatar name={doc.name || "Doctor"} size={44} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-ink truncate">
+                          {doc.name || "Unnamed doctor"}
+                        </p>
+                        {doc.certifications && (
+                          <p className="text-xs text-slate">
+                            {doc.certifications}
+                          </p>
+                        )}
+                        {doc.specialty && (
+                          <span className="inline-block mt-1.5 px-2.5 py-0.5 rounded-full bg-blush text-plum text-xs font-medium">
+                            {doc.specialty}
+                          </span>
+                        )}
+                        {doctorReviews.length > 0 && (
+                          <div className="mt-1.5">
+                            <StarRating
+                              value={avgRating}
+                              size={13}
+                              showValue
+                              count={visibleCount}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => openEditDoctor(doc)}
+                          aria-label={`Edit ${doc.name || "doctor"}`}
+                          className="w-9 h-9 flex items-center justify-center rounded-full text-slate hover:text-ink hover:bg-mist transition-colors"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(doc)}
+                          aria-label={`Remove ${doc.name || "doctor"}`}
+                          className="w-9 h-9 flex items-center justify-center rounded-full text-slate hover:text-red hover:bg-pastel-red transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {doctorReviews.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-sand">
+                        <button
+                          onClick={() =>
+                            setExpandedDoctorReviews(isExpanded ? null : doc.id)
+                          }
+                          className="text-xs font-medium text-rose"
+                        >
+                          {isExpanded
+                            ? "Hide reviews"
+                            : `${doctorReviews.length} review${
+                                doctorReviews.length > 1 ? "s" : ""
+                              }${
+                                doctorReviews.length !== visibleCount
+                                  ? ` (${doctorReviews.length - visibleCount} hidden)`
+                                  : ""
+                              }`}
+                        </button>
+
+                        {isExpanded && (
+                          <div className="flex flex-col gap-2 mt-3">
+                            {doctorReviews.map((review) => {
+                              const busy = reviewActionId === review.id;
+                              return (
+                                <div
+                                  key={review.id}
+                                  className={`rounded-xl px-3 py-2.5 flex items-start justify-between gap-3 ${
+                                    review.hidden
+                                      ? "bg-mist opacity-70"
+                                      : "bg-mist"
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <StarRating
+                                      value={review.rating}
+                                      size={12}
+                                    />
+                                    {review.comment && (
+                                      <p className="text-xs text-ink mt-1.5">
+                                        {review.comment}
+                                      </p>
+                                    )}
+                                    {review.hidden && (
+                                      <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full bg-pastel-red text-red text-xs font-medium">
+                                        Hidden from patients
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() =>
+                                        handleToggleReviewHidden(review)
+                                      }
+                                      disabled={busy}
+                                      aria-label={
+                                        review.hidden
+                                          ? "Unhide review"
+                                          : "Hide review"
+                                      }
+                                      title={
+                                        review.hidden
+                                          ? "Unhide review"
+                                          : "Hide review"
+                                      }
+                                      className="w-8 h-8 flex items-center justify-center rounded-full text-slate hover:text-ink hover:bg-white transition-colors disabled:opacity-50"
+                                    >
+                                      {review.hidden ? (
+                                        <Eye size={14} />
+                                      ) : (
+                                        <EyeOff size={14} />
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        setReviewDeleteTarget(review)
+                                      }
+                                      disabled={busy}
+                                      aria-label="Delete review"
+                                      title="Delete review"
+                                      className="w-8 h-8 flex items-center justify-center rounded-full text-slate hover:text-red hover:bg-pastel-red transition-colors disabled:opacity-50"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => openEditDoctor(doc)}
-                      aria-label={`Edit ${doc.name || "doctor"}`}
-                      className="w-9 h-9 flex items-center justify-center rounded-full text-slate hover:text-ink hover:bg-mist transition-colors"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(doc)}
-                      aria-label={`Remove ${doc.name || "doctor"}`}
-                      className="w-9 h-9 flex items-center justify-center rounded-full text-slate hover:text-red hover:bg-pastel-red transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
@@ -345,6 +538,24 @@ export default function SecretaryProfile() {
               className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
             />
           </div>
+          <div>
+            <label className="text-xs text-slate mb-1 block">
+              Practice address
+            </label>
+            <input
+              value={doctorForm.address}
+              onChange={(e) =>
+                setDoctorForm({ ...doctorForm, address: e.target.value })
+              }
+              placeholder="Street, suburb, city — used for patient ETAs"
+              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+            />
+            <p className="text-xs text-slate mt-1">
+              {doctorForm.lat != null
+                ? "Location found — patients will be able to get an ETA here."
+                : "Looked up automatically when you save."}
+            </p>
+          </div>
           {doctorFormError && (
             <p className="text-red text-sm">{doctorFormError}</p>
           )}
@@ -375,8 +586,29 @@ export default function SecretaryProfile() {
       >
         <p className="text-sm text-slate">
           {deleteTarget?.name || "This doctor"} will no longer appear for
-          patients to book with. Past appointments already booked with them
-          are not affected.
+          patients to book with. Past appointments already booked with them are
+          not affected.
+        </p>
+      </Modal>
+
+      {/* Remove review confirmation */}
+      <Modal
+        isOpen={!!reviewDeleteTarget}
+        onClose={() => setReviewDeleteTarget(null)}
+        title="Delete review?"
+        confirmLabel={
+          reviewActionId === reviewDeleteTarget?.id
+            ? "Deleting..."
+            : "Delete review"
+        }
+        confirmVariant="danger"
+        onConfirm={handleDeleteReview}
+        confirmDisabled={reviewActionId === reviewDeleteTarget?.id}
+      >
+        <p className="text-sm text-slate">
+          This permanently removes the review. If you just want to keep it off
+          the patient-facing doctor profile without deleting it, use the hide
+          button instead.
         </p>
       </Modal>
     </SecretaryLayout>

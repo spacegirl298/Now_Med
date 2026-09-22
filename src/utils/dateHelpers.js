@@ -156,4 +156,31 @@ export function greetingForNow() {
   return "Good evening";
 }
 
+// True once an appointment's start time (appointmentAt, or date+time as a
+// fallback for older records) is more than `bufferMinutes` in the past.
+// Used to decide when a completed appointment is eligible for a doctor
+// review — there's no explicit "completed" status in this app (an
+// attended appointment just stays "booked"/"confirmed"), so "the
+// appointment time has passed by a few minutes" is the signal instead.
+// Cancelled appointments are excluded by the caller, not here.
+export function minutesSinceAppointment(appointment) {
+  if (!appointment) return -Infinity;
+  const start = appointment.appointmentAt?.toDate
+    ? appointment.appointmentAt.toDate()
+    : new Date(`${appointment.date}T${appointment.time}:00`);
+  if (Number.isNaN(start.getTime())) return -Infinity;
+  return (Date.now() - start.getTime()) / 60000;
+}
+
+export function isReviewEligible(appointment, bufferMinutes = 35) {
+  // Default buffer assumes the standard 30-min slot (same assumption
+  // downloadAppointmentICS in PatientCalendar.jsx makes) plus a 5-min
+  // grace period, since appointment duration isn't stored per-appointment.
+  // If you add a stored duration later, swap this for
+  // appointment.durationMinutes + 5.
+  if (!appointment || appointment.status === "cancelled") return false;
+  if (!appointment.doctorId) return false;
+  return minutesSinceAppointment(appointment) >= bufferMinutes;
+}
+
 export { DAY_NAMES, MONTH_NAMES };

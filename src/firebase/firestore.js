@@ -19,12 +19,35 @@ import {
   orderBy,
   limit,
   increment,
+  setDoc,
 } from "firebase/firestore";
 import { db, auth } from "./config";
 
 // ---------- Collections ----------
 const usersCol = collection(db, "users");
 const appointmentsCol = collection(db, "appointments");
+// Mirrors just { date, time, status, appointmentId } for every active
+// appointment, one doc per date+time slot (see appointmentSlotId). Exists
+// because two things legitimately need a practice-wide view across every
+// patient's bookings - the patient calendar (subscribeToBookedSlots) and
+// the double-booking conflict check inside createAppointment - and neither
+// of those reads can be scoped to one patientId, so they can never satisfy
+// the (correctly) per-patient /appointments read rule: Firestore rejects a
+// list query outright unless the rule can be proven true for every
+// possible result using only the query's own filters. Keying by the slot
+// itself (rather than by appointmentId) also turns the conflict check into
+// a single-document transaction.get() - see the note on createAppointment.
+// This collection carries no patient-identifying data, so any signed-in
+// user can read it; it's kept in lockstep with the real appointment doc by
+// createAppointment/updateAppointment/deleteAppointment below, so nothing
+// else should write to it directly.
+const appointmentSlotsCol = collection(db, "appointmentSlots");
+// appointmentSlots docs are keyed by the slot itself, not the appointment,
+// so a conflict check is a single doc read (see createAppointment) and two
+// different appointments can never collide on the same slot doc ID.
+function appointmentSlotId(date, time) {
+  return `${date}_${time}`;
+}
 const notificationsCol = collection(db, "notifications");
 const blockedSlotsCol = collection(db, "blockedSlots");
 const recordsCol = collection(db, "records");
@@ -113,7 +136,7 @@ export async function reserveIdNumberIndexSlot(idNumber, uid, role) {
     if (role === "patient") {
       if (existing.patientUid) {
         const err = new Error(
-          "An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake."
+          "An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake.",
         );
         err.code = "duplicate-id-number";
         throw err;
@@ -127,7 +150,7 @@ export async function reserveIdNumberIndexSlot(idNumber, uid, role) {
     // role === 'secretary': rules have no update path for the secretary
     // slot at all, so any existing doc means this ID number is taken.
     const err = new Error(
-      "An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake."
+      "An account with this ID/passport number already exists. Please log in instead, or contact the practice if you believe this is a mistake.",
     );
     err.code = "duplicate-id-number";
     throw err;
@@ -320,8 +343,12 @@ export function subscribeToAllAppointments(callback, onError) {
 // Live subscription to just enough info to know which slots are taken —
 // date, time and status only. Used by the patient-facing calendar to render
 // availability without exposing other patients' names, notes, or ids.
+// Reads the appointmentSlots mirror (see its declaration above) rather than
+// appointmentsCol directly, since a patient's read access to /appointments
+// is scoped to their own docs and can't satisfy this unfiltered, practice-
+// wide query.
 export function subscribeToBookedSlots(callback) {
-  return onSnapshot(appointmentsCol, (snap) => {
+  return onSnapshot(appointmentSlotsCol, (snap) => {
     const slots = snap.docs.map((d) => {
       const data = d.data();
       return { date: data.date, time: data.time, status: data.status };
@@ -403,24 +430,23 @@ export async function createAppointment(data) {
   // re-read, and fails with 'slot-taken' instead of silently
   // double-booking the slot.
   //
-  // Note: this makes concurrent *legitimate app usage* safe. It is not
-  // itself a security rule - a client that bypasses this function and
-  // writes to /appointments directly could still create a conflicting
-  // document, because the current security rules only check who is
-  // allowed to create an appointment, not whether the slot is already
-  // taken. See the note in firestore.rules for how to close that gap
-  // server-side if this needs to be a hard guarantee rather than an
+  // The conflict check itself has to be a single-document read, not a
+  // query: the web SDK's Transaction.get() only accepts a
+  // DocumentReference, not a Query (unlike the Admin/mobile SDKs) - passing
+  // it a query throws a TypeError trying to read a `.path` that only a doc
+  // ref has. So the slot doc below is keyed deterministically by the slot
+  // itself (`date_time`) rather than by appointmentId, which turns "is
+  // this date+time already booked" into one transaction.get(docRef) - and,
+  // as a side benefit, is exactly the "deterministic per-slot document ID"
+  // the old note here said would be needed to make double-booking
+  // prevention a hard, rule-checkable guarantee rather than only an
   // app-level one.
+  const slotId = appointmentSlotId(data.date, data.time);
+  const slotRef = doc(appointmentSlotsCol, slotId);
   await runTransaction(db, async (transaction) => {
-    const conflictQuery = query(
-      appointmentsCol,
-      where("date", "==", data.date),
-      where("time", "==", data.time),
-    );
-    const conflictSnap = await transaction.get(conflictQuery);
-    const hasActiveConflict = conflictSnap.docs.some(
-      (d) => d.data().status !== "cancelled",
-    );
+    const slotSnap = await transaction.get(slotRef);
+    const hasActiveConflict =
+      slotSnap.exists() && slotSnap.data().status !== "cancelled";
 
     if (hasActiveConflict) {
       const error = new Error(
@@ -431,6 +457,23 @@ export async function createAppointment(data) {
     }
 
     transaction.set(appointmentRef, newAppointment);
+    transaction.set(slotRef, {
+      date: newAppointment.date,
+      time: newAppointment.time,
+      status: newAppointment.status,
+      appointmentId: appointmentRef.id,
+      // Carried on the slot doc itself (not just the appointment) so its
+      // security rule can check ownership without a cross-document get() -
+      // get()/exists() in rules only see state from before this commit
+      // started, never a sibling write in the same transaction/batch, so a
+      // rule that tried to look up *this* appointment doc (being created
+      // in this same transaction) to authorize *this* slot write would
+      // always see it as not-yet-existing and get denied. A plain UID
+      // here is low-risk to expose to any signed-in user (same tradeoff as
+      // idNumberIndex above) - it can't be resolved to a name/phone/etc.
+      // without also passing the separate, tighter /users read rule.
+      patientId,
+    });
   });
 
   // Only registered patients (with a uid) can receive an in-app notification.
@@ -525,10 +568,20 @@ export async function linkPatientDataByIdNumber(uid, idNumber, name) {
 
   const batch = writeBatch(db);
   apptSnap.docs.forEach((d) => {
+    const data = d.data();
     batch.update(d.ref, {
       patientId: uid,
-      patientName: name || d.data().patientName,
+      patientName: name || data.patientName,
     });
+    // Keep the appointmentSlots mirror's patientId in step, so the patient
+    // can actually cancel this appointment afterward (the slot doc's own
+    // update rule checks resource.data.patientId directly - see the
+    // firestore.rules comment on appointmentSlots).
+    batch.set(
+      doc(appointmentSlotsCol, appointmentSlotId(data.date, data.time)),
+      { patientId: uid },
+      { merge: true },
+    );
   });
   recordsSnap.docs.forEach((d) => {
     batch.update(d.ref, { patientId: uid });
@@ -542,15 +595,75 @@ export async function linkPatientDataByIdNumber(uid, idNumber, name) {
   await batch.commit();
 }
 
+// Every status change (cancel, confirm, delay, unconfirm) funnels through
+// here, so mirroring into appointmentSlots in one place - in the same
+// batch as the real update - keeps the calendar/conflict-check view
+// consistent without every call site having to remember to do it.
+// Slot docs are keyed by date_time (see appointmentSlotId), not by
+// appointmentId, so a `time` (or `date`) change moves the lock: the old
+// slot doc is freed and a new one is created at the new slot. This needs
+// the appointment's current date/time first, which a batch - like a
+// transaction - can't read via a query, only get() by reference; that
+// single extra read happens outside the batch, so (same as the note on
+// createAppointment) a reschedule isn't conflict-checked as atomically as
+// a fresh booking is - consistent with how reschedule already worked
+// before this mirror existed.
 export async function updateAppointment(appointmentId, data) {
-  await updateDoc(doc(db, "appointments", appointmentId), {
+  const apptRef = doc(db, "appointments", appointmentId);
+  const batch = writeBatch(db);
+  batch.update(apptRef, {
     ...data,
     updatedAt: serverTimestamp(),
   });
+
+  if (
+    data.status !== undefined ||
+    data.date !== undefined ||
+    data.time !== undefined
+  ) {
+    const existingSnap = await getDoc(apptRef);
+    if (existingSnap.exists()) {
+      const existing = existingSnap.data();
+      const oldSlotId = appointmentSlotId(existing.date, existing.time);
+      const newDate = data.date ?? existing.date;
+      const newTime = data.time ?? existing.time;
+      const newStatus = data.status ?? existing.status;
+      const newSlotId = appointmentSlotId(newDate, newTime);
+
+      if (newSlotId !== oldSlotId) {
+        batch.delete(doc(appointmentSlotsCol, oldSlotId));
+        batch.set(doc(appointmentSlotsCol, newSlotId), {
+          date: newDate,
+          time: newTime,
+          status: newStatus,
+          appointmentId,
+          patientId: existing.patientId ?? null,
+        });
+      } else {
+        batch.set(
+          doc(appointmentSlotsCol, oldSlotId),
+          { status: newStatus },
+          { merge: true },
+        );
+      }
+    }
+  }
+
+  await batch.commit();
 }
 
 export async function deleteAppointment(appointmentId) {
-  await deleteDoc(doc(db, "appointments", appointmentId));
+  const apptRef = doc(db, "appointments", appointmentId);
+  const existingSnap = await getDoc(apptRef);
+  const batch = writeBatch(db);
+  batch.delete(apptRef);
+  if (existingSnap.exists()) {
+    const existing = existingSnap.data();
+    batch.delete(
+      doc(appointmentSlotsCol, appointmentSlotId(existing.date, existing.time)),
+    );
+  }
+  await batch.commit();
 }
 
 export async function cancelAppointment(appointment, userId, options = {}) {
@@ -719,7 +832,12 @@ export async function sendConfirmationReminder(appointment) {
 // things any secretary should see and act on (a patient's intake still isn't
 // done ahead of their visit, a message got flagged for review), rather than
 // things tied to one specific patient's own chat/booking.
-async function notifyAllSecretaries({ type, message, appointmentId = null, patientId = null }) {
+async function notifyAllSecretaries({
+  type,
+  message,
+  appointmentId = null,
+  patientId = null,
+}) {
   const q = query(usersCol, where("role", "==", "secretary"));
   const snap = await getDocs(q);
   await Promise.all(
@@ -784,7 +902,9 @@ export async function markMessageNotificationsRead(recipientId, patientId) {
     where("read", "==", false),
   );
   const snap = await getDocs(q);
-  const matchingDocs = snap.docs.filter((d) => d.data().patientId === patientId);
+  const matchingDocs = snap.docs.filter(
+    (d) => d.data().patientId === patientId,
+  );
   if (matchingDocs.length === 0) return;
   const batch = writeBatch(db);
   matchingDocs.forEach((d) => batch.update(d.ref, { read: true }));
@@ -869,6 +989,7 @@ export async function unblockGroup(groupId) {
 // than being split per-doctor.
 
 const doctorsCol = collection(db, "doctors");
+const doctorRatingsCol = collection(db, "doctorRatings");
 
 // Live subscription — used wherever the doctor list should stay in sync as
 // the secretary adds/edits/removes doctors (secretary profile, patient
@@ -907,6 +1028,15 @@ export async function addDoctor(data) {
     certifications: data.certifications || "",
     bio: data.bio || "",
     contact: data.contact || "",
+    // Location & ETA groundwork: address is what the secretary types in;
+    // lat/lng are filled in by geocodeAddress() (utils/googleMaps.js)
+    // before this is called, so the ETA calculation never has to geocode
+    // on every patient page load. Default to null rather than omitting
+    // the fields, so "no location set yet" is explicit and easy to check
+    // for (e.g. only show the "get ETA" button when doctor.lat is set).
+    address: data.address || "",
+    lat: data.lat ?? null,
+    lng: data.lng ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -920,12 +1050,120 @@ export async function updateDoctor(doctorId, data) {
     certifications: data.certifications || "",
     bio: data.bio || "",
     contact: data.contact || "",
+    address: data.address || "",
+    lat: data.lat ?? null,
+    lng: data.lng ?? null,
     updatedAt: serverTimestamp(),
   });
 }
 
 export async function deleteDoctor(doctorId) {
   await deleteDoc(doc(db, "doctors", doctorId));
+}
+
+// ================= DOCTOR RATINGS / REVIEWS =================
+// One review per appointment, enforced by using the appointmentId itself
+// as the doctorRatings document ID (rather than a random addDoc ID +
+// a query). Two side effects of that choice, both wanted:
+//   - "has this appointment been reviewed yet" is a single getDoc, not a
+//     query - used by ReviewPrompt.jsx.
+//   - a patient physically cannot create two reviews for the same
+//     appointment; the second attempt is an update to the same doc, not a
+//     second doc.
+// `hidden` is the secretary's moderation flag - a hidden review still
+// exists (for the record / for the patient who wrote it) but is excluded
+// from every patient-facing read.
+
+export async function createDoctorRating({
+  appointmentId,
+  doctorId,
+  patientId,
+  rating,
+  comment = "",
+}) {
+  await setDoc(doc(doctorRatingsCol, appointmentId), {
+    appointmentId,
+    doctorId,
+    patientId,
+    rating,
+    comment,
+    hidden: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Patient editing their own already-submitted review.
+export async function updateDoctorRating(appointmentId, { rating, comment }) {
+  await updateDoc(doc(doctorRatingsCol, appointmentId), {
+    rating,
+    comment,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Secretary moderation: hide/unhide without touching the review content.
+export async function setDoctorRatingHidden(appointmentId, hidden) {
+  await updateDoc(doc(doctorRatingsCol, appointmentId), {
+    hidden,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteDoctorRating(appointmentId) {
+  await deleteDoc(doc(doctorRatingsCol, appointmentId));
+}
+
+// One-time lookup used by the review prompt to check "has the patient
+// already reviewed this specific appointment" before offering to show the
+// prompt for it.
+export async function getDoctorRatingByAppointment(appointmentId) {
+  const snap = await getDoc(doc(doctorRatingsCol, appointmentId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+// Patient/dashboard-facing: only ever the visible (non-hidden) reviews for
+// one doctor, live. The where('hidden','==',false) clause here isn't just
+// a display filter - it's what lets the Firestore rule
+// (`allow read: if isSecretary() || resource.data.hidden == false`) permit
+// this as a list query at all; a query without it would be rejected the
+// moment a hidden review existed in the collection.
+export function subscribeToDoctorRatings(doctorId, callback, onError) {
+  const q = query(
+    doctorRatingsCol,
+    where("doctorId", "==", doctorId),
+    where("hidden", "==", false),
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const reviews = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort(
+          (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
+        );
+      callback(reviews);
+    },
+    onError,
+  );
+}
+
+// Secretary-facing moderation feed: every review, hidden or not, across all
+// doctors. Allowed by the rule because isSecretary() is true for the
+// caller, independent of the hidden field.
+export function subscribeToAllDoctorRatings(callback, onError) {
+  return onSnapshot(
+    doctorRatingsCol,
+    (snap) => {
+      const reviews = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort(
+          (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
+        );
+      callback(reviews);
+    },
+    onError,
+  );
 }
 // ================= INTAKE FORMS =================
 // `answers` is the raw output of the digital intake wizard (see
@@ -995,12 +1233,15 @@ export async function markIntakeImported(intakeId, staffUid) {
 // hidden for them (it already does: `patient.id &&` guards it).
 export async function sendIntakeReminder(patient) {
   if (!patient?.id) {
-    throw new Error("This patient doesn't have an account yet to send a reminder to.");
+    throw new Error(
+      "This patient doesn't have an account yet to send a reminder to.",
+    );
   }
   await createNotification({
     recipientId: patient.id,
     type: "intake_reminder",
-    message: "Please complete your first-time patient intake form before your next visit.",
+    message:
+      "Please complete your first-time patient intake form before your next visit.",
   });
   // Also drop it in their chat with the practice, same as an appointment
   // reminder, so it's hard to miss even if they don't check the bell.
@@ -1077,7 +1318,9 @@ export function subscribeToPatientChangeRequests(patientId, callback, onError) {
   return onSnapshot(
     q,
     (snap) =>
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest)),
+      callback(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest),
+      ),
     onError,
   );
 }
@@ -1088,7 +1331,9 @@ export function subscribeToPendingChangeRequests(callback, onError) {
   return onSnapshot(
     q,
     (snap) =>
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest)),
+      callback(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byNewest),
+      ),
     onError,
   );
 }
@@ -1198,14 +1443,18 @@ export async function sendMessage({
     throw new Error("A patient and some message text are required.");
   }
   if (containsExplicitLanguage(body)) {
-    const error = new Error("This message can't be sent because it contains inappropriate language.");
+    const error = new Error(
+      "This message can't be sent because it contains inappropriate language.",
+    );
     error.code = "inappropriate-language";
     throw error;
   }
   const fromPatient = senderRole === "patient";
 
   const conversationRef = doc(db, "conversations", patientId);
-  const messageRef = doc(collection(db, "conversations", patientId, "messages"));
+  const messageRef = doc(
+    collection(db, "conversations", patientId, "messages"),
+  );
 
   const batch = writeBatch(db);
   batch.set(messageRef, {
@@ -1254,7 +1503,10 @@ export async function sendMessage({
         message: `New message from ${patientName || "a patient"}: ${body.slice(0, 100)}`,
       });
     } catch (err) {
-      console.error("Message sent, but the secretary notification failed:", err);
+      console.error(
+        "Message sent, but the secretary notification failed:",
+        err,
+      );
     }
   }
   return messageRef.id;

@@ -1,0 +1,528 @@
+rules_version = '2';
+
+service cloud.firestore {
+match /databases/{database}/documents {
+
+
+// ---------- Helpers ----------
+function isSignedIn() {
+  return request.auth != null;
+}
+
+// Looks up the caller's own user doc to check their role. get() reads
+// the document directly and is NOT subject to these rules itself, so
+// this is safe to call even though /users/{userId} below has its own
+// restrictions. Guarded with exists() first — reading .data on a doc
+// that doesn't exist throws inside a rule, which Firestore treats as
+// a deny rather than "false", and silently breaks every read that
+// depends on isSecretary().
+function callerDoc() {
+  return get(/databases/$(database)/documents/users/$(request.auth.uid));
+}
+
+function isSecretary() {
+  return isSignedIn()
+    && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+    && callerDoc().data.role == 'secretary';
+}
+
+function isOwner(uid) {
+  return isSignedIn() && request.auth.uid == uid;
+}
+
+// A patient's own walk-in data: created by a secretary under their
+// ID/passport number before they had an account (patientId == null),
+// now matched against the caller's own idNumber on their user doc.
+// This is what lets a freshly-registered patient claim/read bookings,
+// records, profiles and intake forms a secretary entered for them by
+// ID number — otherwise those documents have patientId == null, which
+// satisfies neither isOwner() nor isSecretary().
+function isUnclaimedByCallerIdNumber() {
+  return isSignedIn()
+    && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+    && resource.data.patientId == null
+    && resource.data.patientIdNumber == callerDoc().data.idNumber;
+}
+
+// Fields a patient is allowed to self-edit on their own patientProfiles
+// doc (mirrors the editForm fields in PatientRecords.jsx). Everything
+// else on that doc — allergies, medications, chronic conditions,
+// surgeries, admissions, family history, blood group, primary doctor —
+// is clinical data and stays secretary-only, no matter what the client
+// sends.
+function patientEditableProfileFields() {
+  return ['patientId', 'patientIdNumber', 'occupation', 'maritalStatus',
+          'emergencyContactName', 'emergencyContactPhone',
+          'medicalAidProvider', 'medicalAidNumber', 'updatedAt'];
+}
+
+// Used by appointmentSlots below: is the caller the patient on the
+// appointment a slot doc points to (via its appointmentId field)? Slot
+// docs carry no patientId of their own (that's the point - they're a
+// non-sensitive mirror keyed by date+time, not by patient), so write
+// permission on one is derived from the real /appointments/{appointmentId}
+// doc it references, written alongside it in the same transaction/batch.
+// Guarded against a missing/null id and exists() first for the same
+// reason as callerDoc() above - get() on a missing doc throws, which
+// rules treat as deny rather than false.
+function ownsAppointmentSlot(appointmentId) {
+  return isSignedIn()
+    && appointmentId != null
+    && exists(/databases/$(database)/documents/appointments/$(appointmentId))
+    && get(/databases/$(database)/documents/appointments/$(appointmentId)).data.patientId == request.auth.uid;
+}
+
+// ---------- users ----------
+// Tightened from "allow read: if isSignedIn()" - that let any logged-in
+// patient query the whole users collection directly (bypassing the app's
+// UI) and read every other patient's name, email, and ID/passport
+// number. Only the account owner or a secretary needs this, matching
+// how the app actually uses it (PatientList/SecretaryDashboard call
+// getAllPatients()/subscribeToPatients() as a secretary; a patient only
+// ever reads their own doc via AuthContext).
+match /users/{userId} {
+  allow read: if isOwner(userId) || isSecretary();
+  // Account creation happens as part of Firebase Auth sign-up (the
+  // client creates its own doc right after createUserWithEmailAndPassword).
+  allow create: if isOwner(userId);
+  // Only the account owner edits their own profile (name, phone, etc).
+  allow update: if isOwner(userId);
+  allow delete: if false;
+}
+
+// ---------- idNumberIndex ----------
+// Backs the "no two accounts share an ID/passport number" check that used
+// to run as a query() against the whole `users` collection. That query
+// can no longer be validated by the /users rule above (it's tightened to
+// isOwner/isSecretary, neither of which a brand-new registrant satisfies
+// yet), so this gives the client a single, rules-checkable doc to read
+// and reserve instead: one doc per ID number, at idNumberIndex/{idNumber},
+// holding at most one uid per role.
+//
+//   { patientUid: <uid|null>, secretaryUid: <uid|null> }
+//
+// Only uids live here — no names, emails, or other PII — so it's safe for
+// any signed-in user to read while checking availability.
+//
+// The one deliberate exception mirrored from the old app logic: a
+// secretary who already holds this ID number may also claim the patient
+// slot under it later (same real person, second role). Every other
+// combination — the same role twice, or a patient claiming it first and a
+// secretary trying afterwards — has no permitted create/update path below
+// and is rejected.
+match /idNumberIndex/{idNum} {
+  allow get: if isSignedIn();
+  allow list: if false;
+
+  // First registrant for this ID number reserves the slot matching their
+  // own role, under their own uid, leaving the other role's slot empty.
+  allow create: if isSignedIn()
+    && request.resource.data.keys().hasOnly(['patientUid', 'secretaryUid'])
+    && (
+      (request.resource.data.patientUid == request.auth.uid
+        && request.resource.data.secretaryUid == null)
+      || (request.resource.data.secretaryUid == request.auth.uid
+        && request.resource.data.patientUid == null)
+    );
+
+  // The only legitimate update: an existing secretary claims the (empty)
+  // patient slot for themselves. Never touches the secretary slot, and
+  // never overwrites an existing patient slot.
+  allow update: if isSignedIn()
+    && resource.data.secretaryUid != null
+    && resource.data.patientUid == null
+    && request.resource.data.patientUid == request.auth.uid
+    && request.resource.data.secretaryUid == resource.data.secretaryUid
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientUid']);
+
+  allow delete: if false;
+}
+
+// ---------- appointments ----------
+match /appointments/{appointmentId} {
+  // Secretaries manage every appointment; patients only ever see
+  // their own, plus any walk-in appointment booked under their own
+  // ID number before they had an account (see isUnclaimedByCallerIdNumber).
+  allow read: if isSecretary()
+    || isOwner(resource.data.patientId)
+    || isUnclaimedByCallerIdNumber();
+
+  // A patient can book their own appointment (patientId must be
+  // their own uid); a secretary can create for anyone, including
+  // walk-ins with patientId == null.
+  //
+  // NOTE ON DOUBLE BOOKING: this rule only checks *who* may create an
+  // appointment, not whether the date+time slot is already taken. Slot
+  // uniqueness is enforced by the app (createAppointment() in
+  // firestore.js runs the conflict check and the write inside a single
+  // Firestore transaction), not by this rule. That closes the race for
+  // normal app usage, but a client that writes to /appointments directly
+  // - bypassing the app - could still create a conflicting document.
+  // If a report/README claims double-booking is prevented "at the
+  // database level" / "server-side", that claim is only accurate insofar
+  // as Firestore's transaction guarantees are a database-level
+  // mechanism; it is not enforced by these security rules themselves.
+  // Making it a hard rule-level guarantee would require a different data
+  // model (e.g. a deterministic per-slot document ID that a rule can
+  // exists()-check), which is a bigger change than is worth making here
+  // given cancelled appointments are kept as history rather than deleted.
+  allow create: if isSecretary()
+    || (isSignedIn() && request.resource.data.patientId == request.auth.uid);
+
+  // Status changes (confirm, delay, cancel, reschedule) are a
+  // secretary action in this app.
+  //
+  // EXCEPTION:
+  // A patient may cancel their own appointment, but only if there
+  // are more than 3 hours remaining before the appointment.
+  //
+  // Patients cannot reschedule, confirm, delay, edit, or change
+  // any other appointment information themselves.
+  //
+  // The patient is also restricted to changing ONLY the fields
+  // required to record a cancellation. This prevents a patient
+  // from using the cancellation permission to modify other fields.
+  allow update: if isSecretary()
+    || (
+      isSignedIn()
+
+      // The appointment must belong to the logged-in patient.
+      && resource.data.patientId == request.auth.uid
+
+      // The patient cannot transfer the appointment to another
+      // patient or change the patientId.
+      && request.resource.data.patientId == resource.data.patientId
+
+      // Patients can only change cancellation-related fields.
+      && request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly([
+             'status',
+             'cancelledAt',
+             'cancelledBy',
+             'updatedAt'
+           ])
+
+      // The appointment must actually be changed to cancelled.
+      && request.resource.data.status == 'cancelled'
+
+      // Record that the logged-in patient performed the cancellation.
+      && request.resource.data.cancelledBy == request.auth.uid
+
+      // Patients must cancel more than 3 hours before the appointment.
+      // This uses the server's trusted request time, so the patient
+      // cannot manipulate their computer's clock to bypass the rule.
+      && request.time + duration.value(3, 'h')
+           < resource.data.appointmentAt
+
+      // Prevent cancelling an appointment that is already cancelled.
+      && resource.data.status != 'cancelled'
+    );
+
+  // Only secretaries can permanently delete appointments.
+  // Patient cancellations are recorded as status = "cancelled"
+  // instead of deleting the appointment history.
+  allow delete: if isSecretary();
+}
+
+// ---------- appointmentSlots ----------
+// Non-sensitive { date, time, status, appointmentId } mirror, one doc per
+// date+time slot (doc ID is "date_time", not the appointment's own ID -
+// see appointmentSlotId in firestore.js), kept in sync by
+// createAppointment/updateAppointment/deleteAppointment. Exists to serve
+// two practice-wide reads that can never satisfy the per-patient
+// /appointments read rule above - the patient booking calendar
+// (subscribeToBookedSlots) and the double-booking conflict check inside
+// createAppointment's transaction - because neither can be scoped to one
+// patientId, and Firestore rejects a list query outright unless the rule
+// is provably true for every possible result using only the query's own
+// filters. No patient-identifying data lives here, so any signed-in user
+// may read it; writes are only ever permitted as a mirror of a write the
+// caller is also making to the /appointments doc the slot's
+// `appointmentId` field points to (checked via ownsAppointmentSlot()
+// against that doc, which lands in the same transaction/batch).
+match /appointmentSlots/{slotId} {
+  allow read: if isSignedIn();
+
+  allow create: if isSecretary()
+    || (isSignedIn()
+        && request.resource.data.keys().hasOnly(['date', 'time', 'status', 'appointmentId'])
+        && ownsAppointmentSlot(request.resource.data.appointmentId));
+
+  allow update: if isSecretary()
+    || (ownsAppointmentSlot(resource.data.appointmentId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+
+  allow delete: if isSecretary() || ownsAppointmentSlot(resource.data.appointmentId);
+}
+
+// ---------- notifications ----------
+match /notifications/{notificationId} {
+  allow read: if isSecretary() || isOwner(resource.data.recipientId);
+
+  // Created either by a secretary action, or by a patient's own
+  // self-service booking (which notifies themselves).
+  allow create: if isSecretary()
+    || (isSignedIn() && request.resource.data.recipientId == request.auth.uid);
+
+  // Marking a notification read: the recipient, or a secretary.
+  allow update: if isSecretary() || isOwner(resource.data.recipientId);
+
+  allow delete: if isSecretary();
+}
+
+// ---------- blockedSlots ----------
+// Everyone signed in can read (patients need this so the booking
+// calendar shows blocked days); only secretaries manage availability.
+match /blockedSlots/{slotId} {
+  allow read: if isSignedIn();
+  allow write: if isSecretary();
+}
+
+// ---------- records (medical records / consultations) ----------
+match /records/{recordId} {
+  // A patient can read their own records, plus any walk-in record
+  // filed under their own ID number before they had an account;
+  // secretaries read all.
+  allow read: if isSecretary()
+    || isOwner(resource.data.patientId)
+    || isUnclaimedByCallerIdNumber();
+
+  // Only secretaries add/edit clinical records and consultation notes.
+  allow write: if isSecretary();
+}
+
+// ---------- patientProfiles (medical history, allergies, meds, etc) ----------
+match /patientProfiles/{profileId} {
+  allow read: if isSecretary()
+    || isOwner(resource.data.patientId)
+    || isUnclaimedByCallerIdNumber();
+
+  // Patient self-registration case: PatientRecords.jsx calls
+  // savePatientProfile with profileId: null the first time a patient
+  // edits their contact details, which creates this doc. Only allowed
+  // if it's their own uid and only touches the admin/contact fields
+  // they're permitted to self-edit.
+  allow create: if isSecretary()
+    || (isSignedIn()
+        && request.resource.data.patientId == request.auth.uid
+        && request.resource.data.diff({}).affectedKeys()
+             .hasOnly(patientEditableProfileFields()));
+
+  // Secretaries can update anything (clinical fields included). A
+  // patient may only update a doc that's already theirs, and only the
+  // admin/contact fields — any attempt to change allergies,
+  // medications, etc. is denied even if the client tries to send it.
+  allow update: if isSecretary()
+    || (isOwner(resource.data.patientId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(patientEditableProfileFields()));
+
+  allow delete: if isSecretary();
+}
+
+// ---------- practice (doctor profile) ----------
+// Legacy single shared "doctorProfile" doc. No longer written to by
+// the app (superseded by the doctors collection below) — left here,
+// read-only-in-practice, so nothing breaks if any old code/data still
+// references it. Safe to delete once you've confirmed nothing reads
+// /practice/doctorProfile anymore.
+match /practice/{docId} {
+  allow read: if isSignedIn();
+  allow write: if isSecretary();
+}
+
+// ---------- doctors ----------
+// One doc per doctor at the practice (see the `doctors` collection in
+// firestore.js). Patients need to read this list to see who they're
+// booking with; only secretaries add/edit/remove doctors.
+match /doctors/{doctorId} {
+  allow read: if isSignedIn();
+  allow write: if isSecretary();
+}
+
+// ---------- doctorRatings (patient reviews of a doctor) ----------
+// One review per appointment, keyed by appointmentId (see the comment
+// above createDoctorRating in firestore.js). Previously had NO match
+// block at all, which meant every read/write was denied by default -
+// that's what caused subscribeToDoctorRatings() to throw
+// permission-denied for every doctor on the patient dashboard right
+// after login. Rules below mirror the behaviour the app code already
+// assumes:
+//   - subscribeToDoctorRatings() queries where('hidden','==',false),
+//     so a plain signed-in read only ever needs to see non-hidden
+//     reviews; a secretary (moderation feed / subscribeToAllDoctorRatings)
+//     needs to see hidden ones too.
+//   - a patient creates exactly one review per appointment, as
+//     themselves, starting visible (hidden: false) — moderation is a
+//     secretary-only action.
+//   - a patient may edit their own review's rating/comment later
+//     (updateDoctorRating); a secretary may update anything (e.g. the
+//     hidden flag via setDoctorRatingHidden) or delete a review.
+match /doctorRatings/{appointmentId} {
+  allow read: if isSecretary()
+    || (isSignedIn() && resource.data.hidden == false);
+
+  allow create: if isSignedIn()
+    && request.resource.data.patientId == request.auth.uid
+    && request.resource.data.appointmentId == appointmentId
+    && request.resource.data.hidden == false;
+
+  allow update: if isSecretary()
+    || (
+      isSignedIn()
+      && resource.data.patientId == request.auth.uid
+      && request.resource.data.patientId == resource.data.patientId
+      && request.resource.data.doctorId == resource.data.doctorId
+      && request.resource.data.appointmentId == resource.data.appointmentId
+      && request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['rating', 'comment', 'updatedAt'])
+    );
+
+  allow delete: if isSecretary();
+}
+
+// ---------- intakeForms ----------
+// First-time digital intake answers. One doc per patient, looked up by
+// uid once registered or by ID/passport number before that (see
+// getIntakeFormForPatient in firestore.js) — so, like records and
+// patientProfiles, a form can exist for a walk-in before they have an
+// account.
+match /intakeForms/{intakeId} {
+  // A patient reads only their own form, plus any walk-in form filed
+  // under their own ID number before they had an account; a secretary
+  // reads any (the record view and the "has this patient done their
+  // intake?" check both need this).
+  allow read: if isSecretary()
+    || isOwner(resource.data.patientId)
+    || isUnclaimedByCallerIdNumber();
+
+  // Submitted by the patient themselves (PatientIntake.jsx), always
+  // under their own uid. A secretary can also create one directly
+  // (e.g. capturing a walk-in's paper form). "Only one form per
+  // patient" is an app-level invariant — saveIntakeForm() checks for
+  // an existing form before writing — not something these rules can
+  // enforce, since intakeForms uses random doc IDs rather than the
+  // patientId as the doc ID.
+  allow create: if isSecretary()
+    || (isSignedIn()
+        && request.resource.data.patientId == request.auth.uid
+        && request.resource.data.submittedBy == 'patient');
+
+  // Two legitimate patient-side updates happen after creation:
+  //  - linkIntakeFormToPatient: attaches a walk-in form (patientId ==
+  //    null) to the now-registered account, run by that patient the
+  //    first time they log in. Only the patientId field may move, only
+  //    from null to their own uid, and only onto a form that already
+  //    matches their own ID/passport number — so a patient can never
+  //    claim someone else's intake form.
+  // Anything else (importing into the verified profile, correcting
+  // answers, etc.) is a secretary action.
+  allow update: if isSecretary()
+    || (
+      isSignedIn()
+      && resource.data.patientId == null
+      && request.resource.data.patientId == request.auth.uid
+      && resource.data.patientIdNumber == callerDoc().data.idNumber
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['patientId'])
+    );
+
+  allow delete: if isSecretary();
+}
+
+// ---------- changeRequests ----------
+// A patient's request to change something they can't edit themselves
+// (clinical data, date of birth, gender, name/ID...). Always filed by
+// the patient about their own record; only a secretary actions it.
+match /changeRequests/{requestId} {
+  allow read: if isSecretary() || isOwner(resource.data.patientId);
+
+  allow create: if isSignedIn()
+    && request.resource.data.patientId == request.auth.uid
+    && request.resource.data.status == 'pending'
+    && request.resource.data.resolvedBy == null
+    && request.resource.data.resolvedAt == null;
+
+  // Resolving a request (status, resolutionNote, resolvedBy,
+  // resolvedAt) is secretary-only — the patient who filed it can't
+  // edit or self-approve it afterwards.
+  allow update: if isSecretary();
+
+  allow delete: if isSecretary();
+}
+
+// ---------- conversations (patient <-> practice chat) ----------
+// One doc per patient at conversations/{patientId} holding the chat
+// summary + unread counters; the messages themselves live in the
+// messages subcollection below. Any secretary can read/reply to any
+// patient's conversation; a patient only ever sees their own.
+match /conversations/{patientId} {
+  allow read: if isSecretary() || isOwner(patientId);
+
+  // The first message from either side creates the conversation doc —
+  // sendMessage() in firestore.js writes it with set({ merge: true }),
+  // which Firestore treats as a create when the doc doesn't exist yet.
+  allow create: if isSecretary()
+    || (
+      isOwner(patientId)
+      && request.resource.data.patientId == patientId
+      && request.resource.data.lastSenderRole == 'patient'
+      && request.resource.data.unreadForStaff == 1
+      && request.resource.data.diff({}).affectedKeys()
+           .hasOnly(['patientId', 'patientName', 'lastMessage', 'lastMessageAt', 'lastSenderRole', 'unreadForStaff'])
+    );
+
+  // A patient may only touch their own conversation, and only in the
+  // two shapes sendMessage()/markConversationRead() actually produce:
+  // sending a message (bumps unreadForStaff by exactly one) or opening
+  // the chat (resets their own unreadForPatient to zero). Either way
+  // they can never rewrite history, reassign the conversation to
+  // someone else, or erase the secretary's unread badge to hide a new
+  // message from staff.
+  allow update: if isSecretary()
+    || (
+      isOwner(patientId)
+      && request.resource.data.patientId == patientId
+      && (
+        (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['patientId', 'patientName', 'lastMessage', 'lastMessageAt', 'lastSenderRole', 'unreadForStaff'])
+          && request.resource.data.lastSenderRole == 'patient'
+          && request.resource.data.unreadForStaff == resource.data.get('unreadForStaff', 0) + 1
+        )
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadForPatient'])
+          && request.resource.data.unreadForPatient == 0
+        )
+      )
+    );
+
+  allow delete: if isSecretary();
+
+  // ---------- conversations/{patientId}/messages ----------
+  match /messages/{messageId} {
+    allow read: if isSecretary() || isOwner(patientId);
+
+    // A patient can only post as themselves, as an ordinary message —
+    // never impersonating "the practice" and never a fake amber
+    // "reminder" bubble. A secretary sends as themselves too, and may
+    // additionally post the system reminders (sendConfirmationReminder
+    // and the intake reminder both use kind: "reminder").
+    allow create: if isSecretary()
+      || (
+        isOwner(patientId)
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderRole == 'patient'
+        && request.resource.data.kind == 'message'
+      );
+
+    // Messages are an immutable log — nobody edits a sent message.
+    // A secretary can delete one for moderation (e.g. removing
+    // inappropriate content from a patient) — see the note in
+    // firestore.js above sendMessage about chat moderation not having
+    // an automated censor yet; this is the manual fallback.
+    allow update: if false;
+    allow delete: if isSecretary();
+  }
+}
+}
+}
