@@ -1974,6 +1974,10 @@ export async function resolveChangeRequest({
         ? `Your request to update your ${what} has been completed.`
         : `Your request to update your ${what} could not be actioned.${note ? ` Note: ${note}` : ""}`,
   });
+
+  // The secretary notification is only a prompt to action the request. Once
+  // it is resolved, remove it instead of leaving a stale bell item behind.
+  await deleteChangeRequestNotifications(request.id);
 }
 
 // ================= MESSAGING =================

@@ -4,8 +4,9 @@
 // by the secretary - clinical data entered from paper forms or after a
 // consultation, not just viewed.
 import { useEffect, useMemo, useState } from 'react'
-import { X, Plus, Trash2, ClipboardList, Bell } from 'lucide-react'
+import { X, Plus, Trash2, ClipboardList, Bell, MessageSquare, Check } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import {
   getPatientProfile,
   getPatientProfileByIdNumber,
@@ -17,6 +18,8 @@ import {
   getIntakeFormByIdNumber,
   markIntakeImported,
   sendIntakeReminder,
+  subscribeToPatientChangeRequests,
+  resolveChangeRequest,
 } from '../../firebase/firestore'
 import { formatShortDate, formatDisplayDate, formatDate, getTodayString } from '../../utils/dateHelpers'
 import { GENDER_OPTIONS, isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
@@ -29,6 +32,7 @@ const TABS = [
   { id: 'allergies', label: 'Allergies' },
   { id: 'medications', label: 'Medications' },
   { id: 'consultations', label: 'Consultations' },
+  { id: 'requests', label: 'Change requests' },
 ]
 // Only shown once we know there's actually an intake form to review - see
 // how `tabs` is built below. Mirrors the "Intake form" tab on the
@@ -92,6 +96,7 @@ function SectionCard({ title, action, children }) {
 
 export default function PatientRecordModal({ patient, appointments = [], initialTab = 'overview', autoOpenAddForm = false, onClose }) {
   const { currentUser } = useAuth()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState(initialTab)
 
   const [profile, setProfile] = useState(null)
@@ -102,6 +107,9 @@ export default function PatientRecordModal({ patient, appointments = [], initial
   const [loadingIntake, setLoadingIntake] = useState(true)
   const [importingIntake, setImportingIntake] = useState(false)
   const [importError, setImportError] = useState('')
+  const [requests, setRequests] = useState([])
+  const [resolvingRequestId, setResolvingRequestId] = useState(null)
+  const [requestError, setRequestError] = useState('')
 
   const [editingOverview, setEditingOverview] = useState(false)
   const [overviewForm, setOverviewForm] = useState({})
@@ -140,6 +148,29 @@ export default function PatientRecordModal({ patient, appointments = [], initial
       .finally(() => setLoadingIntake(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientKey])
+
+  useEffect(() => {
+    if (!patient?.id) {
+      return
+    }
+    return subscribeToPatientChangeRequests(patient.id, setRequests, (err) => console.error(err))
+  }, [patientKey, patient?.id])
+
+  async function handleResolveRequest(request, status) {
+    setResolvingRequestId(request.id)
+    setRequestError('')
+    try {
+      await resolveChangeRequest({
+        request,
+        status,
+        resolvedBy: currentUser?.uid || null,
+      })
+    } catch (err) {
+      console.error(err)
+      setRequestError('Could not update this request. Please try again.')
+    }
+    setResolvingRequestId(null)
+  }
 
   async function persistProfile(updates) {
     const id = await savePatientProfile({
@@ -324,6 +355,19 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                   onAdded={(entry) => setRecords((prev) => [entry, ...prev])}
                 />
               )}
+
+              {activeTab === 'requests' && (
+                <ChangeRequestsTab
+                  requests={requests}
+                  resolvingRequestId={resolvingRequestId}
+                  requestError={requestError}
+                  onResolve={handleResolveRequest}
+                  onMessage={() => {
+                    onClose()
+                    navigate('/secretary/messages', { state: { patientId: patient.id } })
+                  }}
+                />
+              )}
             </>
           )}
         </div>
@@ -333,6 +377,77 @@ export default function PatientRecordModal({ patient, appointments = [], initial
 }
 
 // ---------------- Overview ----------------
+
+function ChangeRequestsTab({ requests, resolvingRequestId, requestError, onResolve, onMessage }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Requests from this patient</h3>
+          <p className="text-xs text-slate mt-1">Message the patient for clarification, or resolve a request after updating the record.</p>
+        </div>
+        <button
+          onClick={onMessage}
+          className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-rose hover:underline"
+        >
+          <MessageSquare size={14} /> Message patient
+        </button>
+      </div>
+
+      {requestError && <p className="text-xs text-red">{requestError}</p>}
+
+      {requests.length === 0 ? (
+        <p className="text-sm text-slate text-center py-8">This patient has not requested any record changes.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {requests.map((request) => {
+            const pending = request.status === 'pending'
+            const resolving = resolvingRequestId === request.id
+            return (
+              <div key={request.id} className="border border-stone rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-ink">{request.section || 'Details'}</p>
+                    <p className="text-sm text-slate mt-1">{request.requestedChange}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
+                    pending ? 'bg-pastel-amber text-amber' : request.status === 'completed' ? 'bg-sand text-green' : 'bg-pastel-red text-red'
+                  }`}>
+                    {pending ? 'Pending' : request.status === 'completed' ? 'Updated' : 'Declined'}
+                  </span>
+                </div>
+                {request.currentValue && (
+                  <p className="text-xs text-slate mt-3">Current value: {request.currentValue}</p>
+                )}
+                {request.resolutionNote && (
+                  <p className="text-xs text-slate mt-2">Note: {request.resolutionNote}</p>
+                )}
+                {pending && (
+                  <div className="flex flex-wrap gap-3 mt-4">
+                    <button
+                      onClick={() => onResolve(request, 'completed')}
+                      disabled={resolving}
+                      className="flex items-center gap-1.5 text-xs font-medium text-green hover:underline disabled:opacity-60"
+                    >
+                      <Check size={14} /> {resolving ? 'Saving...' : 'Mark as updated'}
+                    </button>
+                    <button
+                      onClick={() => onResolve(request, 'declined')}
+                      disabled={resolving}
+                      className="text-xs font-medium text-red hover:underline disabled:opacity-60"
+                    >
+                      Decline request
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit, intake, loadingIntake }) {
   const age = calculateAge(overviewForm.dateOfBirth || profile?.dateOfBirth)
