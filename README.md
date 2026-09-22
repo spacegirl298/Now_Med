@@ -1,6 +1,6 @@
 # Now Med
 
-**Now Med** is a web application designed to improve communication and transparency between patients and reception staff regarding medical appointments and scheduling delays. It addresses a documented problem in South African healthcare — long, uncommunicated waiting times — by giving patients real-time visibility into their appointment status and giving reception staff a single, structured place to manage the practice's schedule.
+**Now Med** is a web application designed to improve communication and transparency between patients and reception staff regarding medical appointments and scheduling delays. It addresses a documented problem in South African healthcare: long, uncommunicated waiting times, by giving patients real-time visibility into their appointment status and giving reception staff a single, structured place to manage the practice's schedule.
 
 This repository contains the **Beta (second iteration)** of the application, built with **React**, **Vite**, **Firebase Authentication**, and **Cloud Firestore**, submitted for DIGA4004A / DIGA4005A, Progress Report (Beta).
 
@@ -14,7 +14,7 @@ A full account of the development process, technical decisions, deviations from 
 
 - Node.js (v18 or later recommended)
 - npm
-- An internet connection (the app connects to a live Firebase project — no local setup or `.env` file is required, the config is already included)
+- An internet connection (the app connects to a live Firebase project, no local setup or `.env` file is required, the config is already included)
 
 ### Installation
 
@@ -44,15 +44,15 @@ Practice code: NM001
 
 ### 2. Create a Patient account
 
-Go to **Sign Up** → select **Patient** → complete the form. Registration also asks for an SA ID number (13 digits) or a passport number — this is used to automatically link any walk-in bookings or records a secretary may have created for that person by ID number before they had an account (see the Progress Report, Section 3.2, for why this exists).
+Go to **Sign Up** → select **Patient** → complete the form. Registration also asks for an SA ID number (13 digits) or a passport number which is used to automatically link any walk-in bookings or records a secretary may have created for that person by ID number before they had an account (see the Progress Report, Section 3.2, for why this exists).
 
 ### 3. Verify both accounts
 
-Firebase sends a real verification email to the address used at sign-up. **Both accounts must be verified via that email link before they can log in.** If it doesn't arrive within a minute, check spam/junk — this is a known limitation of Firebase's default shared sending domain (documented in the Progress Report) and doesn't indicate a bug.
+Firebase sends a real verification email to the address used at sign-up. **Both accounts must be verified via that email link before they can log in.** If it doesn't arrive within a minute, check spam/junk, this is a known limitation of Firebase's default shared sending domain (documented in the Progress Report) and doesn't indicate a bug.
 
 ### 4. Log in and explore both roles
 
-Because the app uses tab-scoped session storage rather than a shared browser session, you can be logged in as the secretary in one browser tab and the patient in another simultaneously — useful for seeing real-time updates (e.g. marking a delay as the secretary and watching it appear on the patient's dashboard) without logging in and out repeatedly.
+Because the app uses tab-scoped session storage rather than a shared browser session, you can be logged in as the secretary in one browser tab and the patient in another simultaneously which is useful for seeing real-time updates (e.g. marking a delay as the secretary and watching it appear on the patient's dashboard) without logging in and out repeatedly.
 
 ---
 
@@ -81,7 +81,7 @@ npm run preview    # serves that build locally to sanity-check it
 ```
 src/
 ├── components/     Shared UI (Button, Card, Modal, Badge, Sidebar, BackButton, ...)
-├── context/        AuthContext — auth state, role, and session handling
+├── context/        AuthContext - auth state, role, and session handling
 ├── firebase/       config.js, firestore.js (all Firestore reads/writes/transactions)
 ├── hooks/          useAppointments, useAuth, useNotifications
 ├── pages/
@@ -132,7 +132,7 @@ All nine must-have features from the PRD are implemented against live Firestore 
 The current iteration successfully implements all core functionality defined in the PRD's must-have scope, and the primary workflow is navigable end-to-end for both roles. Remaining work before final submission is focused on deployment, verification, and polish rather than new features:
 
 - Firestore security rules are written and tested locally but still need to be deployed to the live project.
-- A temporary login bypass exists (`DEV_BYPASS_ROLE` in `App.jsx`), but it is a hardcoded constant currently set to `false` — it is not gated by an environment variable or build mode. It is safe because it is set to `false` at submission, not because of how it is wired into the build.
+- A temporary login bypass exists (`DEV_BYPASS_ROLE` in `App.jsx`), but it is a hardcoded constant currently set to `false` which is not gated by an environment variable or build mode. It is safe because it is set to `false` at submission, not because of how it is wired into the build.
 - Verification emails may land in spam by default; this requires a custom sending domain to resolve, which is out of scope for this iteration's budget.
 
 ## Future Improvements
