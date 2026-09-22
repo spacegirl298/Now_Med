@@ -1778,9 +1778,27 @@ export async function getIntakeForm(patientId) {
   return { id: d.id, ...d.data() };
 }
 
+// Only ever called (via getIntakeFormForPatient below) as the fallback once
+// a lookup by uid has already come back empty, so this is only ever meant
+// to find a walk-in form nobody has claimed yet - hence the explicit
+// patientId == null filter. That filter isn't just semantically correct,
+// it's required for the read to be allowed at all: intakeForms' security
+// rule permits a non-secretary caller to list-query this collection only
+// via isUnclaimedByCallerIdNumber(), which needs patientId == null, and
+// Firestore can only allow a list query when that's provable from the
+// query's own filters (same reasoning as the appointmentSlots note in
+// firestore.rules) - not from what a matching document's data happens to
+// contain. Without this filter here, the query has no way to prove that,
+// so it was denied outright for a patient checking their own intake
+// status, even though the (unclaimed) form they were looking for would
+// have satisfied the rule.
 export async function getIntakeFormByIdNumber(idNumber) {
   if (!idNumber) return null;
-  const q = query(intakeFormsCol, where("patientIdNumber", "==", idNumber));
+  const q = query(
+    intakeFormsCol,
+    where("patientIdNumber", "==", idNumber),
+    where("patientId", "==", null),
+  );
   const snap = await getDocs(q);
   if (snap.empty) return null;
   const d = snap.docs[0];

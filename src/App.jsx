@@ -99,9 +99,7 @@ export default function App() {
           path="/patient/dashboard"
           element={
             <ProtectedRoute allowedRole="patient">
-              <RequireIntake>
-                <PatientDashboard />
-              </RequireIntake>
+              <PatientDashboard />
             </ProtectedRoute>
           }
         />

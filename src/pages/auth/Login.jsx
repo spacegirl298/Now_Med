@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '../../firebase/config'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -11,8 +9,26 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Set once login() has succeeded and the email is verified. From this
+  // point on we wait for AuthContext to finish resolving *its own* copy of
+  // the user's role (see the effect below) instead of looking the role up
+  // ourselves here.
+  //
+  // Previously this component ran its own separate getDoc() and navigated
+  // off that, while AuthContext was independently resolving the same
+  // user's role in the background (including, for a patient's very first
+  // login, checking for a pre-existing intake form). Those two role
+  // look-ups could finish in either order, and the app's route guards go
+  // by AuthContext's value, not this component's. If AuthContext hadn't
+  // caught up yet by the time we navigated, a first-time patient could
+  // land on a route the guard didn't yet believe they belonged on - blank
+  // screen, /secretary in the address bar - until a manual reload gave
+  // AuthContext a chance to resolve before anything rendered. Deriving
+  // navigation from the same context value the guards use removes that
+  // race entirely.
+  const [awaitingRole, setAwaitingRole] = useState(false)
 
-  const { login, logout } = useAuth()
+  const { login, logout, currentUser, userRole } = useAuth()
   const navigate = useNavigate()
 
   // Load remembered email on first render
@@ -23,6 +39,14 @@ export default function Login() {
       setRememberMe(true)
     }
   }, [])
+
+  // Once AuthContext has resolved the freshly-logged-in user's role, send
+  // them to the right dashboard.
+  useEffect(() => {
+    if (!awaitingRole || !currentUser || !userRole) return
+    if (userRole === 'patient') navigate('/patient/dashboard')
+    else navigate('/secretary/dashboard')
+  }, [awaitingRole, currentUser, userRole, navigate])
 
   async function handleLogin(e) {
     e.preventDefault()  // prevents page refresh on form submit
@@ -45,11 +69,13 @@ export default function Login() {
         localStorage.removeItem('rememberedEmail')
       }
 
-      const userDoc = await getDoc(doc(db, 'users', result.user.uid))
-      const role = userDoc.data().role
-      //takes you to your dashboard
-      if (role === 'patient') navigate('/patient/dashboard')
-      else navigate('/secretary/dashboard')
+      // Don't navigate yet - AuthContext is already resolving this same
+      // user's role in the background. The effect above takes it from
+      // here once that's ready, and keeps `loading` on (see below) until
+      // then so the button stays in its "logging in" state rather than
+      // flashing back to idle while we wait.
+      setAwaitingRole(true)
+      return
       //error handling with incorrect login information
     } catch (err) {
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {

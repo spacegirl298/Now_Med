@@ -62,17 +62,22 @@ export function AuthProvider({ children }) {
       // (A direct query against `users` won't work here — a brand-new
       // registrant has no user doc yet, so isSecretary()/isOwner() in the
       // rules can't be satisfied and the query is denied.)
-      await reserveIdNumberIndexSlot(idNumber, result.user.uid, role)
+      //
+      // Run this alongside updateProfile below rather than after it - the
+      // two writes don't depend on each other, and waiting for them one at
+      // a time was most of what made "Continue" feel slow on sign-up.
+      await Promise.all([
+        reserveIdNumberIndexSlot(idNumber, result.user.uid, role),
+        // So displayName is available anywhere we read it straight off the
+        // Auth user (e.g. profile pages), not just from the Firestore user doc
+        updateProfile(result.user, { displayName: name }),
+      ])
     } catch (err) {
       // Roll back the auth account we just created so we don't leave an
       // orphaned login with no matching Firestore user doc.
       await result.user.delete().catch(() => {})
       throw err
     }
-
-    // So displayName is available anywhere we read it straight off the Auth
-    // user (e.g. profile pages), not just from the Firestore user doc
-    await updateProfile(result.user, { displayName: name })
 
     //sending Verification email 
     sendEmailVerification(result.user)
@@ -92,13 +97,15 @@ export function AuthProvider({ children }) {
 
     // If a secretary already booked appointments or added records for this
     // person by ID number (e.g. a phone-in booking), attach that history to
-    // the new account now so it shows up immediately.
+    // the new account now so it shows up immediately. Deliberately not
+    // awaited: it only affects historical data the patient will see once
+    // it lands, not the account itself, so there's no reason to hold up
+    // sign-up (email verification, step 3, etc.) on it. Errors are still
+    // caught and logged rather than left as an unhandled rejection.
     if (role === 'patient') {
-      try {
-        await linkPatientDataByIdNumber(result.user.uid, idNumber, name)
-      } catch (error) {
+      linkPatientDataByIdNumber(result.user.uid, idNumber, name).catch((error) => {
         console.error('Could not link existing bookings/records by ID number:', error)
-      }
+      })
     }
 
     return result
