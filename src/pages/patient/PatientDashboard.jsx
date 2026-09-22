@@ -36,7 +36,9 @@ import {
 import {
   subscribeToPatientRecords,
   subscribeToDoctorRatings,
+  subscribeToPatientReviews,
   getDoctors,
+  updateDoctorRating,
 } from "../../firebase/firestore";
 
 export default function PatientDashboard() {
@@ -46,6 +48,11 @@ export default function PatientDashboard() {
 
   const [records, setRecords] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const [myReviews, setMyReviews] = useState([]);
+  const [editingReviewId, setEditingReviewId] = useState(null);
+  const [reviewDrafts, setReviewDrafts] = useState({});
+  const [savingReviewId, setSavingReviewId] = useState(null);
+  const [reviewErrors, setReviewErrors] = useState({});
   const [now] = useState(() => Date.now());
   const [ratingsByDoctor, setRatingsByDoctor] = useState({}); // doctorId -> reviews[]
   const [expandedReviews, setExpandedReviews] = useState(null); // doctorId or null
@@ -68,6 +75,12 @@ export default function PatientDashboard() {
       .then(setDoctors)
       .catch(() => setDoctors([]));
   }, []);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsub = subscribeToPatientReviews(currentUser.uid, setMyReviews);
+    return () => unsub && unsub();
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     if (doctors.length === 0) return;
@@ -117,6 +130,72 @@ export default function PatientDashboard() {
     ? doctors.find((d) => d.id === nextAppointment.doctorId)
     : null;
 
+  const doctorVisitCounts = useMemo(() => {
+    const counts = {};
+    appointments.forEach((appointment) => {
+      if (!appointment.doctorId || appointment.status === "cancelled") return;
+      counts[appointment.doctorId] = (counts[appointment.doctorId] || 0) + 1;
+    });
+    return counts;
+  }, [appointments]);
+
+  const orderedDoctors = useMemo(
+    () =>
+      [...doctors].sort((a, b) => {
+        const diff =
+          (doctorVisitCounts[b.id] || 0) - (doctorVisitCounts[a.id] || 0);
+        return diff !== 0 ? diff : a.name.localeCompare(b.name);
+      }),
+    [doctors, doctorVisitCounts],
+  );
+
+  const startReviewEdit = (review) => {
+    setEditingReviewId(review.id);
+    setReviewDrafts((prev) => ({
+      ...prev,
+      [review.id]: {
+        rating: review.rating || 0,
+        comment: review.comment || "",
+      },
+    }));
+    setReviewErrors((prev) => ({ ...prev, [review.id]: "" }));
+  };
+
+  const saveReviewEdit = async (review) => {
+    const draft = reviewDrafts[review.id] || {
+      rating: review.rating || 0,
+      comment: review.comment || "",
+    };
+
+    if (!draft.rating || draft.rating === 0) {
+      setReviewErrors((prev) => ({
+        ...prev,
+        [review.id]: "Please choose a star rating.",
+      }));
+      return;
+    }
+
+    setSavingReviewId(review.id);
+    setReviewErrors((prev) => ({ ...prev, [review.id]: "" }));
+
+    try {
+      await updateDoctorRating(review.appointmentId, {
+        rating: draft.rating,
+        comment: (draft.comment || "").trim(),
+      });
+      setEditingReviewId(null);
+      setReviewDrafts((prev) => ({ ...prev, [review.id]: undefined }));
+    } catch (err) {
+      console.error("Failed to update review:", err);
+      setReviewErrors((prev) => ({
+        ...prev,
+        [review.id]: "Could not save your review. Please try again.",
+      }));
+    } finally {
+      setSavingReviewId(null);
+    }
+  };
+
   // Nudge them if their very next visit is within 24 hours and they still
   // haven't done their first-time intake form. There's no server-side
   // scheduler in this app to fire this the day before on its own, so it
@@ -155,6 +234,7 @@ export default function PatientDashboard() {
         <ReviewPrompt
           appointments={appointments}
           patientId={currentUser?.uid}
+          bufferMinutes={15}
         />
 
         {isNextDelayed && (
@@ -287,89 +367,240 @@ export default function PatientDashboard() {
           </button>
         </Card>
 
+        {myReviews.length > 0 && (
+          <div className="mb-6">
+            <div className="rounded-xl border border-sand bg-white overflow-hidden">
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedReviews((prev) =>
+                    prev === "my-reviews" ? null : "my-reviews",
+                  )
+                }
+                className="w-full flex items-center justify-between px-4 py-3 text-left bg-white"
+              >
+                <span className="font-semibold text-ink">Your reviews</span>
+                <ChevronDown
+                  size={16}
+                  className={
+                    expandedReviews === "my-reviews" ? "rotate-180" : ""
+                  }
+                />
+              </button>
+
+              {expandedReviews === "my-reviews" && (
+                <div className="border-t border-sand bg-white p-3 space-y-3">
+                  {myReviews.map((review) => {
+                    const doctor = doctors.find(
+                      (d) => d.id === review.doctorId,
+                    );
+                    const isEditing = editingReviewId === review.id;
+                    const draft = reviewDrafts[review.id] || {
+                      rating: review.rating || 0,
+                      comment: review.comment || "",
+                    };
+                    const error = reviewErrors[review.id];
+
+                    return (
+                      <div
+                        key={review.id}
+                        className="bg-white rounded-xl px-3 py-3 border border-sand"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-ink text-sm">
+                              {doctor?.name || "Doctor"}
+                            </p>
+                            <p className="text-[11px] text-slate">
+                              {review.appointmentId
+                                ? "Your visit"
+                                : "Your review"}
+                            </p>
+                          </div>
+                          {!isEditing && (
+                            <button
+                              type="button"
+                              onClick={() => startReviewEdit(review)}
+                              className="text-[11px] font-medium text-rose hover:underline"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+
+                        {isEditing ? (
+                          <div className="mt-3 space-y-3">
+                            <StarRating
+                              value={draft.rating}
+                              onChange={(rating) =>
+                                setReviewDrafts((prev) => ({
+                                  ...prev,
+                                  [review.id]: { ...draft, rating },
+                                }))
+                              }
+                              size={18}
+                            />
+                            <textarea
+                              value={draft.comment}
+                              onChange={(e) =>
+                                setReviewDrafts((prev) => ({
+                                  ...prev,
+                                  [review.id]: {
+                                    ...draft,
+                                    comment: e.target.value,
+                                  },
+                                }))
+                              }
+                              rows={2}
+                              placeholder="Update your review"
+                              className="w-full border border-stone rounded-xl px-3 py-2 text-sm text-ink focus:border-rose focus:outline-none"
+                            />
+                            {error && (
+                              <p className="text-red text-[11px]">{error}</p>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => saveReviewEdit(review)}
+                                disabled={savingReviewId === review.id}
+                                className="bg-rose text-white rounded-xl px-3 py-2 text-[11px] font-medium disabled:opacity-60"
+                              >
+                                {savingReviewId === review.id
+                                  ? "Saving..."
+                                  : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingReviewId(null)}
+                                className="border border-stone rounded-xl px-3 py-2 text-[11px] font-medium text-ink"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mt-2">
+                              <StarRating value={review.rating} size={12} />
+                            </div>
+                            {review.comment && (
+                              <p className="text-sm text-slate mt-2 leading-relaxed">
+                                {review.comment}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Our doctors */}
-        {doctors.length > 0 && (
+        {orderedDoctors.length > 0 && (
           <div className="mb-6">
             <h2 className="font-semibold text-ink mb-3">Our doctors</h2>
-            <div className="flex flex-col gap-4">
-              {doctors.map((doctor) => {
+            <div className="flex flex-col gap-3">
+              {orderedDoctors.map((doctor) => {
                 const reviews = ratingsByDoctor[doctor.id] || [];
                 const avgRating =
                   reviews.length > 0
                     ? reviews.reduce((sum, r) => sum + r.rating, 0) /
                       reviews.length
                     : 0;
+                const visitCount = doctorVisitCounts[doctor.id] || 0;
                 const isExpanded = expandedReviews === doctor.id;
 
                 return (
-                  <Card key={doctor.id}>
-                    <div className="flex items-start gap-3">
-                      <div className="w-11 h-11 rounded-full bg-mist flex items-center justify-center shrink-0">
-                        <Stethoscope size={20} className="text-rose" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-ink">
-                          {doctor.name}
-                        </h3>
-                        {doctor.certifications && (
-                          <p className="text-xs text-slate">
-                            {doctor.certifications}
-                          </p>
-                        )}
-                        <div className="mt-1.5">
-                          <StarRating
-                            value={avgRating}
-                            size={14}
-                            showValue
-                            count={reviews.length}
-                          />
+                  <div
+                    key={doctor.id}
+                    className="rounded-xl border border-sand bg-white overflow-hidden"
+                  >
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
+                        setExpandedReviews(isExpanded ? null : doctor.id)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setExpandedReviews(isExpanded ? null : doctor.id);
+                        }
+                      }}
+                      className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-full bg-mist flex items-center justify-center shrink-0">
+                          <Stethoscope size={18} className="text-rose" />
                         </div>
-                        {doctor.specialty && (
-                          <span className="inline-block mt-2 px-3 py-1 rounded-full bg-blush text-plum text-xs font-medium">
-                            {doctor.specialty}
-                          </span>
-                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-ink text-sm">
+                              {doctor.name}
+                            </p>
+                            {visitCount > 0 && (
+                              <span className="text-[10px] text-rose bg-white px-2 py-0.5 rounded-full border border-rose/20">
+                                {visitCount} visit{visitCount > 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                          {doctor.specialty && (
+                            <p className="text-[11px] text-slate">
+                              {doctor.specialty}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <StarRating
+                          value={avgRating}
+                          size={12}
+                          showValue
+                          count={reviews.length}
+                        />
+                        <ChevronDown
+                          size={14}
+                          className={isExpanded ? "rotate-180" : ""}
+                        />
                       </div>
                     </div>
 
-                    {doctor.bio && (
-                      <p className="text-sm text-slate mt-4 leading-relaxed">
-                        {doctor.bio}
-                      </p>
-                    )}
+                    {isExpanded && (
+                      <div className="border-t border-sand bg-white px-4 py-3">
+                        {doctor.certifications && (
+                          <p className="text-xs text-slate mb-2">
+                            {doctor.certifications}
+                          </p>
+                        )}
 
-                    {doctor.contact && (
-                      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-sand">
-                        <Phone size={14} className="text-slate shrink-0" />
-                        <p className="text-xs text-slate">{doctor.contact}</p>
-                      </div>
-                    )}
+                        {doctor.bio && (
+                          <p className="text-sm text-slate leading-relaxed mb-3">
+                            {doctor.bio}
+                          </p>
+                        )}
 
-                    {reviews.length > 0 && (
-                      <div className="mt-4 pt-4 border-t border-sand">
-                        <button
-                          onClick={() =>
-                            setExpandedReviews(isExpanded ? null : doctor.id)
-                          }
-                          className="flex items-center gap-1.5 text-xs font-medium text-rose"
-                        >
-                          <MessageSquare size={14} />
-                          {isExpanded
-                            ? "Hide reviews"
-                            : `See ${reviews.length} review${reviews.length > 1 ? "s" : ""}`}
-                          <ChevronDown
-                            size={14}
-                            className={isExpanded ? "rotate-180" : ""}
-                          />
-                        </button>
-                        {isExpanded && (
-                          <div className="flex flex-col gap-3 mt-3">
+                        {doctor.contact && (
+                          <div className="flex items-center gap-2 pb-3 border-b border-sand mb-3">
+                            <Phone size={14} className="text-slate shrink-0" />
+                            <p className="text-xs text-slate">
+                              {doctor.contact}
+                            </p>
+                          </div>
+                        )}
+
+                        {reviews.length > 0 ? (
+                          <div className="space-y-2">
                             {reviews.map((r) => (
                               <div
                                 key={r.id}
-                                className="bg-mist rounded-xl px-3 py-2.5"
+                                className="bg-white rounded-xl px-3 py-2 border border-sand"
                               >
-                                <StarRating value={r.rating} size={12} />
+                                <StarRating value={r.rating} size={11} />
                                 {r.comment && (
                                   <p className="text-xs text-ink mt-1.5">
                                     {r.comment}
@@ -378,10 +609,14 @@ export default function PatientDashboard() {
                               </div>
                             ))}
                           </div>
+                        ) : (
+                          <p className="text-xs text-slate">
+                            No reviews yet for this doctor.
+                          </p>
                         )}
                       </div>
                     )}
-                  </Card>
+                  </div>
                 );
               })}
             </div>

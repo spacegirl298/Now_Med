@@ -1,30 +1,49 @@
 // Desktop navigation. Persistent left sidebar, links vary by role.
-import { NavLink, useNavigate } from 'react-router-dom'
-import { Calendar, Users, User, LayoutDashboard, LogOut, MessageSquare } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
-import { useUnreadMessages } from '../hooks/useUnreadMessages'
+import { NavLink, useNavigate } from "react-router-dom";
+import {
+  Calendar,
+  Users,
+  User,
+  LayoutDashboard,
+  LogOut,
+  MessageSquare,
+  BarChart3,
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { useUnreadMessages } from "../hooks/useUnreadMessages";
 
 const PATIENT_LINKS = [
-  { to: '/patient/dashboard', label: 'Home', icon: LayoutDashboard },
-  { to: '/patient/calendar', label: 'Calendar', icon: Calendar },
-  { to: '/patient/records', label: 'Records', icon: Users },
-  { to: '/patient/messages', label: 'Messages', icon: MessageSquare, showUnread: true },
-  { to: '/patient/profile', label: 'Profile', icon: User },
-]
+  { to: "/patient/dashboard", label: "Home", icon: LayoutDashboard },
+  { to: "/patient/calendar", label: "Calendar", icon: Calendar },
+  { to: "/patient/records", label: "Records", icon: Users },
+  {
+    to: "/patient/messages",
+    label: "Messages",
+    icon: MessageSquare,
+    showUnread: true,
+  },
+  { to: "/patient/profile", label: "Profile", icon: User },
+];
 
 const SECRETARY_LINKS = [
-  { to: '/secretary/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/secretary/schedule', label: 'Schedule', icon: Calendar },
-  { to: '/secretary/patients', label: 'Patients', icon: Users },
-  { to: '/secretary/messages', label: 'Messages', icon: MessageSquare, showUnread: true },
-  { to: '/secretary/profile', label: 'Profile', icon: User },
-]
+  { to: "/secretary/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/secretary/schedule", label: "Schedule", icon: Calendar },
+  { to: "/secretary/patients", label: "Patients", icon: Users },
+  {
+    to: "/secretary/messages",
+    label: "Messages",
+    icon: MessageSquare,
+    showUnread: true,
+  },
+  { to: "/secretary/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/secretary/profile", label: "Profile", icon: User },
+];
 
-export default function Sidebar({ role = 'secretary' }) {
-  const { logout } = useAuth()
-  const navigate = useNavigate()
-  const unread = useUnreadMessages()
-  const links = role === 'patient' ? PATIENT_LINKS : SECRETARY_LINKS
+export default function Sidebar({ role = "secretary" }) {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const unread = useUnreadMessages();
+  const links = role === "patient" ? PATIENT_LINKS : SECRETARY_LINKS;
 
   // logout() only signs the user out of Firebase — it doesn't navigate
   // anywhere on its own. Without an explicit redirect here, the app can be
@@ -32,10 +51,10 @@ export default function Sidebar({ role = 'secretary' }) {
   // the login screen, which is what made this look "broken".
   async function handleLogout() {
     try {
-      await logout()
-      navigate('/login', { replace: true })
+      await logout();
+      navigate("/login", { replace: true });
     } catch (error) {
-      console.error('Could not log out:', error)
+      console.error("Could not log out:", error);
     }
   }
 
@@ -44,7 +63,7 @@ export default function Sidebar({ role = 'secretary' }) {
       <div className="mb-8 px-2">
         <p className="text-lg font-semibold">Now Med</p>
         <p className="text-xs text-blush">
-          {role === 'secretary' ? 'Secretary Portal' : 'Patient Portal'}
+          {role === "secretary" ? "Secretary Portal" : "Patient Portal"}
         </p>
       </div>
 
@@ -55,7 +74,9 @@ export default function Sidebar({ role = 'secretary' }) {
             to={to}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-colors ${
-                isActive ? 'bg-rose text-white' : 'text-blush hover:bg-deep-plum'
+                isActive
+                  ? "bg-rose text-white"
+                  : "text-blush hover:bg-deep-plum"
               }`
             }
           >
@@ -66,7 +87,7 @@ export default function Sidebar({ role = 'secretary' }) {
                 className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-white text-plum text-[11px] font-semibold flex items-center justify-center"
                 aria-label={`${unread} unread messages`}
               >
-                {unread > 99 ? '99+' : unread}
+                {unread > 99 ? "99+" : unread}
               </span>
             )}
           </NavLink>
@@ -81,5 +102,5 @@ export default function Sidebar({ role = 'secretary' }) {
         Log out
       </button>
     </aside>
-  )
+  );
 }

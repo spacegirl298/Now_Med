@@ -32,11 +32,13 @@ import {
   addMinutesToTime,
   isToday,
   isPastDate,
+  parseDate,
 } from "../../utils/dateHelpers";
 import { DELAY_OPTIONS, CONFIRMATION_METHODS } from "../../utils/validators";
 import {
   getAllPatients,
   getUserByIdNumber,
+  getDoctors,
   blockDate,
   blockTimeSlots,
   unblockSlot,
@@ -65,6 +67,7 @@ const EMPTY_FORM = {
   patientIdType: "sa_id",
   patientPhone: "",
   contactMethod: "in-person",
+  doctorId: "",
   time: "08:00",
   type: "in-person",
   notes: "",
@@ -90,6 +93,7 @@ export default function SecretarySchedule() {
   const [selectedDate, setSelectedDate] = useState(getTodayString());
 
   const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -116,6 +120,7 @@ export default function SecretarySchedule() {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockMode, setBlockMode] = useState("day"); // 'day' | 'hours'
   const [blockTitle, setBlockTitle] = useState("");
+  const [blockDoctorId, setBlockDoctorId] = useState("");
   const [blockStart, setBlockStart] = useState("08:00");
   const [blockEnd, setBlockEnd] = useState("09:00");
   const [blockError, setBlockError] = useState("");
@@ -130,6 +135,9 @@ export default function SecretarySchedule() {
     getAllPatients()
       .then(setPatients)
       .catch(() => setPatients([]));
+    getDoctors()
+      .then(setDoctors)
+      .catch(() => setDoctors([]));
     const unsub = subscribeToBlockedSlots(setBlockedSlots);
     return () => unsub && unsub();
   }, []);
@@ -184,18 +192,35 @@ export default function SecretarySchedule() {
       .sort((a, b) => a.times[0].localeCompare(b.times[0]));
   }, [blockedSlots, selectedDate]);
 
+  const formDoctorId = form.doctorId || editingAppointment?.doctorId || "";
+  const blockedTimesForSelectedDay = useMemo(
+    () =>
+      new Set(
+        blockedSlots
+          .filter(
+            (b) =>
+              b.date === selectedDate &&
+              b.time !== null &&
+              (!formDoctorId || b.doctorId === formDoctorId || !b.doctorId),
+          )
+          .map((b) => b.time),
+      ),
+    [blockedSlots, formDoctorId, selectedDate],
+  );
   const bookedTimesForSelectedDay = new Set(
     selectedDayAppointments
       .filter(
         (a) =>
           a.status !== "cancelled" &&
-          (!editingAppointment || a.id !== editingAppointment.id),
+          (!editingAppointment || a.id !== editingAppointment.id) &&
+          (!formDoctorId || (a.doctorId || "") === formDoctorId),
       )
       .map((a) => a.time),
   );
   const availableTimeOptions = generateTimeSlots().filter(
     (t) =>
       !bookedTimesForSelectedDay.has(t) &&
+      !blockedTimesForSelectedDay.has(t) &&
       !isPastTimeSlot(selectedDate, t),
   );
 
@@ -231,10 +256,26 @@ export default function SecretarySchedule() {
 
   const selectedDateIsPast = isPastDate(selectedDate);
 
+  function isDoctorAssignmentRequired(dateStr) {
+    if (!dateStr || isPastDate(dateStr)) return false;
+    const today = parseDate(getTodayString());
+    const target = parseDate(dateStr);
+    const diffMs = target.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffMs / 86400000);
+    return diffDays <= 7;
+  }
+
   function openAddModal() {
     if (isPastDate(selectedDate)) return;
     setEditingAppointment(null);
-    setForm({ ...EMPTY_FORM, time: availableTimeOptions[0] || "08:00" });
+    setForm({
+      ...EMPTY_FORM,
+      time: availableTimeOptions[0] || "08:00",
+      doctorId:
+        isDoctorAssignmentRequired(selectedDate) && doctors.length > 0
+          ? doctors[0].id
+          : "",
+    });
     setPatientSearchTerm("");
     setShowPatientDropdown(false);
     setFormError("");
@@ -249,6 +290,7 @@ export default function SecretarySchedule() {
       patientId: appointment.patientId || "",
       patientName: appointment.patientName,
       patientIdNumber: appointment.patientIdNumber || "",
+      doctorId: appointment.doctorId || "",
       time: appointment.time,
       type: appointment.type,
       notes: appointment.notes || "",
@@ -279,12 +321,27 @@ export default function SecretarySchedule() {
       );
     }
     if (!form.time) return setFormError("Please select a time.");
-    if (isPastTimeSlot(selectedDate, form.time)) {
+
+    const isKeepingExistingTime =
+      editingAppointment &&
+      editingAppointment.date === selectedDate &&
+      editingAppointment.time === form.time;
+
+    if (!isKeepingExistingTime && isPastTimeSlot(selectedDate, form.time)) {
       return setFormError(
         "That time has already passed today - please choose a later slot.",
       );
     }
 
+    if (
+      doctors.length > 0 &&
+      isDoctorAssignmentRequired(selectedDate) &&
+      !form.doctorId
+    ) {
+      return setFormError(
+        "Please choose a doctor for this appointment because it is within 7 days.",
+      );
+    }
     if (form.bookingMode === "existing" && !editingAppointment) {
       if (!form.patientId) return setFormError("Please select a patient.");
     }
@@ -300,6 +357,8 @@ export default function SecretarySchedule() {
     try {
       if (editingAppointment) {
         await updateAppointment(editingAppointment.id, {
+          doctorId: form.doctorId || null,
+          doctorName: doctors.find((d) => d.id === form.doctorId)?.name || "",
           time: form.time,
           type: form.type,
           notes: form.notes,
@@ -309,6 +368,8 @@ export default function SecretarySchedule() {
           patientId: form.patientId,
           patientName: form.patientName,
           secretaryId: currentUser?.uid,
+          doctorId: form.doctorId || null,
+          doctorName: doctors.find((d) => d.id === form.doctorId)?.name || "",
           date: selectedDate,
           time: form.time,
           type: form.type,
@@ -330,6 +391,8 @@ export default function SecretarySchedule() {
           patientPhone: form.patientPhone.trim(),
           contactMethod: form.contactMethod,
           secretaryId: currentUser?.uid,
+          doctorId: form.doctorId || null,
+          doctorName: doctors.find((d) => d.id === form.doctorId)?.name || "",
           date: selectedDate,
           time: form.time,
           type: form.type,
@@ -380,7 +443,9 @@ export default function SecretarySchedule() {
     setCancelling(true);
     setCancelError("");
     try {
-      await cancelAppointment(cancelTarget, currentUser?.uid, { isStaff: true });
+      await cancelAppointment(cancelTarget, currentUser?.uid, {
+        isStaff: true,
+      });
       setCancelTarget(null);
     } catch (err) {
       console.error("Failed to cancel appointment:", err);
@@ -408,6 +473,7 @@ export default function SecretarySchedule() {
     if (isPastDate(selectedDate)) return;
     setBlockMode("day");
     setBlockTitle("");
+    setBlockDoctorId(formDoctorId || "");
     setBlockStart("08:00");
     setBlockEnd("09:00");
     setBlockError("");
@@ -422,10 +488,18 @@ export default function SecretarySchedule() {
       );
     }
 
+    const doctorName =
+      doctors.find((doctor) => doctor.id === blockDoctorId)?.name || "";
+
     setSavingBlock(true);
     try {
       if (blockMode === "day") {
-        await blockDate(selectedDate, blockTitle.trim());
+        await blockDate(
+          selectedDate,
+          blockTitle.trim(),
+          blockDoctorId || null,
+          doctorName,
+        );
       } else {
         if (blockStart >= blockEnd) {
           setBlockError("End time must be after the start time.");
@@ -438,7 +512,13 @@ export default function SecretarySchedule() {
           setSavingBlock(false);
           return;
         }
-        await blockTimeSlots(selectedDate, slots, blockTitle.trim());
+        await blockTimeSlots(
+          selectedDate,
+          slots,
+          blockTitle.trim(),
+          blockDoctorId || null,
+          doctorName,
+        );
       }
       setShowBlockModal(false);
     } catch (err) {
@@ -990,6 +1070,24 @@ export default function SecretarySchedule() {
           )}
 
           <div>
+            <label className="text-xs text-slate mb-1 block">
+              Assigned doctor
+            </label>
+            <select
+              value={form.doctorId}
+              onChange={(e) => setForm({ ...form, doctorId: e.target.value })}
+              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+            >
+              <option value="">Select a doctor</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="text-xs text-slate mb-1 block">Time slot</label>
             <select
               value={form.time}
@@ -1251,6 +1349,24 @@ export default function SecretarySchedule() {
               </div>
             </div>
           )}
+
+          <div>
+            <label className="text-xs text-slate mb-1 block">
+              Doctor availability
+            </label>
+            <select
+              value={blockDoctorId}
+              onChange={(e) => setBlockDoctorId(e.target.value)}
+              className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+            >
+              <option value="">All doctors</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label className="text-xs text-slate mb-1 block">

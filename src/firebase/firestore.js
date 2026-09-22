@@ -45,8 +45,8 @@ const appointmentSlotsCol = collection(db, "appointmentSlots");
 // appointmentSlots docs are keyed by the slot itself, not the appointment,
 // so a conflict check is a single doc read (see createAppointment) and two
 // different appointments can never collide on the same slot doc ID.
-function appointmentSlotId(date, time) {
-  return `${date}_${time}`;
+function appointmentSlotId(date, time, doctorId = null) {
+  return doctorId ? `${date}_${time}_${doctorId}` : `${date}_${time}`;
 }
 const notificationsCol = collection(db, "notifications");
 const blockedSlotsCol = collection(db, "blockedSlots");
@@ -68,6 +68,8 @@ const changeRequestsCol = collection(db, "changeRequests");
 // One chat per patient: conversations/{patientId} holds the summary + unread
 // counters, conversations/{patientId}/messages holds the messages.
 const conversationsCol = collection(db, "conversations");
+const analyticsEventsCol = collection(db, "analyticsEvents");
+const analyticsSummaryCol = collection(db, "analyticsSummary");
 
 // ================= USERS / PATIENTS =================
 
@@ -441,7 +443,7 @@ export async function createAppointment(data) {
   // the old note here said would be needed to make double-booking
   // prevention a hard, rule-checkable guarantee rather than only an
   // app-level one.
-  const slotId = appointmentSlotId(data.date, data.time);
+  const slotId = appointmentSlotId(data.date, data.time, data.doctorId || null);
   const slotRef = doc(appointmentSlotsCol, slotId);
   await runTransaction(db, async (transaction) => {
     const slotSnap = await transaction.get(slotRef);
@@ -461,6 +463,7 @@ export async function createAppointment(data) {
       date: newAppointment.date,
       time: newAppointment.time,
       status: newAppointment.status,
+      doctorId: newAppointment.doctorId || null,
       appointmentId: appointmentRef.id,
       // Carried on the slot doc itself (not just the appointment) so its
       // security rule can check ownership without a cross-document get() -
@@ -489,6 +492,14 @@ export async function createAppointment(data) {
     // Fire-and-forget - a slow/failed intake check should never hold up
     // returning the new appointment id to the caller.
     notifyIfIntakeIncomplete(patientId, data.patientName, data.date, data.time);
+  }
+
+  if (newAppointment.doctorId) {
+    await syncDoctorAnalyticsFromAppointment({
+      doctorId: newAppointment.doctorId,
+      doctorName: newAppointment.doctorName || "Doctor",
+      appointmentDate: newAppointment.date,
+    });
   }
 
   return appointmentRef.id;
@@ -624,11 +635,16 @@ export async function updateAppointment(appointmentId, data) {
     const existingSnap = await getDoc(apptRef);
     if (existingSnap.exists()) {
       const existing = existingSnap.data();
-      const oldSlotId = appointmentSlotId(existing.date, existing.time);
+      const oldSlotId = appointmentSlotId(
+        existing.date,
+        existing.time,
+        existing.doctorId || null,
+      );
       const newDate = data.date ?? existing.date;
       const newTime = data.time ?? existing.time;
       const newStatus = data.status ?? existing.status;
-      const newSlotId = appointmentSlotId(newDate, newTime);
+      const newDoctorId = data.doctorId ?? existing.doctorId ?? null;
+      const newSlotId = appointmentSlotId(newDate, newTime, newDoctorId);
 
       if (newSlotId !== oldSlotId) {
         batch.delete(doc(appointmentSlotsCol, oldSlotId));
@@ -636,13 +652,14 @@ export async function updateAppointment(appointmentId, data) {
           date: newDate,
           time: newTime,
           status: newStatus,
+          doctorId: newDoctorId,
           appointmentId,
           patientId: existing.patientId ?? null,
         });
       } else {
         batch.set(
           doc(appointmentSlotsCol, oldSlotId),
-          { status: newStatus },
+          { status: newStatus, doctorId: newDoctorId },
           { merge: true },
         );
       }
@@ -660,7 +677,14 @@ export async function deleteAppointment(appointmentId) {
   if (existingSnap.exists()) {
     const existing = existingSnap.data();
     batch.delete(
-      doc(appointmentSlotsCol, appointmentSlotId(existing.date, existing.time)),
+      doc(
+        appointmentSlotsCol,
+        appointmentSlotId(
+          existing.date,
+          existing.time,
+          existing.doctorId || null,
+        ),
+      ),
     );
   }
   await batch.commit();
@@ -726,6 +750,17 @@ export async function markPatientLate(appointment, minutesLate, note) {
     patientLateMinutes: minutesLate,
     patientLateNote: note || "",
   });
+
+  if (appointment.doctorId && appointment.date) {
+    await syncDoctorAnalyticsFromLateArrival({
+      doctorId: appointment.doctorId,
+      doctorName: appointment.doctorName || "Doctor",
+      appointmentDate: appointment.date,
+      minuteDelta: minutesLate,
+      note: note || "",
+      source: "patient",
+    });
+  }
 }
 
 // Patient self-report: "my live ETA says I won't make it in time." Set from
@@ -770,6 +805,17 @@ export async function markAppointmentDelay(
     delayNote: note || "",
     delayedTime: newTime,
   });
+
+  if (appointment.doctorId && appointment.date) {
+    await syncDoctorAnalyticsFromLateArrival({
+      doctorId: appointment.doctorId,
+      doctorName: appointment.doctorName || "Doctor",
+      appointmentDate: appointment.date,
+      minuteDelta: delayMinutes,
+      note: note || "",
+      source: "secretary",
+    });
+  }
 
   if (appointment.patientId) {
     await createNotification({
@@ -950,24 +996,41 @@ export function subscribeToBlockedSlots(callback) {
 
 // Blocks an entire day. `title` is shown to patients on the calendar (e.g.
 // "Public holiday", "Doctor on leave") — `reason` is kept as a duplicate
-// field for backwards compatibility with any older code/reads.
-export async function blockDate(dateStr, title = "") {
+// field for backwards compatibility with any older code/reads. Give `doctorId`
+// to make this a doctor-specific unavailability block; leave it blank for a
+// practice-wide closure affecting everyone.
+export async function blockDate(
+  dateStr,
+  title = "",
+  doctorId = null,
+  doctorName = "",
+) {
   await addDoc(blockedSlotsCol, {
     date: dateStr,
     time: null,
     title,
     reason: title,
+    doctorId: doctorId || null,
+    doctorName: doctorName || "",
     groupId: null,
     createdAt: serverTimestamp(),
   });
 }
 
-export async function blockTimeSlot(dateStr, timeStr, title = "") {
+export async function blockTimeSlot(
+  dateStr,
+  timeStr,
+  title = "",
+  doctorId = null,
+  doctorName = "",
+) {
   await addDoc(blockedSlotsCol, {
     date: dateStr,
     time: timeStr,
     title,
     reason: title,
+    doctorId: doctorId || null,
+    doctorName: doctorName || "",
     groupId: null,
     createdAt: serverTimestamp(),
   });
@@ -977,7 +1040,13 @@ export async function blockTimeSlot(dateStr, timeStr, title = "") {
 // for a lunch break) as one titled group, so they can be shown and removed
 // together instead of one-by-one. Pass the slot list already computed by
 // the caller (see generateTimeSlots in utils/dateHelpers).
-export async function blockTimeSlots(dateStr, times, title = "") {
+export async function blockTimeSlots(
+  dateStr,
+  times,
+  title = "",
+  doctorId = null,
+  doctorName = "",
+) {
   if (!times || times.length === 0) return null;
   const groupId = `${dateStr}-${Date.now()}`;
   const batch = writeBatch(db);
@@ -988,6 +1057,8 @@ export async function blockTimeSlots(dateStr, times, title = "") {
       time: timeStr,
       title,
       reason: title,
+      doctorId: doctorId || null,
+      doctorName: doctorName || "",
       groupId,
       createdAt: serverTimestamp(),
     });
@@ -1086,7 +1157,16 @@ export async function updateDoctor(doctorId, data) {
 }
 
 export async function deleteDoctor(doctorId) {
-  await deleteDoc(doc(db, "doctors", doctorId));
+  const blockedQ = query(blockedSlotsCol, where("doctorId", "==", doctorId));
+  const blockedSnap = await getDocs(blockedQ);
+  const batch = writeBatch(db);
+
+  blockedSnap.docs.forEach((docSnap) => {
+    batch.delete(docSnap.ref);
+  });
+
+  batch.delete(doc(db, "doctors", doctorId));
+  await batch.commit();
 }
 
 // ================= DOCTOR RATINGS / REVIEWS =================
@@ -1101,6 +1181,118 @@ export async function deleteDoctor(doctorId) {
 // `hidden` is the secretary's moderation flag - a hidden review still
 // exists (for the record / for the patient who wrote it) but is excluded
 // from every patient-facing read.
+
+export async function syncDoctorAnalyticsFromAppointment({
+  doctorId,
+  doctorName,
+  appointmentDate,
+} = {}) {
+  if (!doctorId || !appointmentDate) return;
+
+  const doctor = (await getDoctorById(doctorId)) || {
+    name: doctorName || "Doctor",
+  };
+  const date = new Date(`${appointmentDate}T12:00:00`);
+  const monthKey = date.toISOString().slice(0, 7);
+  const weekStart = new Date(date);
+  weekStart.setHours(0, 0, 0, 0);
+  const day = weekStart.getDay();
+  const diffToMonday = (day + 6) % 7;
+  weekStart.setDate(weekStart.getDate() - diffToMonday);
+  const weekKey = weekStart.toISOString().slice(0, 10);
+
+  for (const period of [
+    { periodType: "month", periodKey: monthKey },
+    { periodType: "week", periodKey: weekKey },
+  ]) {
+    const summary = await getAnalyticsSummary({
+      entityType: "doctor",
+      entityId: doctorId,
+      periodType: period.periodType,
+      periodKey: period.periodKey,
+    });
+    const current = summary[0] || {};
+    const totalAppointments = Number(current.totalAppointments || 0) + 1;
+
+    await upsertAnalyticsSummary({
+      entityType: "doctor",
+      entityId: doctorId,
+      periodType: period.periodType,
+      periodKey: period.periodKey,
+      doctorName: doctor.name || current.doctorName || "Doctor",
+      totalAppointments,
+      reviewCount: Number(current.reviewCount || 0),
+      avgReviewRating: current.avgReviewRating ?? 0,
+      lateArrivalCount: Number(current.lateArrivalCount || 0),
+      lateFeesCharged: Number(current.lateFeesCharged || 0),
+      lastAppointmentAt: serverTimestamp(),
+    });
+  }
+}
+
+export async function syncDoctorAnalyticsFromLateArrival({
+  doctorId,
+  doctorName,
+  appointmentDate,
+  minuteDelta,
+  note = "",
+  source = "patient",
+} = {}) {
+  if (!doctorId || !appointmentDate) return;
+
+  const doctor = (await getDoctorById(doctorId)) || {
+    name: doctorName || "Doctor",
+  };
+  const date = new Date(`${appointmentDate}T12:00:00`);
+  const monthKey = date.toISOString().slice(0, 7);
+  const weekStart = new Date(date);
+  weekStart.setHours(0, 0, 0, 0);
+  const day = weekStart.getDay();
+  const diffToMonday = (day + 6) % 7;
+  weekStart.setDate(weekStart.getDate() - diffToMonday);
+  const weekKey = weekStart.toISOString().slice(0, 10);
+
+  const entry = {
+    doctorId,
+    doctorName: doctor.name || doctorName || "Doctor",
+    source,
+    note: note || "",
+    minutesLate: Number(minuteDelta || 0),
+    appointmentDate,
+    createdAt: new Date().toISOString(),
+  };
+
+  for (const period of [
+    { periodType: "month", periodKey: monthKey },
+    { periodType: "week", periodKey: weekKey },
+  ]) {
+    const summary = await getAnalyticsSummary({
+      entityType: "doctor",
+      entityId: doctorId,
+      periodType: period.periodType,
+      periodKey: period.periodKey,
+    });
+    const current = summary[0] || {};
+    const details = Array.isArray(current.lateArrivalDetails)
+      ? current.lateArrivalDetails
+      : [];
+
+    await upsertAnalyticsSummary({
+      entityType: "doctor",
+      entityId: doctorId,
+      periodType: period.periodType,
+      periodKey: period.periodKey,
+      doctorName: doctor.name || current.doctorName || "Doctor",
+      totalAppointments: Number(current.totalAppointments || 0),
+      reviewCount: Number(current.reviewCount || 0),
+      avgReviewRating: current.avgReviewRating ?? 0,
+      lateArrivalCount: Number(current.lateArrivalCount || 0) + 1,
+      lateArrivalDetails: [...details, entry],
+      lateFeesCharged: Number(current.lateFeesCharged || 0),
+      lastLateArrivalAt: serverTimestamp(),
+    });
+  }
+}
 
 export async function createDoctorRating({
   appointmentId,
@@ -1119,6 +1311,224 @@ export async function createDoctorRating({
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+
+  try {
+    if (!doctorId) return;
+    await syncDoctorAnalyticsFromReviews({
+      doctorId,
+      patientId,
+      appointmentId,
+      rating,
+      comment,
+    });
+  } catch (err) {
+    console.error("Failed to update analytics for doctor review:", err);
+  }
+}
+
+export async function syncDoctorAnalyticsFromReviews({
+  doctorId,
+  patientId,
+  appointmentId,
+  rating,
+  comment = "",
+} = {}) {
+  if (!doctorId) return;
+
+  const doctor = await getDoctorById(doctorId);
+  const reviewDate = new Date();
+  const monthKey = reviewDate.toISOString().slice(0, 7);
+  const weekStart = new Date(reviewDate);
+  weekStart.setHours(0, 0, 0, 0);
+  const day = weekStart.getDay();
+  const diffToMonday = (day + 6) % 7;
+  weekStart.setDate(weekStart.getDate() - diffToMonday);
+  const weekKey = weekStart.toISOString().slice(0, 10);
+
+  const periods = [
+    { periodType: "month", periodKey: monthKey },
+    { periodType: "week", periodKey: weekKey },
+  ];
+
+  for (const period of periods) {
+    const summary = await getAnalyticsSummary({
+      entityType: "doctor",
+      entityId: doctorId,
+      periodType: period.periodType,
+      periodKey: period.periodKey,
+    });
+    const current = summary[0] || {};
+    const reviewCount = Number(current.reviewCount || 0) + 1;
+    const weighted =
+      Number(current.avgReviewRating || 0) * Number(current.reviewCount || 0);
+    const avgReviewRating = reviewCount
+      ? (weighted + Number(rating ?? 0)) / reviewCount
+      : Number(rating ?? 0);
+
+    await upsertAnalyticsSummary({
+      entityType: "doctor",
+      entityId: doctorId,
+      periodType: period.periodType,
+      periodKey: period.periodKey,
+      doctorName: doctor?.name || current.doctorName || "Doctor",
+      reviewCount,
+      avgReviewRating,
+      lastReviewAt: serverTimestamp(),
+    });
+  }
+
+  if (rating !== undefined && patientId && appointmentId) {
+    await addDoc(analyticsEventsCol, {
+      eventType: "doctor_review_submitted",
+      entityType: "doctor",
+      entityId: doctorId,
+      patientId,
+      appointmentId,
+      rating,
+      comment,
+      createdAt: serverTimestamp(),
+    });
+  }
+}
+
+export async function backfillDoctorAnalyticsFromAppointmentsAndReviews() {
+  const [appointmentsSnap, reviewsSnap] = await Promise.all([
+    getDocs(appointmentsCol),
+    getDocs(doctorRatingsCol),
+  ]);
+
+  const doctorNames = new Map();
+  const aggregates = new Map();
+
+  const ensureAggregate = (doctorId, periodType, periodKey, doctorName) => {
+    const key = `${doctorId}|${periodType}|${periodKey}`;
+    if (!aggregates.has(key)) {
+      aggregates.set(key, {
+        doctorId,
+        doctorName,
+        periodType,
+        periodKey,
+        totalAppointments: 0,
+        reviewCount: 0,
+        totalRating: 0,
+      });
+    }
+    return aggregates.get(key);
+  };
+
+  for (const apptDoc of appointmentsSnap.docs) {
+    const appt = apptDoc.data();
+    const doctorId = appt.doctorId;
+    if (!doctorId) continue;
+
+    const doctor = doctorNames.get(doctorId) || (await getDoctorById(doctorId));
+    if (!doctorNames.has(doctorId)) {
+      doctorNames.set(doctorId, doctor?.name || "Doctor");
+    }
+
+    const date =
+      appt.date || appt.appointmentAt?.toDate?.().toISOString().slice(0, 10);
+    if (!date) continue;
+
+    const monthKey = date.slice(0, 7);
+    const weekStart = new Date(`${date}T12:00:00`);
+    weekStart.setHours(0, 0, 0, 0);
+    const day = weekStart.getDay();
+    const diffToMonday = (day + 6) % 7;
+    weekStart.setDate(weekStart.getDate() - diffToMonday);
+    const weekKey = weekStart.toISOString().slice(0, 10);
+
+    for (const period of [
+      { periodType: "month", periodKey: monthKey },
+      { periodType: "week", periodKey: weekKey },
+    ]) {
+      const entry = ensureAggregate(
+        doctorId,
+        period.periodType,
+        period.periodKey,
+        doctorNames.get(doctorId) || "Doctor",
+      );
+      entry.totalAppointments += 1;
+
+      const lateMinutes = appt.patientLateMinutes ?? appt.delayMinutes ?? null;
+      const lateNote = appt.patientLateNote || appt.delayNote || "";
+      const isLate = lateMinutes != null && Number(lateMinutes) > 0;
+      if (isLate) {
+        entry.lateArrivalCount = (entry.lateArrivalCount || 0) + 1;
+        entry.lateArrivalDetails = [
+          ...(entry.lateArrivalDetails || []),
+          {
+            doctorId,
+            doctorName: doctorNames.get(doctorId) || "Doctor",
+            source: appt.patientLateMinutes != null ? "patient" : "secretary",
+            appointmentDate: date,
+            minutesLate: Number(lateMinutes),
+            note: lateNote,
+          },
+        ];
+      }
+    }
+  }
+
+  for (const reviewDoc of reviewsSnap.docs) {
+    const review = reviewDoc.data();
+    const doctorId = review.doctorId;
+    if (!doctorId) continue;
+
+    const doctor = doctorNames.get(doctorId) || (await getDoctorById(doctorId));
+    if (!doctorNames.has(doctorId)) {
+      doctorNames.set(doctorId, doctor?.name || "Doctor");
+    }
+
+    const createdAt = review.createdAt?.toDate
+      ? review.createdAt.toDate()
+      : new Date();
+    const monthKey = createdAt.toISOString().slice(0, 7);
+    const weekStart = new Date(createdAt);
+    weekStart.setHours(0, 0, 0, 0);
+    const day = weekStart.getDay();
+    const diffToMonday = (day + 6) % 7;
+    weekStart.setDate(weekStart.getDate() - diffToMonday);
+    const weekKey = weekStart.toISOString().slice(0, 10);
+
+    for (const period of [
+      { periodType: "month", periodKey: monthKey },
+      { periodType: "week", periodKey: weekKey },
+    ]) {
+      const entry = ensureAggregate(
+        doctorId,
+        period.periodType,
+        period.periodKey,
+        doctorNames.get(doctorId) || "Doctor",
+      );
+      entry.reviewCount += 1;
+      entry.totalRating += Number(review.rating || 0);
+    }
+  }
+
+  await Promise.all(
+    [...aggregates.values()].map(async (entry) => {
+      const avgReviewRating = entry.reviewCount
+        ? entry.totalRating / entry.reviewCount
+        : 0;
+
+      await upsertAnalyticsSummary({
+        entityType: "doctor",
+        entityId: entry.doctorId,
+        periodType: entry.periodType,
+        periodKey: entry.periodKey,
+        doctorName: entry.doctorName,
+        totalAppointments: entry.totalAppointments || 0,
+        reviewCount: entry.reviewCount || 0,
+        avgReviewRating,
+        lateArrivalCount: entry.lateArrivalCount || 0,
+        lateArrivalDetails: entry.lateArrivalDetails || [],
+        lastReviewAt: entry.reviewCount ? serverTimestamp() : null,
+      });
+    }),
+  );
+
+  return [...aggregates.values()];
 }
 
 // Patient editing their own already-submitted review.
@@ -1148,6 +1558,27 @@ export async function deleteDoctorRating(appointmentId) {
 export async function getDoctorRatingByAppointment(appointmentId) {
   const snap = await getDoc(doc(doctorRatingsCol, appointmentId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export function subscribeToPatientReviews(patientId, callback, onError) {
+  if (!patientId) return () => {};
+  const q = query(
+    doctorRatingsCol,
+    where("patientId", "==", patientId),
+    where("hidden", "==", false),
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const reviews = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort(
+          (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
+        );
+      callback(reviews);
+    },
+    onError,
+  );
 }
 
 // Patient/dashboard-facing: only ever the visible (non-hidden) reviews for
@@ -1193,6 +1624,93 @@ export function subscribeToAllDoctorRatings(callback, onError) {
     onError,
   );
 }
+
+// ================= ANALYTICS =================
+export function subscribeToAnalyticsSummary(filters = {}, callback, onError) {
+  const conditions = [];
+  if (filters.entityType) {
+    conditions.push(where("entityType", "==", filters.entityType));
+  }
+  if (filters.entityId) {
+    conditions.push(where("entityId", "==", filters.entityId));
+  }
+  if (filters.periodType) {
+    conditions.push(where("periodType", "==", filters.periodType));
+  }
+  if (filters.periodKey) {
+    conditions.push(where("periodKey", "==", filters.periodKey));
+  }
+
+  const q =
+    conditions.length > 0
+      ? query(analyticsSummaryCol, ...conditions)
+      : analyticsSummaryCol;
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      callback(list);
+    },
+    onError,
+  );
+}
+
+export function subscribeToAnalyticsSummaries(filters = {}, callback, onError) {
+  return subscribeToAnalyticsSummary(filters, callback, onError);
+}
+
+export async function getAnalyticsSummary(filters = {}) {
+  const conditions = [];
+  if (filters.entityType) {
+    conditions.push(where("entityType", "==", filters.entityType));
+  }
+  if (filters.entityId) {
+    conditions.push(where("entityId", "==", filters.entityId));
+  }
+  if (filters.periodType) {
+    conditions.push(where("periodType", "==", filters.periodType));
+  }
+  if (filters.periodKey) {
+    conditions.push(where("periodKey", "==", filters.periodKey));
+  }
+
+  const q =
+    conditions.length > 0
+      ? query(analyticsSummaryCol, ...conditions)
+      : analyticsSummaryCol;
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function upsertAnalyticsSummary({
+  entityType,
+  entityId,
+  periodType,
+  periodKey,
+  ...payload
+}) {
+  if (!entityType || !periodType || !periodKey) {
+    return null;
+  }
+
+  const id = `${entityType}_${entityId || "all"}_${periodType}_${periodKey}`;
+  const ref = doc(analyticsSummaryCol, id);
+  const current = await getDoc(ref);
+  const next = {
+    entityType,
+    entityId: entityId || null,
+    periodType,
+    periodKey,
+    updatedAt: serverTimestamp(),
+    ...(current.exists() ? current.data() : {}),
+    ...payload,
+  };
+
+  await setDoc(ref, next, { merge: true });
+  return { id: ref.id, ...next };
+}
+
 // ================= INTAKE FORMS =================
 // `answers` is the raw output of the digital intake wizard (see
 // utils/intakeQuestions.js). Like records/profiles, a form can be attached

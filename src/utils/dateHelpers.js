@@ -172,14 +172,21 @@ export function minutesSinceAppointment(appointment) {
   return (Date.now() - start.getTime()) / 60000;
 }
 
-export function isReviewEligible(appointment, bufferMinutes = 35) {
-  // Default buffer assumes the standard 30-min slot (same assumption
-  // downloadAppointmentICS in PatientCalendar.jsx makes) plus a 5-min
-  // grace period, since appointment duration isn't stored per-appointment.
-  // If you add a stored duration later, swap this for
-  // appointment.durationMinutes + 5.
+export function isReviewEligible(appointment, bufferMinutes = 15) {
+  // The patient should be able to review a visit shortly after their
+  // appointment time, without waiting for a separate dashboard reminder.
+  // A 15-minute grace keeps the prompt useful after the session finishes,
+  // while still being timely enough to capture fresh feedback.
   if (!appointment || appointment.status === "cancelled") return false;
-  if (!appointment.doctorId) return false;
+
+  // Older appointments may not have doctorId/doctorName populated yet,
+  // especially if they were created before that metadata was added.
+  // They are still legitimate review candidates as long as the visit time
+  // has passed and the record has a usable date/time.
+  if (!appointment.date || !appointment.time) {
+    return minutesSinceAppointment(appointment) >= bufferMinutes;
+  }
+
   return minutesSinceAppointment(appointment) >= bufferMinutes;
 }
 

@@ -16,62 +16,115 @@ import { isReviewEligible, formatShortDate } from "../utils/dateHelpers";
 import {
   getDoctorRatingByAppointment,
   createDoctorRating,
+  getDoctorById,
 } from "../firebase/firestore";
 
-export default function ReviewPrompt({ appointments, patientId }) {
+export default function ReviewPrompt({
+  appointments,
+  patientId,
+  bufferMinutes = 15,
+}) {
   const [closed, setClosed] = useState(false);
-  const [candidate, setCandidate] = useState(null); // appointment awaiting review
+  const [pendingReviews, setPendingReviews] = useState([]);
   const [checking, setChecking] = useState(true);
-
-  const [rating, setRating] = useState(0);
-  const [comment, setComment] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [submittingById, setSubmittingById] = useState({});
+  const [submittedIds, setSubmittedIds] = useState([]);
+  const [resolvedDoctorNames, setResolvedDoctorNames] = useState({});
+  const [errors, setErrors] = useState({});
 
   // Candidate pool: eligible appointments, oldest first. We check them one
-  // at a time (rather than fetching all ratings at once) since this is a
-  // handful of appointments at most and getDoctorRatingByAppointment is a
-  // single cheap getDoc.
+  // at a time because getDoctorRatingByAppointment is a single getDoc and we
+  // want to surface every unreviewed visit, not just the first one.
   const eligiblePool = useMemo(() => {
     return appointments
-      .filter((a) => isReviewEligible(a))
+      .filter((a) => isReviewEligible(a, bufferMinutes))
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  }, [appointments]);
+  }, [appointments, bufferMinutes]);
+
+  useEffect(() => {
+    if (pendingReviews.length > 0 && !expandedId) {
+      setExpandedId(pendingReviews[0].id);
+    }
+  }, [pendingReviews, expandedId]);
+
+  useEffect(() => {
+    if (pendingReviews.length > 0) {
+      setClosed(false);
+    }
+  }, [pendingReviews.length]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function findCandidate() {
-      setChecking(true);
+    async function resolveDoctorNames() {
+      const nextNames = {};
+
       for (const appt of eligiblePool) {
-        // eslint-disable-next-line no-await-in-loop -- intentionally
-        // sequential: stop at the first unreviewed one instead of
-        // firing every lookup at once.
+        if (appt.doctorName) {
+          nextNames[appt.id] = appt.doctorName;
+          continue;
+        }
+
+        if (!appt.doctorId) {
+          nextNames[appt.id] = "Your doctor";
+          continue;
+        }
+
+        try {
+          const doctor = await getDoctorById(appt.doctorId);
+          nextNames[appt.id] = doctor?.name || "Your doctor";
+        } catch (err) {
+          console.error("Failed to resolve doctor name for review:", err);
+          nextNames[appt.id] = "Your doctor";
+        }
+      }
+
+      if (!cancelled) {
+        setResolvedDoctorNames(nextNames);
+      }
+    }
+
+    resolveDoctorNames();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eligiblePool]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function findPendingReviews() {
+      setChecking(true);
+      const nextPending = [];
+
+      for (const appt of eligiblePool) {
         let existing;
         try {
           existing = await getDoctorRatingByAppointment(appt.id);
         } catch (err) {
           console.error("Failed to check existing review:", err);
-          continue; // skip this appointment rather than crash the prompt
+          continue;
         }
+
         if (cancelled) return;
         if (!existing) {
-          setCandidate(appt);
-          setChecking(false);
-          return;
+          nextPending.push(appt);
         }
       }
+
       if (!cancelled) {
-        setCandidate(null);
+        setPendingReviews(nextPending);
         setChecking(false);
       }
     }
 
     if (eligiblePool.length > 0) {
-      findCandidate();
+      findPendingReviews();
     } else {
-      setCandidate(null);
+      setPendingReviews([]);
       setChecking(false);
     }
 
@@ -80,38 +133,61 @@ export default function ReviewPrompt({ appointments, patientId }) {
     };
   }, [eligiblePool]);
 
-  async function handleSubmit() {
-    if (!candidate || rating === 0) {
-      setError("Please choose a star rating.");
-      return;
-    }
-    setSubmitting(true);
-    setError("");
-    try {
-      await createDoctorRating({
-        appointmentId: candidate.id,
-        doctorId: candidate.doctorId,
-        patientId,
-        rating,
-        comment: comment.trim(),
-      });
-      setSubmitted(true);
-    } catch (err) {
-      console.error(err);
-      setError("Could not submit your review. Please try again.");
-    }
-    setSubmitting(false);
+  function updateDraft(appointmentId, next) {
+    setDrafts((prev) => ({
+      ...prev,
+      [appointmentId]: { ...(prev[appointmentId] || {}), ...next },
+    }));
   }
 
-  if (closed || checking || !candidate) return null;
+  async function handleSubmit(appointment) {
+    const draft = drafts[appointment.id] || { rating: 0, comment: "" };
+    if (!appointment || draft.rating === 0) {
+      setErrors((prev) => ({
+        ...prev,
+        [appointment.id]: "Please choose a star rating.",
+      }));
+      return;
+    }
+
+    setSubmittingById((prev) => ({ ...prev, [appointment.id]: true }));
+    setErrors((prev) => ({ ...prev, [appointment.id]: "" }));
+
+    try {
+      await createDoctorRating({
+        appointmentId: appointment.id,
+        doctorId: appointment.doctorId,
+        patientId,
+        rating: draft.rating,
+        comment: (draft.comment || "").trim(),
+      });
+
+      setSubmittedIds((prev) => [...prev, appointment.id]);
+      setPendingReviews((prev) =>
+        prev.filter((item) => item.id !== appointment.id),
+      );
+    } catch (err) {
+      console.error(err);
+      setErrors((prev) => ({
+        ...prev,
+        [appointment.id]: "Could not submit your review. Please try again.",
+      }));
+    } finally {
+      setSubmittingById((prev) => ({ ...prev, [appointment.id]: false }));
+    }
+  }
+
+  if (!patientId || !appointments?.length) return null;
+  if (checking) return null;
+  if (closed || pendingReviews.length === 0) return null;
 
   return (
     <Card className="mb-6 border border-blush">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-center gap-2">
           <Star size={18} className="text-amber" fill="currentColor" />
           <h2 className="font-semibold text-ink">
-            How was your visit with {candidate.doctorName || "the doctor"}?
+            Past visits waiting for review
           </h2>
         </div>
         <button
@@ -123,35 +199,87 @@ export default function ReviewPrompt({ appointments, patientId }) {
         </button>
       </div>
 
-      {submitted ? (
-        <p className="text-sm text-green mt-3">Thanks for your feedback!</p>
-      ) : (
-        <div className="mt-3 flex flex-col gap-3">
-          <p className="text-xs text-slate">
-            Appointment on {formatShortDate(candidate.date)}
-          </p>
-          <StarRating value={rating} onChange={setRating} size={28} />
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            rows={2}
-            placeholder="Anything you'd like to add? (optional)"
-            className="w-full border border-stone rounded-xl px-4 py-3 text-sm text-ink focus:border-rose focus:outline-none"
-          />
-          {error && <p className="text-red text-sm">{error}</p>}
-          <div className="flex gap-3">
-            <Button onClick={handleSubmit} disabled={submitting} size="sm">
-              {submitting ? "Submitting..." : "Submit review"}
-            </Button>
-            <button
-              onClick={() => setClosed(true)}
-              className="text-sm text-slate underline px-2"
-            >
-              Maybe later
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="space-y-3">
+        {pendingReviews
+          .filter((appt) => !submittedIds.includes(appt.id))
+          .map((appt) => {
+            const isOpen = expandedId === appt.id;
+            const draft = drafts[appt.id] || { rating: 0, comment: "" };
+            const isSubmitting = !!submittingById[appt.id];
+            const error = errors[appt.id];
+
+            const doctorLabel =
+              resolvedDoctorNames[appt.id] || appt.doctorName || "Your doctor";
+
+            return (
+              <div
+                key={appt.id}
+                className="rounded-xl border border-stone bg-mist/30"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedId((prev) => (prev === appt.id ? null : appt.id))
+                  }
+                  className="w-full text-left px-4 py-3 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="font-medium text-ink">{doctorLabel}</p>
+                    <p className="text-xs text-slate">
+                      {formatShortDate(appt.date)} · {appt.time}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-rose text-white px-3 py-1.5 text-xs font-medium">
+                    Leave a review
+                  </span>
+                </button>
+
+                {isOpen && (
+                  <div className="border-t border-stone px-4 py-4">
+                    <div className="mb-3">
+                      <p className="font-medium text-ink">
+                        How was your visit with {doctorLabel}?
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <StarRating
+                        value={draft.rating}
+                        onChange={(rating) => updateDraft(appt.id, { rating })}
+                        size={28}
+                      />
+                      <textarea
+                        value={draft.comment}
+                        onChange={(e) =>
+                          updateDraft(appt.id, { comment: e.target.value })
+                        }
+                        rows={2}
+                        placeholder="Anything you'd like to add? (optional)"
+                        className="w-full border border-stone rounded-xl px-4 py-3 text-sm text-ink focus:border-rose focus:outline-none"
+                      />
+                      {error && <p className="text-red text-sm">{error}</p>}
+                      <div className="flex gap-3">
+                        <Button
+                          onClick={() => handleSubmit(appt)}
+                          disabled={isSubmitting}
+                          size="sm"
+                        >
+                          {isSubmitting ? "Submitting..." : "Submit review"}
+                        </Button>
+                        <button
+                          onClick={() => setExpandedId(null)}
+                          className="text-sm text-slate underline px-2"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+      </div>
     </Card>
   );
 }

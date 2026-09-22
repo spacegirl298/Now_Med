@@ -15,7 +15,11 @@ import EmptyState from "./EmptyState";
 // reminder both land in the same chat thread (see kind: "reminder" in
 // ChatThread.jsx), so anything chat-shaped should open Messages instead of
 // just marking itself read and going nowhere.
-const CHAT_NOTIFICATION_TYPES = new Set(["message", "reminder", "intake_reminder"]);
+const CHAT_NOTIFICATION_TYPES = new Set([
+  "message",
+  "reminder",
+  "intake_reminder",
+]);
 
 function routeFor(notification, userRole) {
   return CHAT_NOTIFICATION_TYPES.has(notification.type)
@@ -49,7 +53,7 @@ export default function NotificationBell() {
   return (
     <div
       ref={wrapperRef}
-      className="fixed top-4 right-4 md:top-6 md:right-8 z-40"
+      className="fixed top-4 right-4 md:top-6 md:right-20 z-40"
     >
       <button
         onClick={() => setOpen((v) => !v)}
@@ -87,7 +91,9 @@ export default function NotificationBell() {
                     if (!n.read) markNotificationRead(n.id);
                     setOpen(false);
                     navigate(routeFor(n, userRole), {
-                      state: n.patientId ? { patientId: n.patientId } : undefined,
+                      state: n.patientId
+                        ? { patientId: n.patientId }
+                        : undefined,
                     });
                   }}
                   className={`w-full text-left px-4 py-3 hover:bg-mist transition-colors ${

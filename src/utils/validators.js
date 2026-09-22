@@ -18,10 +18,10 @@ export function isValidPhone(phone) {
 }
 
 export function isValidInternationalPhone(phone) {
-  const value = String(phone || '').trim()
-  if (!/^[0-9\s().-]+$/.test(value)) return false
-  const digits = value.replace(/\D/g, '')
-  return digits.length >= 7 && digits.length <= 15
+  const value = String(phone || "").trim();
+  if (!/^[0-9\s().-]+$/.test(value)) return false;
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 7 && digits.length <= 15;
 }
 
 // Digits only (with optional spaces/dashes, since some schemes print numbers

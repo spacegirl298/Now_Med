@@ -16,22 +16,39 @@ export default function StarRating({
   return (
     <div className="flex items-center gap-1">
       <div className="flex items-center">
-        {stars.map((n) => (
-          <button
-            key={n}
-            type="button"
-            disabled={!interactive}
-            onClick={() => interactive && onChange(n)}
-            aria-label={`${n} star${n > 1 ? "s" : ""}`}
-            className={interactive ? "cursor-pointer" : "cursor-default"}
-          >
+        {stars.map((n) => {
+          const starNode = (
             <Star
               size={size}
               className={n <= Math.round(value) ? "text-amber" : "text-stone"}
               fill={n <= Math.round(value) ? "currentColor" : "none"}
             />
-          </button>
-        ))}
+          );
+
+          if (!interactive) {
+            return (
+              <span
+                key={n}
+                aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                className="inline-flex"
+              >
+                {starNode}
+              </span>
+            );
+          }
+
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(n)}
+              aria-label={`${n} star${n > 1 ? "s" : ""}`}
+              className="cursor-pointer"
+            >
+              {starNode}
+            </button>
+          );
+        })}
       </div>
       {showValue && (
         <span className="text-xs text-slate ml-1">

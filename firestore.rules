@@ -276,12 +276,12 @@ match /appointmentSlots/{slotId} {
   // trust that embedded value directly instead of the cross-doc get().
   allow create: if isSecretary()
     || (isSignedIn()
-        && request.resource.data.keys().hasOnly(['date', 'time', 'status', 'appointmentId', 'patientId'])
+        && request.resource.data.keys().hasOnly(['date', 'time', 'status', 'appointmentId', 'patientId', 'doctorId'])
         && request.resource.data.patientId == request.auth.uid);
 
   allow update: if isSecretary()
     || (ownsAppointmentSlot(resource.data.appointmentId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'doctorId']));
 
   allow delete: if isSecretary() || ownsAppointmentSlot(resource.data.appointmentId);
 }
@@ -304,6 +304,35 @@ match /notifications/{notificationId} {
   allow update: if isSecretary() || isOwner(resource.data.recipientId);
 
   allow delete: if isSecretary();
+}
+
+// ---------- analytics ----------
+// Raw event capture + summary snapshots for the analytics dashboard.
+// These collections are for operational reporting rather than patient
+// details, so a secretary can read the aggregated reports and a signed-in
+// user can capture an event from the app flow. The data is intentionally
+// summary-focused and should be populated by the application or a trusted
+// backend path rather than by arbitrary direct client writes.
+match /analyticsEvents/{eventId} {
+  allow read: if isSecretary();
+  allow create: if isSignedIn();
+  allow update: if isSecretary();
+  allow delete: if isSecretary();
+}
+
+match /analyticsSummary/{summaryId} {
+  allow read: if isSecretary();
+  allow create: if isSignedIn()
+    && request.resource.data.entityType == 'doctor'
+    && request.resource.data.entityId != null
+    && request.resource.data.periodType in ['week', 'month']
+    && request.resource.data.periodKey != null;
+  allow update: if isSignedIn()
+    && resource.data.entityType == request.resource.data.entityType
+    && resource.data.entityId == request.resource.data.entityId
+    && resource.data.periodType == request.resource.data.periodType
+    && resource.data.periodKey == request.resource.data.periodKey;
+  allow delete: if false;
 }
 
 // ---------- blockedSlots ----------
@@ -559,6 +588,24 @@ match /conversations/{patientId} {
     allow update: if false;
     allow delete: if isSecretary();
   }
+}
+
+// ---------- analytics ----------
+// Practice-only operational reporting. The secretary/admin dashboard reads
+// aggregate monthly summaries and raw event logs for resource and review
+// tracking. These are not patient-facing collections.
+match /analyticsEvents/{eventId} {
+  allow read: if isSecretary();
+  allow create: if isSecretary();
+  allow update: if isSecretary();
+  allow delete: if isSecretary();
+}
+
+match /analyticsSummary/{summaryId} {
+  allow read: if isSecretary();
+  allow create: if isSecretary();
+  allow update: if isSecretary();
+  allow delete: if isSecretary();
 }
 }
 }

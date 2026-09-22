@@ -21,6 +21,7 @@ import SecretarySchedule from "./pages/secretary/SecretarySchedule";
 import PatientList from "./pages/secretary/PatientList";
 import SecretaryProfile from "./pages/secretary/SecretaryProfile";
 import SecretaryMessages from "./pages/secretary/SecretaryMessages";
+import SecretaryAnalytics from "./pages/secretary/SecretaryAnalytics";
 
 //dev bypass flag that allows us to view the dashboards without having to keep logging back in
 const DEV_BYPASS_ROLE = false;
@@ -175,6 +176,14 @@ export default function App() {
           element={
             <ProtectedRoute allowedRole="secretary">
               <SecretaryMessages />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/secretary/analytics"
+          element={
+            <ProtectedRoute allowedRole="secretary">
+              <SecretaryAnalytics />
             </ProtectedRoute>
           }
         />

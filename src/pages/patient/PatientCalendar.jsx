@@ -26,6 +26,7 @@ import Card from "../../components/Card";
 import Badge from "../../components/Badge";
 import Modal from "../../components/Modal";
 import EmptyState from "../../components/EmptyState";
+import ReviewPrompt from "../../components/ReviewPrompt";
 import {
   getMonthGrid,
   getMonthLabel,
@@ -40,6 +41,7 @@ import {
   parseDate,
   DAY_NAMES,
   MONTH_NAMES,
+  isReviewEligible,
 } from "../../utils/dateHelpers";
 import {
   getDoctors,
@@ -186,6 +188,13 @@ export default function PatientCalendar() {
   }, [myAppointments]);
 
   const selectedDayAppointments = ownAppointmentsByDate[selectedDate] || [];
+  const eligibleReviewAppointments = useMemo(
+    () =>
+      myAppointments.filter(
+        (a) => a.status !== "cancelled" && isReviewEligible(a, 15),
+      ),
+    [myAppointments],
+  );
 
   const activeBookedSlots = useMemo(
     () => bookedSlots.filter((b) => b.status !== "cancelled"),
@@ -193,10 +202,16 @@ export default function PatientCalendar() {
   );
 
   const isDayBlocked = blockedSlots.some(
-    (b) => b.date === selectedDate && b.time === null,
+    (b) =>
+      b.date === selectedDate &&
+      b.time === null &&
+      (!selectedDoctor || b.doctorId === selectedDoctor.id || !b.doctorId),
   );
   const blockedRecordForDay = blockedSlots.find(
-    (b) => b.date === selectedDate && b.time === null,
+    (b) =>
+      b.date === selectedDate &&
+      b.time === null &&
+      (!selectedDoctor || b.doctorId === selectedDoctor.id || !b.doctorId),
   );
 
   // Titled hour-range blocks (e.g. "Lunch break" 12:00-13:00) for the
@@ -205,7 +220,12 @@ export default function PatientCalendar() {
   const blockedHourGroupsForSelectedDay = useMemo(() => {
     const groups = {};
     blockedSlots
-      .filter((b) => b.date === selectedDate && b.time !== null)
+      .filter(
+        (b) =>
+          b.date === selectedDate &&
+          b.time !== null &&
+          (!selectedDoctor || b.doctorId === selectedDoctor.id || !b.doctorId),
+      )
       .forEach((b) => {
         const key = b.groupId || b.id;
         if (!groups[key]) {
@@ -220,7 +240,7 @@ export default function PatientCalendar() {
     return Object.values(groups)
       .map((g) => ({ ...g, times: g.times.sort() }))
       .sort((a, b) => a.times[0].localeCompare(b.times[0]));
-  }, [blockedSlots, selectedDate]);
+  }, [blockedSlots, selectedDate, selectedDoctor]);
 
   const allTimeSlots = useMemo(() => generateTimeSlots(), []);
   const morningSlots = useMemo(
@@ -236,20 +256,33 @@ export default function PatientCalendar() {
     () =>
       new Set(
         activeBookedSlots
-          .filter((b) => b.date === selectedDate)
+          .filter(
+            (b) =>
+              b.date === selectedDate &&
+              (!selectedDoctor ||
+                b.doctorId === selectedDoctor.id ||
+                !b.doctorId),
+          )
           .map((b) => b.time),
       ),
-    [activeBookedSlots, selectedDate],
+    [activeBookedSlots, selectedDate, selectedDoctor],
   );
 
   const blockedTimesForSelectedDay = useMemo(
     () =>
       new Set(
         blockedSlots
-          .filter((b) => b.date === selectedDate && b.time !== null)
+          .filter(
+            (b) =>
+              b.date === selectedDate &&
+              b.time !== null &&
+              (!selectedDoctor ||
+                b.doctorId === selectedDoctor.id ||
+                !b.doctorId),
+          )
           .map((b) => b.time),
       ),
-    [blockedSlots, selectedDate],
+    [blockedSlots, selectedDate, selectedDoctor],
   );
 
   const allTimeSlotsForPastCheck = useMemo(() => generateTimeSlots(), []);
@@ -257,9 +290,7 @@ export default function PatientCalendar() {
   const pastTimesForSelectedDay = useMemo(() => {
     if (!isToday(selectedDate)) return new Set();
     return new Set(
-      allTimeSlotsForPastCheck.filter((t) =>
-        isPastTimeSlot(selectedDate, t),
-      ),
+      allTimeSlotsForPastCheck.filter((t) => isPastTimeSlot(selectedDate, t)),
     );
   }, [allTimeSlotsForPastCheck, selectedDate]);
 
@@ -576,8 +607,14 @@ export default function PatientCalendar() {
               </div>
               <button
                 onClick={() => openBookingFlow()}
-                disabled={selectedDateIsPast || isDayBlocked || noSlotsLeftToday}
-                title={noSlotsLeftToday ? "No time slots left today" : "Add appointment"}
+                disabled={
+                  selectedDateIsPast || isDayBlocked || noSlotsLeftToday
+                }
+                title={
+                  noSlotsLeftToday
+                    ? "No time slots left today"
+                    : "Add appointment"
+                }
                 className="p-2 rounded-lg text-slate hover:bg-mist disabled:opacity-40"
               >
                 <Plus size={18} />
@@ -628,59 +665,82 @@ export default function PatientCalendar() {
                   <p className="text-slate text-sm px-5 py-8 text-center">
                     Loading appointments...
                   </p>
-                ) : selectedDayAppointments.length === 0 ? (
-                  <EmptyState
-                    icon={Clock}
-                    title="No appointments"
-                    message="You don't have anything booked on this day yet."
-                    actionLabel={
-                      selectedDateIsPast || noSlotsLeftToday
-                        ? undefined
-                        : "Add appointment"
-                    }
-                    onAction={
-                      selectedDateIsPast || noSlotsLeftToday
-                        ? undefined
-                        : () => openBookingFlow()
-                    }
-                  />
                 ) : (
-                  <div className="divide-y divide-sand">
-                    {selectedDayAppointments.map((a) => (
-                      <div key={a.id} className="px-5 py-4">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-ink">
-                              {formatTime(a.time)}
-                            </p>
-                            <p className="text-xs text-slate capitalize">
-                              {a.type} consult
-                            </p>
-                            {a.status === "delayed" && a.delayedTime && (
-                              <p className="text-xs text-amber mt-1">
-                                Running {a.delayMinutes} min late → now{" "}
-                                {formatTime(a.delayedTime)}
-                              </p>
-                            )}
-                            {typeof a.patientLateMinutes === "number" && (
-                              <p className="text-xs text-slate mt-1">
-                                Recorded as arriving late for this appointment
-                              </p>
-                            )}
+                  <>
+                    <ReviewPrompt
+                      appointments={myAppointments.filter(
+                        (a) =>
+                          a.status !== "cancelled" && isReviewEligible(a, 15),
+                      )}
+                      patientId={currentUser?.uid}
+                      bufferMinutes={15}
+                    />
+
+                    {selectedDayAppointments.length === 0 ? (
+                      <EmptyState
+                        icon={Clock}
+                        title="No appointments"
+                        message="You don't have anything booked on this day yet."
+                        actionLabel={
+                          selectedDateIsPast || noSlotsLeftToday
+                            ? undefined
+                            : "Add appointment"
+                        }
+                        onAction={
+                          selectedDateIsPast || noSlotsLeftToday
+                            ? undefined
+                            : () => openBookingFlow()
+                        }
+                      />
+                    ) : (
+                      <div className="divide-y divide-sand">
+                        {selectedDayAppointments.map((a) => (
+                          <div key={a.id} className="px-5 py-4">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="text-sm font-medium text-ink">
+                                  {formatTime(a.time)}
+                                </p>
+                                <p className="text-xs text-slate capitalize">
+                                  {a.type} consult
+                                </p>
+                                <p className="text-xs text-slate mt-1">
+                                  {a.doctorName
+                                    ? `Doctor: ${a.doctorName}`
+                                    : a.doctorId
+                                      ? "Doctor assigned"
+                                      : "Doctor not assigned yet"}
+                                </p>
+                                {a.status === "delayed" && a.delayedTime && (
+                                  <p className="text-xs text-amber mt-1">
+                                    Running {a.delayMinutes} min late → now{" "}
+                                    {formatTime(a.delayedTime)}
+                                  </p>
+                                )}
+                                {typeof a.patientLateMinutes === "number" && (
+                                  <p className="text-xs text-slate mt-1">
+                                    Recorded as arriving late for this
+                                    appointment
+                                  </p>
+                                )}
+                              </div>
+                              <Badge status={a.status} />
+                            </div>
+
+                            {a.status !== "cancelled" &&
+                              !isPastDate(a.date) && (
+                                <button
+                                  onClick={() => setCancelTarget(a)}
+                                  className="mt-3 text-xs font-medium text-red hover:underline flex items-center gap-1"
+                                >
+                                  <XCircle size={13} /> Cancel appointment
+                                </button>
+                              )}
                           </div>
-                          <Badge status={a.status} />
-                        </div>
-                        {a.status !== "cancelled" && !isPastDate(a.date) && (
-                          <button
-                            onClick={() => setCancelTarget(a)}
-                            className="mt-3 text-xs font-medium text-red hover:underline flex items-center gap-1"
-                          >
-                            <XCircle size={13} /> Cancel appointment
-                          </button>
-                        )}
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </>
             )}

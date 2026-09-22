@@ -16,7 +16,7 @@ export default function PatientLayout({ children }) {
       <NotificationBell />
       {/* Only rendered while the patient still owes us their intake form. */}
       <IntakeFormButton />
-      <main className="flex-1 pb-20 md:pb-0">{children}</main>
+      <main className="flex-1 pb-20 md:pb-0 md:pr-20">{children}</main>
       <BottomTabBar role="patient" />
     </div>
   );
