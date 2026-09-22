@@ -8,6 +8,7 @@ import {
   subscribeToConversation,
   sendMessage,
   markConversationRead,
+  markChatNotificationsRead,
 } from '../../firebase/firestore'
 import PatientLayout from './PatientLayout'
 import ChatThread from '../../components/ChatThread'
@@ -48,6 +49,16 @@ export default function PatientMessages() {
       markConversationRead(currentUser.uid, 'patient').catch(console.error)
     }
   }, [currentUser, unread])
+
+  // Clears the bell notification for any message/reminder that brought the
+  // patient here in the first place - just resetting unreadForPatient above
+  // clears the Messages nav badge, but the bell dropdown reads a separate
+  // `notifications` collection and won't clear on its own otherwise.
+  useEffect(() => {
+    if (currentUser) {
+      markChatNotificationsRead(currentUser.uid).catch(console.error)
+    }
+  }, [currentUser])
 
   function handleSend(text) {
     return sendMessage({

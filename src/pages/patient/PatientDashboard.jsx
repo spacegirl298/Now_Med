@@ -11,7 +11,6 @@ import {
   FileText,
   CalendarCheck,
   CalendarClock,
-  Stethoscope,
   Phone,
   ClipboardList,
   MessageSquare,
@@ -26,6 +25,7 @@ import EmptyState from "../../components/EmptyState";
 import StarRating from "../../components/StarRating";
 import ReviewPrompt from "../../components/ReviewPrompt";
 import PatientETA from "../../components/PatientETA";
+import Avatar from "../../components/Avatar";
 import {
   getTodayString,
   formatTime,
@@ -37,7 +37,7 @@ import {
   subscribeToPatientRecords,
   subscribeToDoctorRatings,
   subscribeToPatientReviews,
-  getDoctors,
+  subscribeToDoctors,
   updateDoctorRating,
 } from "../../firebase/firestore";
 
@@ -69,11 +69,8 @@ export default function PatientDashboard() {
   }, [currentUser]);
 
   useEffect(() => {
-    // One-time fetch is enough here - the doctor list changes rarely, unlike
-    // appointments and records which need live updates.
-    getDoctors()
-      .then(setDoctors)
-      .catch(() => setDoctors([]));
+    const unsub = subscribeToDoctors(setDoctors);
+    return () => unsub && unsub();
   }, []);
 
   useEffect(() => {
@@ -534,9 +531,7 @@ export default function PatientDashboard() {
                       className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-full bg-mist flex items-center justify-center shrink-0">
-                          <Stethoscope size={18} className="text-rose" />
-                        </div>
+                        <Avatar name={doctor.name || "Doctor"} character={doctor.profileCharacter} size={40} />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-ink text-sm">

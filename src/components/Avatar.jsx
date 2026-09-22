@@ -1,5 +1,7 @@
+import { getCharacterUrl } from './characterAssets'
+
 // Shows a profile photo if one exists, otherwise falls back to initials on a rose circle.
-export default function Avatar({ name = '', photoUrl = null, size = 40 }) {
+export default function Avatar({ name = '', photoUrl = null, character = '', size = 40 }) {
   const initials = name
     .trim()
     .split(/\s+/)
@@ -9,10 +11,12 @@ export default function Avatar({ name = '', photoUrl = null, size = 40 }) {
 
   const style = { width: size, height: size, fontSize: size * 0.4 }
 
-  if (photoUrl) {
+  const characterUrl = getCharacterUrl(character)
+
+  if (photoUrl || characterUrl) {
     return (
       <img
-        src={photoUrl}
+        src={photoUrl || characterUrl}
         alt={name}
         style={style}
         className="rounded-full object-cover"

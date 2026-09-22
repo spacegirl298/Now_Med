@@ -19,7 +19,7 @@ export default function IntakeFormButton() {
       title="Complete your intake form"
       aria-label="Complete your intake form"
       // right-16 leaves room for the notification bell at the top right.
-      className="fixed top-4 right-16 z-40 w-11 h-11 rounded-full bg-rose text-white shadow-md flex items-center justify-center hover:bg-plum transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose"
+      className="fixed top-4 right-13 z-40 w-11 h-11 rounded-full bg-rose text-white shadow-md flex items-center justify-center hover:bg-plum transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose"
     >
       <ClipboardList size={20} />
       <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-amber border-2 border-white" />

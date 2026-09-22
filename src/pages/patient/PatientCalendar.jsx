@@ -27,6 +27,7 @@ import Badge from "../../components/Badge";
 import Modal from "../../components/Modal";
 import EmptyState from "../../components/EmptyState";
 import ReviewPrompt from "../../components/ReviewPrompt";
+import Avatar from "../../components/Avatar";
 import {
   getMonthGrid,
   getMonthLabel,
@@ -44,7 +45,7 @@ import {
   isReviewEligible,
 } from "../../utils/dateHelpers";
 import {
-  getDoctors,
+  subscribeToDoctors,
   subscribeToBookedSlots,
   subscribeToBlockedSlots,
 } from "../../firebase/firestore";
@@ -149,9 +150,8 @@ export default function PatientCalendar() {
   }, []);
 
   useEffect(() => {
-    getDoctors()
-      .then(setDoctors)
-      .catch(() => setDoctors([]));
+    const unsub = subscribeToDoctors(setDoctors);
+    return () => unsub && unsub();
   }, []);
 
   // The doctor currently selected in the booking form, if any.
@@ -774,18 +774,23 @@ export default function PatientCalendar() {
                         : "border-stone text-ink hover:border-rose"
                     }`}
                   >
-                    <p className="text-sm font-medium">{doc.name}</p>
-                    {doc.specialty && (
-                      <p
-                        className={`text-xs ${
-                          form.doctorId === doc.id
-                            ? "text-white/80"
-                            : "text-slate"
-                        }`}
-                      >
-                        {doc.specialty}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <Avatar name={doc.name || "Doctor"} character={doc.profileCharacter} size={36} />
+                      <div>
+                        <p className="text-sm font-medium">{doc.name}</p>
+                        {doc.specialty && (
+                          <p
+                            className={`text-xs ${
+                              form.doctorId === doc.id
+                                ? "text-white/80"
+                                : "text-slate"
+                            }`}
+                          >
+                            {doc.specialty}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </button>
                 ))}
               </div>

@@ -987,6 +987,30 @@ export async function markNotificationRead(notificationId) {
   await updateDoc(doc(db, "notifications", notificationId), { read: true });
 }
 
+// Bulk-clears every unread bell notification tied to the patient's own
+// chat with the practice - "message" (a reply came in), "reminder" (an
+// appointment nudge), and "intake_reminder" (all three route into
+// PatientMessages via NotificationBell's CHAT_NOTIFICATION_TYPES). Call
+// this once the patient has actually opened the chat and seen them, so the
+// bell badge clears instead of sitting on "unread" forever. Scoped by
+// recipientId alone (not patientId, unlike markMessageNotificationsRead
+// below) because a patient only ever has one chat - their own - so every
+// notification of these types addressed to them belongs to it.
+export async function markChatNotificationsRead(recipientId) {
+  if (!recipientId) return;
+  const q = query(
+    notificationsCol,
+    where("recipientId", "==", recipientId),
+    where("type", "in", ["message", "reminder", "intake_reminder"]),
+    where("read", "==", false),
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return;
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.update(d.ref, { read: true }));
+  await batch.commit();
+}
+
 // Bulk-clears every unread "new message" bell notification for one user.
 // The chat page itself only resets the conversation's unreadForPatient/
 // unreadForStaff counter (see markConversationRead) - that's a different
@@ -1153,6 +1177,7 @@ export async function addDoctor(data) {
     certifications: data.certifications || "",
     bio: data.bio || "",
     contact: data.contact || "",
+    profileCharacter: data.profileCharacter || "",
     // Location & ETA groundwork: address is what the secretary types in;
     // lat/lng are filled in by geocodeAddress() (utils/googleMaps.js)
     // before this is called, so the ETA calculation never has to geocode
@@ -1175,6 +1200,7 @@ export async function updateDoctor(doctorId, data) {
     certifications: data.certifications || "",
     bio: data.bio || "",
     contact: data.contact || "",
+    profileCharacter: data.profileCharacter || "",
     address: data.address || "",
     lat: data.lat ?? null,
     lng: data.lng ?? null,

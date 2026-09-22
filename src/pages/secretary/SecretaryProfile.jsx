@@ -21,6 +21,7 @@ import BackButton from "../../components/BackButton";
 import Card from "../../components/Card";
 import Avatar from "../../components/Avatar";
 import Button from "../../components/Button";
+import CharacterPicker from "../../components/CharacterPicker";
 import Modal from "../../components/Modal";
 import EmptyState from "../../components/EmptyState";
 import StarRating from "../../components/StarRating";
@@ -36,6 +37,7 @@ const EMPTY_DOCTOR = {
   address: "",
   lat: null,
   lng: null,
+  profileCharacter: "",
   _geocodedFrom: "", // local-only, never sent to Firestore - see handleSaveDoctor
 };
 
@@ -44,12 +46,15 @@ export default function SecretaryProfile() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [profileCharacter, setProfileCharacter] = useState("");
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
   const [signupInfo, setSignupInfo] = useState(null); // idNumber/idType
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
 
   const [doctors, setDoctors] = useState([]);
   const [doctorModalOpen, setDoctorModalOpen] = useState(false);
+  const [doctorCharacterPickerOpen, setDoctorCharacterPickerOpen] = useState(false);
   const [editingDoctorId, setEditingDoctorId] = useState(null); // null = adding
   const [doctorForm, setDoctorForm] = useState(EMPTY_DOCTOR);
   const [savingDoctor, setSavingDoctor] = useState(false);
@@ -74,6 +79,7 @@ export default function SecretaryProfile() {
     getUserById(currentUser.uid).then((data) => {
       if (!data) return;
       setPhone(data.phone || "");
+      setProfileCharacter(data.profileCharacter || "");
       setSignupInfo({
         idNumber: data.idNumber || "",
         idType: data.idType || "",
@@ -123,7 +129,7 @@ export default function SecretaryProfile() {
 
     setSavingProfile(true);
     try {
-      await updateUserProfile(currentUser.uid, { name, phone });
+      await updateUserProfile(currentUser.uid, { name, phone, profileCharacter });
       setProfileMessage("Profile updated.");
     } catch {
       setProfileMessage("Could not save your profile. Please try again.");
@@ -149,6 +155,7 @@ export default function SecretaryProfile() {
       address: doc.address || "",
       lat: doc.lat ?? null,
       lng: doc.lng ?? null,
+      profileCharacter: doc.profileCharacter || "",
       _geocodedFrom: doc.address || "",
     });
     setDoctorFormError("");
@@ -157,6 +164,7 @@ export default function SecretaryProfile() {
 
   function closeDoctorModal() {
     setDoctorModalOpen(false);
+    setDoctorCharacterPickerOpen(false);
     setDoctorFormError("");
   }
 
@@ -228,7 +236,18 @@ export default function SecretaryProfile() {
 
         <Card>
           <div className="flex items-center gap-4 mb-5">
-            <Avatar name={name || currentUser?.email} size={56} />
+            <div className="flex flex-col items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCharacterPickerOpen(true)}
+                aria-label="Change profile character"
+                title="Change profile character"
+                className="rounded-full focus:outline-none focus:ring-2 focus:ring-rose focus:ring-offset-2"
+              >
+                <Avatar name={name || currentUser?.email} character={profileCharacter} size={56} />
+              </button>
+              <span className="text-[11px] text-slate">Click to change</span>
+            </div>
             <div>
               <p className="font-medium text-ink">{name || "Secretary"}</p>
               <p className="text-sm text-slate">{currentUser?.email}</p>
@@ -284,6 +303,21 @@ export default function SecretaryProfile() {
           </div>
         </Card>
 
+        <Modal
+          isOpen={characterPickerOpen}
+          onClose={() => setCharacterPickerOpen(false)}
+          title="Choose your character"
+          hideFooter
+        >
+          <CharacterPicker
+            value={profileCharacter}
+            onChange={(character) => {
+              setProfileCharacter(character);
+              setCharacterPickerOpen(false);
+            }}
+          />
+        </Modal>
+
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-ink">Doctors</h2>
@@ -325,7 +359,7 @@ export default function SecretaryProfile() {
                     className="border border-sand rounded-xl p-4"
                   >
                     <div className="flex items-start gap-3">
-                      <Avatar name={doc.name || "Doctor"} size={44} />
+                      <Avatar name={doc.name || "Doctor"} character={doc.profileCharacter} size={44} />
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-ink truncate">
                           {doc.name || "Unnamed doctor"}
@@ -476,6 +510,18 @@ export default function SecretaryProfile() {
         hideFooter
       >
         <div className="flex flex-col gap-4">
+          <div className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setDoctorCharacterPickerOpen(true)}
+              aria-label="Change doctor character"
+              title="Change doctor character"
+              className="rounded-full focus:outline-none focus:ring-2 focus:ring-rose focus:ring-offset-2"
+            >
+              <Avatar name={doctorForm.name || "Doctor"} character={doctorForm.profileCharacter} size={72} />
+            </button>
+            <span className="text-[11px] text-slate">Click to change</span>
+          </div>
           <div>
             <label className="text-xs text-slate mb-1 block">
               Doctor's name
@@ -572,6 +618,21 @@ export default function SecretaryProfile() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={doctorCharacterPickerOpen}
+        onClose={() => setDoctorCharacterPickerOpen(false)}
+        title="Choose doctor's character"
+        hideFooter
+      >
+        <CharacterPicker
+          value={doctorForm.profileCharacter}
+          onChange={(character) => {
+            setDoctorForm({ ...doctorForm, profileCharacter: character });
+            setDoctorCharacterPickerOpen(false);
+          }}
+        />
       </Modal>
 
       {/* Remove doctor confirmation */}
