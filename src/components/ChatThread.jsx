@@ -90,6 +90,10 @@ export default function ChatThread({
             const mine = m.senderRole === myRole
             const isReminder = m.kind === 'reminder'
             const isFlagged = showModerationFlags && m.explicitLanguage
+            // Crisis flag is shown to staff regardless of showModerationFlags -
+            // it's a safety signal, not a swearing/moderation one, and a
+            // secretary reading any thread should be able to see it.
+            const isCrisis = myRole === 'secretary' && m.crisisLanguage
 
             return (
               <div key={m.id} className="flex flex-col gap-2">
@@ -116,7 +120,12 @@ export default function ChatThread({
                     {!mine && !isReminder && m.senderName && (
                       <p className="text-xs font-medium text-slate mb-0.5">{m.senderName}</p>
                     )}
-                    {isFlagged && (
+                    {isCrisis && (
+                      <p className="text-xs font-semibold text-red flex items-center gap-1 mb-1" title="This message may indicate the patient is in distress - consider following up directly">
+                        <AlertTriangle size={12} /> Possible crisis - follow up
+                      </p>
+                    )}
+                    {isFlagged && !isCrisis && (
                       <p className="text-xs font-medium text-red flex items-center gap-1 mb-1" title="This message contains language that may need review">
                         <AlertTriangle size={12} /> Flagged language
                       </p>

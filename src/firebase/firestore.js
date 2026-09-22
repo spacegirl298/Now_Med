@@ -911,6 +911,7 @@ async function notifyAllSecretaries({
   message,
   appointmentId = null,
   patientId = null,
+  changeRequestId = null,
 }) {
   const q = query(usersCol, where("role", "==", "secretary"));
   const snap = await getDocs(q);
@@ -920,6 +921,7 @@ async function notifyAllSecretaries({
         recipientId: d.id,
         appointmentId,
         patientId,
+        changeRequestId,
         type,
         message,
       }),
@@ -931,6 +933,7 @@ export async function createNotification({
   recipientId,
   appointmentId = null,
   patientId = null,
+  changeRequestId = null,
   type,
   message,
 }) {
@@ -938,11 +941,34 @@ export async function createNotification({
     recipientId,
     appointmentId,
     patientId,
+    changeRequestId,
     type,
     message,
     read: false,
     createdAt: serverTimestamp(),
   });
+}
+
+export async function deleteNotification(notificationId) {
+  await deleteDoc(doc(db, "notifications", notificationId));
+}
+
+// Removes every secretary's "new change request" bell notification tied to
+// one request, once it's been actioned - see resolveChangeRequest below.
+// Without this the notification (and anything on a dashboard reading the
+// same collection) would sit there indefinitely even after the request is
+// long since handled.
+async function deleteChangeRequestNotifications(changeRequestId) {
+  if (!changeRequestId) return;
+  const q = query(
+    notificationsCol,
+    where("changeRequestId", "==", changeRequestId),
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return;
+  const batch = writeBatch(db);
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
 }
 
 export function subscribeToNotifications(recipientId, callback) {
@@ -1850,6 +1876,22 @@ export async function createChangeRequest({
     resolvedAt: null,
     createdAt: serverTimestamp(),
   });
+
+  // Let every secretary know there's something to action - tagged with
+  // changeRequestId so resolveChangeRequest can clear it again once it's
+  // been dealt with (see deleteChangeRequestNotifications).
+  try {
+    await notifyAllSecretaries({
+      type: "change_request",
+      patientId,
+      changeRequestId: ref.id,
+      message: `${patientName || "A patient"} requested a change to their ${(section || "details").toLowerCase()}.`,
+    });
+  } catch (err) {
+    // Best-effort - the request itself has already been saved either way.
+    console.error("Change request saved, but the secretary notification failed:", err);
+  }
+
   return ref.id;
 }
 
@@ -1956,17 +1998,36 @@ export function subscribeToMessages(patientId, callback, onError) {
   );
 }
 
-// Deliberately short and conservative - this is a first pass at flagging
-// obvious explicit language for a secretary to glance at, not a full
-// profanity/moderation service. It never blocks sending: a patient in
-// distress or pain shouldn't be stopped from reaching the practice, but the
-// practice should be able to see at a glance which messages used explicit
-// language so they can follow up with care if needed.
+// First pass at flagging obvious explicit/harassing language for a
+// secretary to glance at - not a full profanity/moderation service.
+// Matches whole words only (\b...\b) so e.g. "assessment" or "class" don't
+// trip the "ass" entry.
 const EXPLICIT_LANGUAGE_PATTERN =
-  /\b(fuck(ing|er|ed)?|shit(ty)?|bitch(es)?|asshole|bastard|cunt|dick(head)?|piss(ed)?off|whore|slut)\b/i;
+  /\b(fuck(ing|er|ed)?|shit(ty)?|bitch(es)?|ass(hole)?|bastard|cunt|dick(head)?|piss(ed)?\s*off|whore|slut|hoe|sexy|voetsek)\b/i;
+
+// Sexually-harassing phrases worth catching even though no single word in
+// them is on the list above (e.g. "sexy" alone can be innocuous elsewhere -
+// "what are you wearing" is only a problem as a phrase directed at someone).
+const HARASSMENT_PHRASE_PATTERN =
+  /\byou'?re\s+so\s+sexy\b|\bwhat\s+are\s+you\s+wearing\b|\bsend\s+(me\s+)?(a\s+)?(nude|pic(ture)?s?)\b/i;
 
 function containsExplicitLanguage(text) {
-  return EXPLICIT_LANGUAGE_PATTERN.test(text || "");
+  const body = text || "";
+  return (
+    EXPLICIT_LANGUAGE_PATTERN.test(body) || HARASSMENT_PHRASE_PATTERN.test(body)
+  );
+}
+
+// Separate, and deliberately NOT part of containsExplicitLanguage: these are
+// possible self-harm/crisis phrases, not profanity. A patient in real
+// distress must never be blocked from reaching the practice, so this is
+// only ever used to flag a message for urgent attention after it has
+// already been sent - never to stop it from sending. See sendMessage below.
+const CRISIS_LANGUAGE_PATTERN =
+  /\b(kill\s+(myself|yourself)|kms|suicide|suicidal|end\s+my\s+life|end\s+it\s+all|self[- ]harm|want(ed)?\s+to\s+die|don'?t\s+want\s+to\s+live)\b/i;
+
+function containsCrisisLanguage(text) {
+  return CRISIS_LANGUAGE_PATTERN.test(text || "");
 }
 
 // Posts a message and updates the conversation summary + the *other* side's
@@ -1988,7 +2049,11 @@ export async function sendMessage({
   if (!patientId || !body) {
     throw new Error("A patient and some message text are required.");
   }
-  if (containsExplicitLanguage(body)) {
+  // Crisis language (possible self-harm) is checked first and is exempt
+  // from the block below on purpose - see CRISIS_LANGUAGE_PATTERN. It only
+  // ever flags the message so staff can follow up urgently once sent.
+  const isCrisis = containsCrisisLanguage(body);
+  if (!isCrisis && containsExplicitLanguage(body)) {
     const error = new Error(
       "This message can't be sent because it contains inappropriate language.",
     );
@@ -2010,6 +2075,7 @@ export async function sendMessage({
     text: body,
     kind,
     explicitLanguage: containsExplicitLanguage(body),
+    crisisLanguage: isCrisis,
     appointmentId,
     createdAt: serverTimestamp(),
   });

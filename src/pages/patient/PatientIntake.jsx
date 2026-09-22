@@ -19,7 +19,7 @@
 // browser storage).
 import { useMemo, useState, useEffect } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock3, LockKeyhole, Plus, ShieldCheck, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
   saveIntakeForm,
@@ -40,6 +40,8 @@ const inputClasses =
 const primaryBtn =
   'bg-rose text-white rounded-xl px-6 py-3 text-sm font-medium hover:bg-plum transition-colors disabled:opacity-60'
 const ghostBtn = 'text-sm text-slate hover:text-ink px-2 py-2'
+const secondaryBtn =
+  'border border-stone text-ink rounded-xl px-5 py-3 text-sm font-medium hover:border-rose hover:text-plum transition-colors disabled:opacity-60'
 
 function chipClasses(selected) {
   return `px-4 py-2.5 rounded-full text-sm font-medium border transition-colors ${
@@ -397,6 +399,11 @@ export default function PatientIntake() {
     return ''
   }
 
+  const completedCount = steps.filter((step) => {
+    const value = answers[step.id]
+    return value !== undefined && value !== '' && value !== false && (!Array.isArray(value) || value.length > 0)
+  }).length
+
   function goNext() {
     const message = validateStep()
     if (message) {
@@ -504,28 +511,50 @@ export default function PatientIntake() {
   // ---- Intro ----
   if (!started) {
     return (
-      <div className="min-h-screen bg-mist flex items-center justify-center p-6">
-        <div className="w-full max-w-xl">
+      <div className="min-h-screen bg-sand flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-2xl">
           <Card>
-            <h1 className="text-2xl font-semibold text-ink mb-2">
-              Welcome{userName ? `, ${userName}` : ''}!
-            </h1>
-            <p className="text-sm text-slate mb-2">
-              Before your first visit, we'd like to get to know you a little.
-              We'll ask one question at a time about your details and your
-              health. Questions marked required must be completed; optional
-              questions can be skipped.
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-11 h-11 rounded-2xl bg-blush/60 text-plum flex items-center justify-center">
+                <ShieldCheck size={23} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose">Your first visit</p>
+                <h1 className="text-2xl font-semibold text-ink">
+                  Welcome{userName ? `, ${userName}` : ''}
+                </h1>
+              </div>
+            </div>
+            <p className="text-base text-ink mb-2">
+              Let’s build a clear picture of your health before you meet the practice.
             </p>
-            <p className="text-sm text-slate mb-6">
-              It takes about five minutes. Your answers go into your medical
-              record, where only you and the practice can see them.
+            <p className="text-sm leading-6 text-slate mb-6">
+              You’ll answer one focused question at a time. Required questions are marked with an asterisk;
+              optional questions can be skipped and completed later.
             </p>
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => setStarted(true)} className={`${primaryBtn} flex-1`}>
-                Start
-              </button>
-              <button type="button" onClick={handleLater} className="text-sm text-slate underline px-2">
+            <div className="grid sm:grid-cols-3 gap-3 mb-7">
+              <div className="bg-mist rounded-xl p-3">
+                <Clock3 size={17} className="text-rose mb-2" />
+                <p className="text-xs font-medium text-ink">About 5 minutes</p>
+                <p className="text-xs text-slate mt-1">Take your time</p>
+              </div>
+              <div className="bg-mist rounded-xl p-3">
+                <LockKeyhole size={17} className="text-rose mb-2" />
+                <p className="text-xs font-medium text-ink">Private by design</p>
+                <p className="text-xs text-slate mt-1">Only you and the practice</p>
+              </div>
+              <div className="bg-mist rounded-xl p-3">
+                <CheckCircle2 size={17} className="text-rose mb-2" />
+                <p className="text-xs font-medium text-ink">Review before sending</p>
+                <p className="text-xs text-slate mt-1">Nothing is submitted early</p>
+              </div>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-3">
+              <button type="button" onClick={handleLater} className={`${secondaryBtn} sm:w-auto`}>
                 Do this later
+              </button>
+              <button type="button" onClick={() => setStarted(true)} className={`${primaryBtn} flex-1`}>
+                Start intake form <span aria-hidden="true">→</span>
               </button>
             </div>
           </Card>
@@ -536,18 +565,23 @@ export default function PatientIntake() {
 
   // ---- Questions + review ----
   return (
-    <div className="min-h-screen bg-mist flex items-center justify-center p-6">
-      <div className="w-full max-w-xl">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-slate">
-            {inReview ? 'Review' : `${q.section} · Question ${index + 1} of ${steps.length}`}
-          </p>
-          <button type="button" onClick={handleLater} className="text-xs text-slate underline">
-            Do this later
+    <div className="min-h-screen bg-sand flex items-center justify-center p-4 sm:p-6">
+      <div className="w-full max-w-2xl">
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose truncate">
+              {inReview ? 'Final review' : q.section}
+            </p>
+            <p className="text-xs text-slate mt-1">
+              {inReview ? 'Almost there' : `Question ${index + 1} of ${steps.length}`}
+            </p>
+          </div>
+          <button type="button" onClick={handleLater} className="text-xs text-slate hover:text-ink underline shrink-0">
+            Finish later
           </button>
         </div>
         <div
-          className="h-1.5 rounded-full bg-stone/40 mb-4 overflow-hidden"
+          className="h-2 rounded-full bg-stone/40 mb-2 overflow-hidden"
           role="progressbar"
           aria-valuenow={progress}
           aria-valuemin={0}
@@ -555,13 +589,17 @@ export default function PatientIntake() {
         >
           <div className="h-full bg-rose transition-all" style={{ width: `${progress}%` }} />
         </div>
+        <div className="flex items-center justify-between text-[11px] text-slate mb-4">
+          <span>{completedCount} answered</span>
+          <span>{progress}% complete</span>
+        </div>
 
-        <Card>
+        <Card className="shadow-md">
           {inReview ? (
             <>
               <h1 className="text-xl font-semibold text-ink mb-1">Check your answers</h1>
-              <p className="text-sm text-slate mb-5">
-                Use “Change” on anything that needs fixing, then submit.
+              <p className="text-sm leading-6 text-slate mb-5">
+                Take a moment to check your details. You can change any answer before submitting the form to the practice.
               </p>
               <div className="mb-5">
                 <IntakeSummary answers={answers} onChange={jumpTo} />
@@ -571,7 +609,7 @@ export default function PatientIntake() {
                   <QuestionInput q={consentQ} answers={answers} setAnswer={setAnswer} onDirtyChange={setDirty} />
                 </div>
               )}
-              {error && <p className="text-sm text-red mb-3">{error}</p>}
+              {error && <p role="alert" className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-3">{error}</p>}
               <div className="flex items-center gap-3">
                 <button type="button" onClick={goBack} disabled={saving} className={ghostBtn}>
                   <ArrowLeft size={16} className="inline -mt-0.5 mr-1" />
@@ -602,7 +640,7 @@ export default function PatientIntake() {
                 onDirtyChange={setDirty}
               />
 
-              {stepError && <p className="text-sm text-red mt-3">{stepError}</p>}
+              {stepError && <p role="alert" className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mt-3">{stepError}</p>}
 
               <div className="flex items-center gap-3 mt-6">
                 {(index > 0 || fromReview) && (
