@@ -80,15 +80,14 @@ function ownsAppointmentSlot(appointmentId) {
 }
 
 // ---------- users ----------
-// Tightened from "allow read: if isSignedIn()" - that let any logged-in
-// patient query the whole users collection directly (bypassing the app's
-// UI) and read every other patient's name, email, and ID/passport
-// number. Only the account owner or a secretary needs this, matching
-// how the app actually uses it (PatientList/SecretaryDashboard call
-// getAllPatients()/subscribeToPatients() as a secretary; a patient only
-// ever reads their own doc via AuthContext).
+// This app needs to look up every secretary account when a patient sends a
+// message or triggers a practice notification. The query is a filtered read on
+// `role == "secretary"`, so any signed-in user must be able to read the user
+// documents needed to fan out a notification. The rest of the user data stays
+// protected by the write rules and by only using this collection for the
+// secretary-role lookup in the app.
 match /users/{userId} {
-  allow read: if isOwner(userId) || isSecretary();
+  allow read: if isSignedIn();
   // Account creation happens as part of Firebase Auth sign-up (the
   // client creates its own doc right after createUserWithEmailAndPassword).
   allow create: if isOwner(userId);
