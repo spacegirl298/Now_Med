@@ -12,6 +12,7 @@ export default function PracticeMap({ lat, lng, label }) {
   useEffect(() => {
     if (lat == null || lng == null) return;
     let cancelled = false;
+    let marker = null;
 
     loadGoogleMaps()
       .then((maps) => {
@@ -23,7 +24,20 @@ export default function PracticeMap({ lat, lng, label }) {
           zoomControl: true,
           gestureHandling: "cooperative",
         });
-        new maps.Marker({ position: { lat, lng }, map, title: label });
+
+        if (maps.marker?.AdvancedMarkerElement) {
+          marker = new maps.marker.AdvancedMarkerElement({
+            position: { lat, lng },
+            map,
+            title: label,
+          });
+        } else {
+          marker = new maps.Marker({
+            position: { lat, lng },
+            map,
+            title: label,
+          });
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || "Could not load the map.");
@@ -31,6 +45,7 @@ export default function PracticeMap({ lat, lng, label }) {
 
     return () => {
       cancelled = true;
+      if (marker && marker.setMap) marker.setMap(null);
     };
   }, [lat, lng, label]);
 

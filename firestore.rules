@@ -30,6 +30,13 @@ function isOwner(uid) {
   return isSignedIn() && request.auth.uid == uid;
 }
 
+function isSecretaryRecipient(uid) {
+  return isSignedIn()
+    && uid != null
+    && exists(/databases/$(database)/documents/users/$(uid))
+    && get(/databases/$(database)/documents/users/$(uid)).data.role == 'secretary';
+}
+
 // A patient's own walk-in data: created by a secretary under their
 // ID/passport number before they had an account (patientId == null),
 // now matched against the caller's own idNumber on their user doc.
@@ -193,29 +200,44 @@ match /appointments/{appointmentId} {
       // patient or change the patientId.
       && request.resource.data.patientId == resource.data.patientId
 
-      // Patients can only change cancellation-related fields.
-      && request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly([
-             'status',
-             'cancelledAt',
-             'cancelledBy',
-             'updatedAt'
-           ])
+      && (
+        (
+          // Patients may self-report running late before they arrive.
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'patientRunningLate',
+              'patientRunningLateMinutes',
+              'patientRunningLateAt',
+              'updatedAt'
+            ])
+          && request.resource.data.patientRunningLate == true
+        )
+        || (
+          // Patients can only change cancellation-related fields.
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status',
+              'cancelledAt',
+              'cancelledBy',
+              'updatedAt'
+            ])
 
-      // The appointment must actually be changed to cancelled.
-      && request.resource.data.status == 'cancelled'
+          // The appointment must actually be changed to cancelled.
+          && request.resource.data.status == 'cancelled'
 
-      // Record that the logged-in patient performed the cancellation.
-      && request.resource.data.cancelledBy == request.auth.uid
+          // Record that the logged-in patient performed the cancellation.
+          && request.resource.data.cancelledBy == request.auth.uid
 
-      // Patients must cancel more than 3 hours before the appointment.
-      // This uses the server's trusted request time, so the patient
-      // cannot manipulate their computer's clock to bypass the rule.
-      && request.time + duration.value(3, 'h')
-           < resource.data.appointmentAt
+          // Patients must cancel more than 3 hours before the appointment.
+          // This uses the server's trusted request time, so the patient
+          // cannot manipulate their computer's clock to bypass the rule.
+          && request.time + duration.value(3, 'h')
+               < resource.data.appointmentAt
 
-      // Prevent cancelling an appointment that is already cancelled.
-      && resource.data.status != 'cancelled'
+          // Prevent cancelling an appointment that is already cancelled.
+          && resource.data.status != 'cancelled'
+        )
+      )
     );
 
   // Only secretaries can permanently delete appointments.
@@ -243,10 +265,20 @@ match /appointments/{appointmentId} {
 match /appointmentSlots/{slotId} {
   allow read: if isSignedIn();
 
+  // NOTE: this intentionally does NOT call ownsAppointmentSlot() here.
+  // createAppointment() creates the /appointments/{appointmentId} doc
+  // and this slot doc in the same transaction, and get()/exists() in
+  // rules only ever see state from before the commit started - they
+  // can never see a sibling write in the same transaction/batch. So a
+  // check that looked up the (not-yet-visible) appointment doc would
+  // always evaluate to "doesn't exist" and deny every patient booking.
+  // That's exactly why the slot doc carries its own patientId field
+  // (see the comment above the `patientId` line in firestore.js) -
+  // trust that embedded value directly instead of the cross-doc get().
   allow create: if isSecretary()
     || (isSignedIn()
-        && request.resource.data.keys().hasOnly(['date', 'time', 'status', 'appointmentId'])
-        && ownsAppointmentSlot(request.resource.data.appointmentId));
+        && request.resource.data.keys().hasOnly(['date', 'time', 'status', 'appointmentId', 'patientId'])
+        && request.resource.data.patientId == request.auth.uid);
 
   allow update: if isSecretary()
     || (ownsAppointmentSlot(resource.data.appointmentId)
@@ -259,10 +291,15 @@ match /appointmentSlots/{slotId} {
 match /notifications/{notificationId} {
   allow read: if isSecretary() || isOwner(resource.data.recipientId);
 
-  // Created either by a secretary action, or by a patient's own
-  // self-service booking (which notifies themselves).
+  // Created either by a secretary action, by the recipient themselves,
+  // or by a patient/other signed-in user who is sending a practice-wide
+  // alert to the secretary team (for example: a patient sends a message,
+  // which triggers notifyAllSecretaries()). We only allow the recipient
+  // to be a secretary UID or the signed-in user's own UID, so a patient
+  // cannot spam random users with fake notifications.
   allow create: if isSecretary()
-    || (isSignedIn() && request.resource.data.recipientId == request.auth.uid);
+    || (isSignedIn() && request.resource.data.recipientId == request.auth.uid)
+    || (isSignedIn() && isSecretaryRecipient(request.resource.data.recipientId));
 
   // Marking a notification read: the recipient, or a secretary.
   allow update: if isSecretary() || isOwner(resource.data.recipientId);
@@ -360,7 +397,7 @@ match /doctors/{doctorId} {
 //     hidden flag via setDoctorRatingHidden) or delete a review.
 match /doctorRatings/{appointmentId} {
   allow read: if isSecretary()
-    || (isSignedIn() && resource.data.hidden == false);
+    || (isSignedIn() && (resource == null || resource.data.hidden == false));
 
   allow create: if isSignedIn()
     && request.resource.data.patientId == request.auth.uid

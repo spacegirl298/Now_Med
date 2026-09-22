@@ -63,7 +63,6 @@ export function loadGoogleMaps() {
 // needing to know coordinates. Called on doctor save, not on every page
 // load - the result is stored on the doctor doc, not re-geocoded live.
 export async function geocodeAddress(address) {
-  console.log("KEY:", import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
   const maps = await loadGoogleMaps();
   const geocoder = new maps.Geocoder();
 
