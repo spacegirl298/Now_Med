@@ -728,6 +728,34 @@ export async function markPatientLate(appointment, minutesLate, note) {
   });
 }
 
+// Patient self-report: "my live ETA says I won't make it in time." Set from
+// PatientETA once a driving-time calculation puts their estimated arrival
+// past the practice's recommended arrival buffer (see isNewPatient logic in
+// PatientDashboard). This is deliberately a separate pair of fields from
+// patientLateMinutes/patientLateNote above - those are the secretary's own
+// after-the-fact record of actual lateness; these are the patient's own
+// advance warning before they've even arrived. A patient may only ever set
+// patientRunningLate to true (see the matching firestore.rules branch) -
+// clearing it back to false once they've arrived or the secretary has seen
+// it is a staff action, via acknowledgePatientRunningLate below.
+export async function reportPatientRunningLate(appointmentId, minutesLate) {
+  await updateDoc(doc(db, "appointments", appointmentId), {
+    patientRunningLate: true,
+    patientRunningLateMinutes: minutesLate ?? null,
+    patientRunningLateAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Secretary dismisses the running-late flag once seen (or once the patient
+// has arrived). Plain updateAppointment is fine here - isSecretary() already
+// has an unrestricted bypass on the appointments update rule.
+export async function acknowledgePatientRunningLate(appointmentId) {
+  await updateAppointment(appointmentId, {
+    patientRunningLate: false,
+  });
+}
+
 // Secretary marks a delay: updates the appointment and pushes a notification
 // to the affected patient in the same write batch of work.
 export async function markAppointmentDelay(

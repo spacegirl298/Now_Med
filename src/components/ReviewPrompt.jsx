@@ -48,7 +48,13 @@ export default function ReviewPrompt({ appointments, patientId }) {
         // eslint-disable-next-line no-await-in-loop -- intentionally
         // sequential: stop at the first unreviewed one instead of
         // firing every lookup at once.
-        const existing = await getDoctorRatingByAppointment(appt.id);
+        let existing;
+        try {
+          existing = await getDoctorRatingByAppointment(appt.id);
+        } catch (err) {
+          console.error("Failed to check existing review:", err);
+          continue; // skip this appointment rather than crash the prompt
+        }
         if (cancelled) return;
         if (!existing) {
           setCandidate(appt);
@@ -118,9 +124,7 @@ export default function ReviewPrompt({ appointments, patientId }) {
       </div>
 
       {submitted ? (
-        <p className="text-sm text-green mt-3">
-          Thanks for your feedback!
-        </p>
+        <p className="text-sm text-green mt-3">Thanks for your feedback!</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <p className="text-xs text-slate">

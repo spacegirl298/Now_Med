@@ -25,6 +25,7 @@ import Badge from "../../components/Badge";
 import EmptyState from "../../components/EmptyState";
 import StarRating from "../../components/StarRating";
 import ReviewPrompt from "../../components/ReviewPrompt";
+import PatientETA from "../../components/PatientETA";
 import {
   getTodayString,
   formatTime,
@@ -82,13 +83,39 @@ export default function PatientDashboard() {
   const displayName = userName || currentUser?.email?.split("@")[0] || "there";
 
   const upcomingAppointments = useMemo(() => {
+    const nowMs = Date.now();
     return appointments
-      .filter((a) => a.date >= today && a.status !== "cancelled")
+      .filter((a) => {
+        if (a.status === "cancelled") return false;
+        const start = a.appointmentAt?.toDate
+          ? a.appointmentAt.toDate()
+          : new Date(`${a.date}T${a.time}:00`);
+        return start.getTime() >= nowMs;
+      })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  }, [appointments, today]);
+  }, [appointments]);
 
   const nextAppointment = upcomingAppointments[0] || null;
   const isNextDelayed = nextAppointment?.status === "delayed";
+
+  // New vs returning patient, for the arrival-buffer recommendation in
+  // PatientETA: "new" means no prior non-cancelled appointment before this
+  // one. Derived from data we already have (useAppointments), no extra
+  // query needed. Same-day earlier visits aren't accounted for - an edge
+  // case rare enough not to be worth the extra complexity here.
+  const isNewPatient = useMemo(() => {
+    if (!nextAppointment) return true;
+    return !appointments.some(
+      (a) =>
+        a.id !== nextAppointment.id &&
+        a.status !== "cancelled" &&
+        a.date < nextAppointment.date,
+    );
+  }, [appointments, nextAppointment]);
+
+  const nextAppointmentDoctor = nextAppointment
+    ? doctors.find((d) => d.id === nextAppointment.doctorId)
+    : null;
 
   // Nudge them if their very next visit is within 24 hours and they still
   // haven't done their first-time intake form. There's no server-side
@@ -125,7 +152,10 @@ export default function PatientDashboard() {
           </div>
         )}
 
-        <ReviewPrompt appointments={appointments} patientId={currentUser?.uid} />
+        <ReviewPrompt
+          appointments={appointments}
+          patientId={currentUser?.uid}
+        />
 
         {isNextDelayed && (
           <div className="bg-pastel-amber text-amber text-sm rounded-xl px-4 py-3 mb-6 flex items-center gap-2">
@@ -146,8 +176,8 @@ export default function PatientDashboard() {
           >
             <ClipboardList size={16} className="shrink-0" />
             <span>
-              Your appointment is coming up and you haven't finished your
-              intake form yet - tap here to complete it now.
+              Your appointment is coming up and you haven't finished your intake
+              form yet - tap here to complete it now.
             </span>
           </button>
         )}
@@ -228,6 +258,12 @@ export default function PatientDashboard() {
                 )}
               </div>
             </div>
+
+            <PatientETA
+              appointment={nextAppointment}
+              doctor={nextAppointmentDoctor}
+              isNewPatient={isNewPatient}
+            />
           </Card>
         )}
 

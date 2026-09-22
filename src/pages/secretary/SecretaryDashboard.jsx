@@ -2,7 +2,13 @@
 // patient search bar (must-have - see PRD section "Home Dashboard").
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Clock, MessageSquare, ClipboardList } from "lucide-react";
+import {
+  Search,
+  Clock,
+  MessageSquare,
+  ClipboardList,
+  AlertTriangle,
+} from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
 import { useUnreadMessages } from "../../hooks/useUnreadMessages";
@@ -20,6 +26,7 @@ import {
 import {
   getAllPatients,
   subscribeToPendingChangeRequests,
+  acknowledgePatientRunningLate,
 } from "../../firebase/firestore";
 
 export default function SecretaryDashboard() {
@@ -30,6 +37,7 @@ export default function SecretaryDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [patients, setPatients] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
+  const [acknowledgingId, setAcknowledgingId] = useState(null);
   const unreadMessages = useUnreadMessages();
 
   useEffect(() => {
@@ -40,9 +48,8 @@ export default function SecretaryDashboard() {
 
   // Patient requests to change details they can't edit themselves.
   useEffect(() => {
-    const unsub = subscribeToPendingChangeRequests(
-      setPendingRequests,
-      (err) => console.error(err),
+    const unsub = subscribeToPendingChangeRequests(setPendingRequests, (err) =>
+      console.error(err),
     );
     return () => unsub && unsub();
   }, []);
@@ -62,6 +69,16 @@ export default function SecretaryDashboard() {
     (a) => a.status === "confirmed",
   ).length;
 
+  async function handleAcknowledgeLate(appointmentId) {
+    setAcknowledgingId(appointmentId);
+    try {
+      await acknowledgePatientRunningLate(appointmentId);
+    } catch (err) {
+      console.error("Could not clear running-late flag:", err);
+    }
+    setAcknowledgingId(null);
+  }
+
   const searchResults = useMemo(() => {
     if (!searchTerm.trim()) return [];
     const term = searchTerm.trim().toLowerCase();
@@ -70,8 +87,7 @@ export default function SecretaryDashboard() {
       .slice(0, 6);
   }, [searchTerm, patients]);
 
-  const displayName =
-    userName || currentUser?.email?.split("@")[0] || "there";
+  const displayName = userName || currentUser?.email?.split("@")[0] || "there";
 
   return (
     <SecretaryLayout>
@@ -173,7 +189,10 @@ export default function SecretaryDashboard() {
                   key={r.id}
                   onClick={() =>
                     navigate("/secretary/patients", {
-                      state: { openPatientId: r.patientId, openTab: "requests" },
+                      state: {
+                        openPatientId: r.patientId,
+                        openTab: "requests",
+                      },
                     })
                   }
                   className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-mist transition-colors"
@@ -220,24 +239,42 @@ export default function SecretaryDashboard() {
           ) : (
             <div className="divide-y divide-sand">
               {todaysAppointments.map((a) => (
-                <div
-                  key={a.id}
-                  className="flex items-center justify-between px-5 py-4"
-                >
-                  <div className="flex items-center gap-4">
-                    <p className="text-sm font-medium text-ink w-16">
-                      {formatTime(a.time)}
-                    </p>
-                    <div>
-                      <p className="text-sm font-medium text-ink">
-                        {a.patientName}
+                <div key={a.id} className="px-5 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <p className="text-sm font-medium text-ink w-16">
+                        {formatTime(a.time)}
                       </p>
-                      <p className="text-xs text-slate capitalize">
-                        {a.type} consult
-                      </p>
+                      <div>
+                        <p className="text-sm font-medium text-ink">
+                          {a.patientName}
+                        </p>
+                        <p className="text-xs text-slate capitalize">
+                          {a.type} consult
+                        </p>
+                      </div>
                     </div>
+                    <Badge status={a.status} />
                   </div>
-                  <Badge status={a.status} />
+
+                  {a.patientRunningLate && (
+                    <div className="flex items-center justify-between gap-3 mt-3 bg-pastel-amber text-amber text-xs rounded-lg px-3 py-2">
+                      <span className="flex items-center gap-1.5">
+                        <AlertTriangle size={13} className="shrink-0" />
+                        Patient self-reported running late
+                        {a.patientRunningLateMinutes != null
+                          ? ` (~${a.patientRunningLateMinutes} min)`
+                          : ""}
+                      </span>
+                      <button
+                        onClick={() => handleAcknowledgeLate(a.id)}
+                        disabled={acknowledgingId === a.id}
+                        className="font-medium shrink-0 disabled:opacity-50"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
