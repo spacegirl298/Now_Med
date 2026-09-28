@@ -1,10 +1,69 @@
 # Now Med
 
-**Now Med** is a web application designed to improve communication and transparency between patients and reception staff regarding medical appointments and scheduling delays. It addresses a documented problem in South African healthcare: long, uncommunicated waiting times, by giving patients real-time visibility into their appointment status and giving reception staff a single, structured place to manage the practice's schedule.
+**Real-time appointment visibility for patients. One structured schedule for reception staff.**
 
-This repository contains the **Beta (second iteration)** of the application, built with **React**, **Vite**, **Firebase Authentication**, and **Cloud Firestore**, submitted for DIGA4004A / DIGA4005A, Progress Report (Beta).
+Now Med is a web application that improves communication and transparency between patients and reception staff around medical appointments and scheduling delays. It targets a well-documented problem in South African healthcare: long, uncommunicated waiting times. Patients see the live status of their appointment, and secretaries manage the practice's schedule from a single place.
 
-A full account of the development process, technical decisions, deviations from the original PRD, and known limitations is in the accompanying **Individual Progress Report**. This README is a practical guide to running and testing the build.
+Built with **React**, **Vite**, **Firebase Authentication** and **Cloud Firestore**.
+
+> Developed for DIGA4004A / DIGA4005A. Design decisions, deviations from the original PRD and known limitations are documented in the accompanying Individual Progress Report. This README is a practical guide to running, testing and understanding the project.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Testing the Application](#testing-the-application)
+- [Available Scripts](#available-scripts)
+- [Project Structure](#project-structure)
+- [Security](#security)
+- [Deployment](#deployment)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Author](#author)
+
+---
+
+## Features
+
+### Authentication and access control
+- Multi-role registration (**Patient** and **Secretary**), with secretary sign-up gated by a practice code
+- SA ID / passport number capture, used to automatically link walk-in bookings and records to a patient's account when they later register
+- Email verification, login and password reset
+- Role-based protected routes
+- Tab-scoped session storage, so you can be logged in as different roles in different tabs at the same time
+
+### Patient
+- **Dashboard** with live appointment status and real-time delay notifications
+- **Appointment booking** via a calendar, using transaction-safe writes so two people can never book the same slot
+- **Medical records** (read-only, scoped strictly to the logged-in patient)
+- **Profile** editing
+
+### Secretary
+- **Dashboard** with an overview of the day's schedule
+- **Schedule management**: add, edit and delete appointments; block full days or specific time ranges (e.g. lunch breaks)
+- **Delay marking** that propagates instantly to the affected patient's dashboard
+- **Booked → Confirmed workflow**, recording whether confirmation happened by email, WhatsApp or phone call
+- **Patient list**, searchable by name or ID number
+- **Doctor profile** management
+- **Walk-in bookings**: record a phone or in-person booking for someone who doesn't have an account yet
+
+---
+
+## Tech Stack
+
+| Area | Technology |
+| --- | --- |
+| Frontend | React, Vite |
+| Routing | React Router |
+| Styling | Tailwind CSS |
+| Icons | Lucide React |
+| Auth | Firebase Authentication |
+| Database | Cloud Firestore (real-time listeners via `onSnapshot`) |
+| Hosting | Firebase Hosting |
+| Linting | ESLint |
 
 ---
 
@@ -12,135 +71,128 @@ A full account of the development process, technical decisions, deviations from 
 
 ### Prerequisites
 
-- Node.js (v18 or later recommended)
+- [Node.js](https://nodejs.org/) v18 or later
 - npm
-- An internet connection (the app connects to a live Firebase project, no local setup or `.env` file is required, the config is already included)
+- An internet connection. The app connects to a live Firebase project, and the Firebase config is already included, so no `.env` file or local Firebase setup is needed.
 
 ### Installation
 
-Extract the submitted zip file, then open a terminal in the project directory.
-
 ```bash
+git clone https://github.com/spacegirl298/Now_Med.git
 cd Now_Med
 npm install
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173`.
+The app will be available at **http://localhost:5173**.
 
 ---
 
 ## Testing the Application
 
-The fastest way to see the full workflow is to create one account of each role and test them side by side.
+The quickest way to see the full workflow is to create one account of each role and use them side by side.
 
 ### 1. Create a Secretary account
-
-Go to **Sign Up** → select **Secretary** → complete the form. Secretary registration requires a valid practice code:
+Go to **Sign Up**, select **Secretary** and complete the form. Secretary registration requires a valid practice code:
 
 ```
 Practice code: NM001
 ```
 
 ### 2. Create a Patient account
-
-Go to **Sign Up** → select **Patient** → complete the form. Registration also asks for an SA ID number (13 digits) or a passport number which is used to automatically link any walk-in bookings or records a secretary may have created for that person by ID number before they had an account (see the Progress Report, Section 3.2, for why this exists).
+Go to **Sign Up**, select **Patient** and complete the form. You will be asked for an SA ID number (13 digits) or a passport number. This links any walk-in bookings or records a secretary created for that person before they had an account.
 
 ### 3. Verify both accounts
+Firebase sends a real verification email to the address used at sign-up. **Both accounts must be verified before they can log in.** If the email doesn't arrive within a minute, check your spam or junk folder. This is a known limitation of Firebase's default shared sending domain, not a bug.
 
-Firebase sends a real verification email to the address used at sign-up. **Both accounts must be verified via that email link before they can log in.** If it doesn't arrive within a minute, check spam/junk, this is a known limitation of Firebase's default shared sending domain (documented in the Progress Report) and doesn't indicate a bug.
-
-### 4. Log in and explore both roles
-
-Because the app uses tab-scoped session storage rather than a shared browser session, you can be logged in as the secretary in one browser tab and the patient in another simultaneously which is useful for seeing real-time updates (e.g. marking a delay as the secretary and watching it appear on the patient's dashboard) without logging in and out repeatedly.
+### 4. Explore both roles side by side
+Because sessions are tab-scoped, log in as the secretary in one tab and the patient in another. Mark a delay as the secretary and watch it appear on the patient's dashboard in real time.
 
 ---
 
-## Building for Production
+## Available Scripts
 
-```bash
-npm run build      # generates the production build in /dist
-npm run preview    # serves that build locally to sanity-check it
-```
-
----
-
-## Technologies
-
-- React + Vite
-- Firebase Authentication
-- Cloud Firestore (real-time listeners via `onSnapshot`)
-- React Router
-- Tailwind CSS
-- Lucide React (icons)
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the development server with hot reload |
+| `npm run build` | Create a production build in `/dist` |
+| `npm run preview` | Serve the production build locally to sanity-check it |
+| `npm run lint` | Run ESLint |
 
 ---
 
 ## Project Structure
 
 ```
-src/
-├── components/     Shared UI (Button, Card, Modal, Badge, Sidebar, BackButton, ...)
-├── context/        AuthContext - auth state, role, and session handling
-├── firebase/       config.js, firestore.js (all Firestore reads/writes/transactions)
-├── hooks/          useAppointments, useAuth, useNotifications
-├── pages/
-│   ├── auth/       Login, SignUp, ForgotPassword, EmailVerification
-│   ├── patient/    Dashboard, Calendar (booking), Records, Profile
-│   └── secretary/  Dashboard, Schedule, PatientList, Profile
-└── utils/          dateHelpers, validators
-
-firestore.rules      Firestore security rules (role-based access control)
-firebase.json        Deployment config for Hosting + Firestore rules
+Now_Med/
+├── src/
+│   ├── components/     Shared UI (Button, Card, Modal, Badge, Sidebar, BackButton, ...)
+│   ├── context/        AuthContext: auth state, role and session handling
+│   ├── firebase/       config.js, firestore.js (all Firestore reads, writes and transactions)
+│   ├── hooks/          useAppointments, useAuth, useNotifications
+│   ├── pages/
+│   │   ├── auth/       Login, SignUp, ForgotPassword, EmailVerification
+│   │   ├── patient/    Dashboard, Calendar (booking), Records, Profile
+│   │   └── secretary/  Dashboard, Schedule, PatientList, Profile
+│   └── utils/          dateHelpers, validators
+├── firestore.rules     Firestore security rules (role-based access control)
+├── firebase.json       Deployment config for Hosting and Firestore rules
+├── index.html
+├── vite.config.js
+└── eslint.config.js
 ```
 
 ---
 
-## Beta Feature Status
+## Security
 
-All nine must-have features from the PRD are implemented against live Firestore data. See the Progress Report for the detailed status table and evaluation.
-
-**Authentication & Security**
-
-- Multi-role registration (patient/secretary) with practice-code validation
-- SA ID/passport capture for walk-in patient linking
-- Email verification, login, password reset
-- Role-based protected routes
-- Firestore security rules enforcing that patients can only ever read their own data
-
-**Patient features**
-
-- Dashboard with live appointment status and real-time delay notifications
-- Appointment booking, with a transaction-safe booking write to prevent two people booking the same slot
-- Medical records (read-only, scoped to the logged-in patient)
-- Profile editing
-
-**Secretary features**
-
-- Dashboard with daily schedule overview
-- Schedule management: add/edit/delete appointments, block full days or specific time ranges (e.g. lunch breaks)
-- Delay marking, with real-time propagation to the affected patient
-- Booked → Confirmed appointment workflow, tracking whether confirmation happened by email, WhatsApp, or phone call
-- Patient list, searchable by name or ID number
-- Doctor profile management
-- Ability to record a walk-in booking (phone/in-person) for someone without an account yet
+- **Firestore security rules** (`firestore.rules`) enforce role-based access. Patients can only ever read their own data.
+- **Role-based route protection** on the client, backed by the rules on the server side.
+- **Email verification** is required before login.
+- **Practice code** gates secretary registration.
+- **Transactional booking writes** prevent double-booking of a slot.
 
 ---
 
-## Current Status & Known Limitations
+## Deployment
 
-The current iteration successfully implements all core functionality defined in the PRD's must-have scope, and the primary workflow is navigable end-to-end for both roles. Remaining work before final submission is focused on deployment, verification, and polish rather than new features:
+The project is configured for Firebase Hosting and Firestore rules via `firebase.json`.
 
-- Firestore security rules are written and tested locally but still need to be deployed to the live project.
-- A temporary login bypass exists (`DEV_BYPASS_ROLE` in `App.jsx`), but it is a hardcoded constant currently set to `false` which is not gated by an environment variable or build mode. It is safe because it is set to `false` at submission, not because of how it is wired into the build.
-- Verification emails may land in spam by default; this requires a custom sending domain to resolve, which is out of scope for this iteration's budget.
+```bash
+npm run build
+firebase deploy
+```
 
-## Future Improvements
+To deploy only the security rules:
 
-- A doctor/practice information page for patients
+```bash
+firebase deploy --only firestore:rules
+```
+
+---
+
+## Known Limitations
+
+- **Verification emails may land in spam.** Fixing this needs a custom sending domain, which is outside the current project budget.
+- **Dev bypass flag.** `DEV_BYPASS_ROLE` in `App.jsx` is a hardcoded constant that skips login for development. It is set to `false` and must stay that way for any release. It is not gated by an environment variable or build mode.
+- Duplicate accounts under two different ID numbers are not yet prevented.
+- A full usability testing pass (Phase 4 of the PRD's testing strategy) is still outstanding.
+
+---
+
+## Roadmap
+
+- Doctor / practice information page for patients
 - Medical aid information capture
 - Guardian bookings on behalf of a child
 - Appointment duration shown on the calendar
 - Additional ID-based security for medical records
-- Prevention of duplicate accounts under two different ID numbers
-- Full usability testing pass (Phase 4 of the PRD's testing strategy)
+- Duplicate-account prevention
+- Custom email sending domain
+
+---
+
+## Author
+
+**spacegirl298**
+GitHub: [@spacegirl298](https://github.com/spacegirl298)
