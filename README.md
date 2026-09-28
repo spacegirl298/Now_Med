@@ -41,6 +41,7 @@ Built with **React**, **Vite**, **Firebase Authentication**, **Cloud Firestore**
 ### Patient
 - **Dashboard** with live appointment status and real-time delay notifications
 - **Appointment booking** through a calendar, using transaction-safe writes so two people can never book the same slot
+- **Cancellations and running late**: cancel your own appointment up to 3 hours beforehand, or flag that you're running late
 - **Location and ETA**: Google Maps integration calculates the patient's estimated arrival time and lets them send a late-arrival message to the practice
 - **Messaging**: real-time conversation with the practice
 - **Doctor reviews**
@@ -59,7 +60,7 @@ Built with **React**, **Vite**, **Firebase Authentication**, **Cloud Firestore**
 - **Delay marking** that propagates instantly to the affected patient, with automatic late-appointment messages
 - **Delay and cancellation rules** governing what happens to a slot when a patient is marked delayed rather than cancelled
 - **Booked → Confirmed workflow**, recording whether confirmation happened by email, WhatsApp or phone call
-- **Messaging** with patients
+- **Messaging** with patients, including confirmation and intake reminders, and the ability to remove inappropriate messages
 - **Patient list**, searchable by name or ID number, plus approval of patient change requests
 - **Doctor profiles** with contact details and collected patient reviews in one connected view
 - **Review moderation**: hide reviews from patients that aren't a fair representation. Hidden reviews still count in analytics.
@@ -182,11 +183,29 @@ Now_Med/
 
 ## Security and Access Control
 
-- **Firestore security rules** (`firestore.rules`), deployed to the live project, enforce role-based access so patients can only ever read their own data.
-- **Tab-scoped session persistence** (`browserSessionPersistence`) instead of Firebase's default shared persistence. A secretary's workstation is a shared, always-on machine, and the default would keep any account signed in across every tab, including ones used by other staff or patients. Each login is now contained to the tab it started in.
-- **Transactional booking**: availability is checked and written in a single Firestore transaction, replacing an earlier client-side check-then-write that left a race condition open. If two people book the same slot at once, one succeeds and the other is rejected.
-- **Cross-patient access tested directly**: attempts to reach another patient's records without authenticating as that patient were blocked.
-- **Email verification** is required before login, and a **practice code** gates secretary registration.
+Access control is enforced by Firestore security rules (`firestore.rules`), deployed to the live project.
+
+**Role-based access**
+- Secretaries can manage appointments, records, patient profiles, doctors and analytics. Patients can only read their own data.
+- Walk-in data a secretary entered under an ID number is automatically readable by the matching patient once they register with that ID, and by nobody else.
+- Patients can self-edit only contact and administrative profile fields. Clinical data (allergies, medications, conditions, history) is secretary-only, regardless of what the client sends.
+- Sensitive changes go through **change requests**, which a patient files and only a secretary can resolve.
+
+**Appointments**
+- Patients can only touch their own appointments, and only to cancel (more than 3 hours before the appointment, checked against the server's trusted time) or to report themselves running late. Confirming, delaying, editing and rescheduling are secretary actions.
+- **Double-booking protection** uses a Firestore transaction that checks and writes a slot atomically, backed by a non-sensitive `appointmentSlots` mirror so the booking calendar can show availability without exposing other patients' data.
+
+**Messaging, reviews and notifications**
+- Patients can only post messages as themselves. Sent messages can't be edited, and only a secretary can delete one for moderation.
+- Reviews are one per appointment. Patients can edit only the rating and comment on their own review, and only a secretary can hide or delete one.
+- Notifications can only be addressed to the sender or to a secretary, so users can't spam each other.
+
+**Accounts**
+- An `idNumberIndex` collection ensures an ID or passport number can't be registered to more than one account per role.
+- **Tab-scoped session persistence** (`browserSessionPersistence`) is used instead of Firebase's default shared persistence. A secretary's workstation is a shared, always-on machine, and the default would keep any account signed in across every tab, including ones used by other staff or patients.
+- Email verification is required before login, and a practice code gates secretary registration.
+
+**Tested directly:** attempts to reach another patient's records without authenticating as that patient were blocked.
 
 ---
 
@@ -249,7 +268,7 @@ firebase deploy --only firestore:rules
 - Guardian bookings on behalf of a child
 - Appointment duration shown on the calendar
 - Additional ID-based security for medical records
-- Duplicate-account prevention
+- Detecting duplicate accounts registered under different ID numbers
 - Multi-language messaging filter
 - Custom email sending domain
 
@@ -259,5 +278,5 @@ firebase deploy --only firestore:rules
 
 ## Authors
 
-- **Jordyn Van Aswegen**: [@JvTayla](https://github.com/JvTayla). 
-- **Jessica Jardim**: [@spacegirl298](https://github.com/spacegirl298). 
+- **Jordyn Van Aswegen**: [@JvTayla](https://github.com/JvTayla). Secretary-facing features (information/profile section, delay and cancellation rules, Doctor Reviews restructure and review moderation), Google Maps / ETA integration, documentation and testing.
+- **Jessica Jardim**: [@spacegirl298](https://github.com/spacegirl298). Messaging, patient intake form research and rebuild, patient profiles, and bug testing and fixes.
