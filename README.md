@@ -259,5 +259,5 @@ firebase deploy --only firestore:rules
 
 ## Authors
 
-- **Jordyn Van Aswegen**: [@JvTayla](https://github.com/JvTayla). Secretary-facing features (information/profile section, delay and cancellation rules, Doctor Reviews restructure and review moderation), Google Maps / ETA integration, documentation and testing.
-- **Jessica Jardim**: [@spacegirl298](https://github.com/spacegirl298). Messaging, patient intake form research and rebuild, patient profiles, and bug testing and fixes.
+- **Jordyn Van Aswegen**: [@JvTayla](https://github.com/JvTayla). 
+- **Jessica Jardim**: [@spacegirl298](https://github.com/spacegirl298). 
