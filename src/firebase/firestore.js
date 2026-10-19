@@ -68,7 +68,6 @@ const changeRequestsCol = collection(db, "changeRequests");
 // One chat per patient: conversations/{patientId} holds the summary + unread
 // counters, conversations/{patientId}/messages holds the messages.
 const conversationsCol = collection(db, "conversations");
-const analyticsEventsCol = collection(db, "analyticsEvents");
 const analyticsSummaryCol = collection(db, "analyticsSummary");
 
 // ================= USERS / PATIENTS =================
@@ -913,8 +912,9 @@ async function notifyAllSecretaries({
   patientId = null,
   changeRequestId = null,
 }) {
-  const q = query(usersCol, where("role", "==", "secretary"));
-  const snap = await getDocs(q);
+  // uid-only directory, readable by any signed-in user (see firestore.rules).
+  // Querying `users` for role == "secretary" is no longer allowed for patients.
+  const snap = await getDocs(collection(db, "secretaryDirectory"));
   await Promise.all(
     snap.docs.map((d) =>
       createNotification({
@@ -1234,117 +1234,21 @@ export async function deleteDoctor(doctorId) {
 // exists (for the record / for the patient who wrote it) but is excluded
 // from every patient-facing read.
 
-export async function syncDoctorAnalyticsFromAppointment({
-  doctorId,
-  doctorName,
-  appointmentDate,
-} = {}) {
-  if (!doctorId || !appointmentDate) return;
+// Intentionally a no-op. These used to read-modify-write analyticsSummary from
+// the patient's own browser, which let any signed-in user edit the figures the
+// analytics page reports (and lost updates when two people acted at once).
+// Summaries are now rebuilt by a secretary from the source appointments and
+// reviews when the analytics page opens - see
+// backfillDoctorAnalyticsFromAppointmentsAndReviews. Kept so call sites don't change.
+export async function syncDoctorAnalyticsFromAppointment() {}
 
-  const doctor = (await getDoctorById(doctorId)) || {
-    name: doctorName || "Doctor",
-  };
-  const date = new Date(`${appointmentDate}T12:00:00`);
-  const monthKey = date.toISOString().slice(0, 7);
-  const weekStart = new Date(date);
-  weekStart.setHours(0, 0, 0, 0);
-  const day = weekStart.getDay();
-  const diffToMonday = (day + 6) % 7;
-  weekStart.setDate(weekStart.getDate() - diffToMonday);
-  const weekKey = weekStart.toISOString().slice(0, 10);
-
-  for (const period of [
-    { periodType: "month", periodKey: monthKey },
-    { periodType: "week", periodKey: weekKey },
-  ]) {
-    const summary = await getAnalyticsSummary({
-      entityType: "doctor",
-      entityId: doctorId,
-      periodType: period.periodType,
-      periodKey: period.periodKey,
-    });
-    const current = summary[0] || {};
-    const totalAppointments = Number(current.totalAppointments || 0) + 1;
-
-    await upsertAnalyticsSummary({
-      entityType: "doctor",
-      entityId: doctorId,
-      periodType: period.periodType,
-      periodKey: period.periodKey,
-      doctorName: doctor.name || current.doctorName || "Doctor",
-      totalAppointments,
-      reviewCount: Number(current.reviewCount || 0),
-      avgReviewRating: current.avgReviewRating ?? 0,
-      lateArrivalCount: Number(current.lateArrivalCount || 0),
-      lateFeesCharged: Number(current.lateFeesCharged || 0),
-      lastAppointmentAt: serverTimestamp(),
-    });
-  }
-}
-
-export async function syncDoctorAnalyticsFromLateArrival({
-  doctorId,
-  doctorName,
-  appointmentDate,
-  minuteDelta,
-  note = "",
-  source = "patient",
-} = {}) {
-  if (!doctorId || !appointmentDate) return;
-
-  const doctor = (await getDoctorById(doctorId)) || {
-    name: doctorName || "Doctor",
-  };
-  const date = new Date(`${appointmentDate}T12:00:00`);
-  const monthKey = date.toISOString().slice(0, 7);
-  const weekStart = new Date(date);
-  weekStart.setHours(0, 0, 0, 0);
-  const day = weekStart.getDay();
-  const diffToMonday = (day + 6) % 7;
-  weekStart.setDate(weekStart.getDate() - diffToMonday);
-  const weekKey = weekStart.toISOString().slice(0, 10);
-
-  const entry = {
-    doctorId,
-    doctorName: doctor.name || doctorName || "Doctor",
-    source,
-    note: note || "",
-    minutesLate: Number(minuteDelta || 0),
-    appointmentDate,
-    createdAt: new Date().toISOString(),
-  };
-
-  for (const period of [
-    { periodType: "month", periodKey: monthKey },
-    { periodType: "week", periodKey: weekKey },
-  ]) {
-    const summary = await getAnalyticsSummary({
-      entityType: "doctor",
-      entityId: doctorId,
-      periodType: period.periodType,
-      periodKey: period.periodKey,
-    });
-    const current = summary[0] || {};
-    const details = Array.isArray(current.lateArrivalDetails)
-      ? current.lateArrivalDetails
-      : [];
-
-    await upsertAnalyticsSummary({
-      entityType: "doctor",
-      entityId: doctorId,
-      periodType: period.periodType,
-      periodKey: period.periodKey,
-      doctorName: doctor.name || current.doctorName || "Doctor",
-      totalAppointments: Number(current.totalAppointments || 0),
-      reviewCount: Number(current.reviewCount || 0),
-      avgReviewRating: current.avgReviewRating ?? 0,
-      lateArrivalCount: Number(current.lateArrivalCount || 0) + 1,
-      lateArrivalDetails: [...details, entry],
-      lateFeesCharged: Number(current.lateFeesCharged || 0),
-      lastLateArrivalAt: serverTimestamp(),
-    });
-  }
-}
+// Intentionally a no-op. These used to read-modify-write analyticsSummary from
+// the patient's own browser, which let any signed-in user edit the figures the
+// analytics page reports (and lost updates when two people acted at once).
+// Summaries are now rebuilt by a secretary from the source appointments and
+// reviews when the analytics page opens - see
+// backfillDoctorAnalyticsFromAppointmentsAndReviews. Kept so call sites don't change.
+export async function syncDoctorAnalyticsFromLateArrival() {}
 
 export async function createDoctorRating({
   appointmentId,
@@ -1378,70 +1282,13 @@ export async function createDoctorRating({
   }
 }
 
-export async function syncDoctorAnalyticsFromReviews({
-  doctorId,
-  patientId,
-  appointmentId,
-  rating,
-  comment = "",
-} = {}) {
-  if (!doctorId) return;
-
-  const doctor = await getDoctorById(doctorId);
-  const reviewDate = new Date();
-  const monthKey = reviewDate.toISOString().slice(0, 7);
-  const weekStart = new Date(reviewDate);
-  weekStart.setHours(0, 0, 0, 0);
-  const day = weekStart.getDay();
-  const diffToMonday = (day + 6) % 7;
-  weekStart.setDate(weekStart.getDate() - diffToMonday);
-  const weekKey = weekStart.toISOString().slice(0, 10);
-
-  const periods = [
-    { periodType: "month", periodKey: monthKey },
-    { periodType: "week", periodKey: weekKey },
-  ];
-
-  for (const period of periods) {
-    const summary = await getAnalyticsSummary({
-      entityType: "doctor",
-      entityId: doctorId,
-      periodType: period.periodType,
-      periodKey: period.periodKey,
-    });
-    const current = summary[0] || {};
-    const reviewCount = Number(current.reviewCount || 0) + 1;
-    const weighted =
-      Number(current.avgReviewRating || 0) * Number(current.reviewCount || 0);
-    const avgReviewRating = reviewCount
-      ? (weighted + Number(rating ?? 0)) / reviewCount
-      : Number(rating ?? 0);
-
-    await upsertAnalyticsSummary({
-      entityType: "doctor",
-      entityId: doctorId,
-      periodType: period.periodType,
-      periodKey: period.periodKey,
-      doctorName: doctor?.name || current.doctorName || "Doctor",
-      reviewCount,
-      avgReviewRating,
-      lastReviewAt: serverTimestamp(),
-    });
-  }
-
-  if (rating !== undefined && patientId && appointmentId) {
-    await addDoc(analyticsEventsCol, {
-      eventType: "doctor_review_submitted",
-      entityType: "doctor",
-      entityId: doctorId,
-      patientId,
-      appointmentId,
-      rating,
-      comment,
-      createdAt: serverTimestamp(),
-    });
-  }
-}
+// Intentionally a no-op. These used to read-modify-write analyticsSummary from
+// the patient's own browser, which let any signed-in user edit the figures the
+// analytics page reports (and lost updates when two people acted at once).
+// Summaries are now rebuilt by a secretary from the source appointments and
+// reviews when the analytics page opens - see
+// backfillDoctorAnalyticsFromAppointmentsAndReviews. Kept so call sites don't change.
+export async function syncDoctorAnalyticsFromReviews() {}
 
 export async function backfillDoctorAnalyticsFromAppointmentsAndReviews() {
   const [appointmentsSnap, reviewsSnap] = await Promise.all([

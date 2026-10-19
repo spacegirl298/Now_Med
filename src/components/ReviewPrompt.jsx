@@ -24,10 +24,14 @@ export default function ReviewPrompt({
   patientId,
   bufferMinutes = 15,
 }) {
-  const [closed, setClosed] = useState(false);
+  // Remembers how many pending reviews there were when the card was closed, so it
+  // re-opens by itself if that number changes (new visit to review).
+  const [closedForCount, setClosedForCount] = useState(null);
   const [pendingReviews, setPendingReviews] = useState([]);
   const [checking, setChecking] = useState(true);
-  const [expandedId, setExpandedId] = useState(null);
+  // undefined = nothing chosen yet (first pending review opens by default),
+  // null = the patient collapsed everything.
+  const [expandedId, setExpandedId] = useState(undefined);
   const [drafts, setDrafts] = useState({});
   const [submittingById, setSubmittingById] = useState({});
   const [submittedIds, setSubmittedIds] = useState([]);
@@ -43,17 +47,14 @@ export default function ReviewPrompt({
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   }, [appointments, bufferMinutes]);
 
-  useEffect(() => {
-    if (pendingReviews.length > 0 && !expandedId) {
-      setExpandedId(pendingReviews[0].id);
-    }
-  }, [pendingReviews, expandedId]);
-
-  useEffect(() => {
-    if (pendingReviews.length > 0) {
-      setClosed(false);
-    }
-  }, [pendingReviews.length]);
+  // Derived values (no effect needed). When there is nothing eligible the
+  // stored list can be stale, so mask it rather than resetting it in an effect.
+  const visiblePending = eligiblePool.length > 0 ? pendingReviews : [];
+  const isChecking = eligiblePool.length > 0 && checking;
+  const openId =
+    expandedId === undefined ? (visiblePending[0]?.id ?? null) : expandedId;
+  const closed =
+    closedForCount !== null && closedForCount === visiblePending.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -123,9 +124,6 @@ export default function ReviewPrompt({
 
     if (eligiblePool.length > 0) {
       findPendingReviews();
-    } else {
-      setPendingReviews([]);
-      setChecking(false);
     }
 
     return () => {
@@ -178,8 +176,8 @@ export default function ReviewPrompt({
   }
 
   if (!patientId || !appointments?.length) return null;
-  if (checking) return null;
-  if (closed || pendingReviews.length === 0) return null;
+  if (isChecking) return null;
+  if (closed || visiblePending.length === 0) return null;
 
   return (
     <Card className="mb-6 border border-blush">
@@ -191,7 +189,7 @@ export default function ReviewPrompt({
           </h2>
         </div>
         <button
-          onClick={() => setClosed(true)}
+          onClick={() => setClosedForCount(visiblePending.length)}
           aria-label="Close"
           className="text-slate hover:text-ink shrink-0"
         >
@@ -200,10 +198,10 @@ export default function ReviewPrompt({
       </div>
 
       <div className="space-y-3">
-        {pendingReviews
+        {visiblePending
           .filter((appt) => !submittedIds.includes(appt.id))
           .map((appt) => {
-            const isOpen = expandedId === appt.id;
+            const isOpen = openId === appt.id;
             const draft = drafts[appt.id] || { rating: 0, comment: "" };
             const isSubmitting = !!submittingById[appt.id];
             const error = errors[appt.id];
@@ -219,7 +217,7 @@ export default function ReviewPrompt({
                 <button
                   type="button"
                   onClick={() =>
-                    setExpandedId((prev) => (prev === appt.id ? null : appt.id))
+                    setExpandedId(isOpen ? null : appt.id)
                   }
                   className="w-full text-left px-4 py-3 flex items-center justify-between gap-3"
                 >

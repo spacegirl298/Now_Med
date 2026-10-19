@@ -13,7 +13,6 @@ import {
   CalendarClock,
   Phone,
   ClipboardList,
-  MessageSquare,
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
@@ -92,8 +91,16 @@ export default function PatientDashboard() {
   const today = getTodayString();
   const displayName = userName || currentUser?.email?.split("@")[0] || "there";
 
+  // "Now" lives in state so render stays pure. It only needs to be fresh enough
+  // to move an appointment from "upcoming" to "past", so a one-minute tick is
+  // plenty (and it also re-evaluates whenever the appointments data changes).
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const upcomingAppointments = useMemo(() => {
-    const nowMs = Date.now();
     return appointments
       .filter((a) => {
         if (a.status === "cancelled") return false;
@@ -103,7 +110,7 @@ export default function PatientDashboard() {
         return start.getTime() >= nowMs;
       })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  }, [appointments]);
+  }, [appointments, nowMs]);
 
   const nextAppointment = upcomingAppointments[0] || null;
   const isNextDelayed = nextAppointment?.status === "delayed";

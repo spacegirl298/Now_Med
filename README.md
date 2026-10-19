@@ -32,7 +32,7 @@ Built with **React**, **Vite**, **Firebase Authentication**, **Cloud Firestore**
 ## Features
 
 ### Authentication and access control
-- Multi-role registration (**Patient** and **Secretary**), with secretary sign-up gated by a practice code
+- Multi-role registration (**Patient** and **Secretary**). Secretary accounts can only be created with an email address on the practice's staff invite list (see [Security and Access Control](#security-and-access-control))
 - SA ID / passport number capture, used to automatically link walk-in bookings and records to a patient's account when they later register
 - Email verification, login and password reset
 - Role-based protected routes
@@ -106,6 +106,7 @@ Mobile layouts are substantially complete. The Patient Records view is still bei
 - [Node.js](https://nodejs.org/) v18 or later
 - npm
 - An internet connection. The app connects to a live Firebase project, and the Firebase config is already included, so no local Firebase setup is needed.
+- Optional, for the ETA feature only: a Google Maps API key (see below).
 
 ### Installation
 
@@ -118,6 +119,23 @@ npm run dev
 
 The app will be available at **http://localhost:5173**.
 
+### Google Maps API key (needed for the ETA feature only)
+
+Everything except the arrival-time estimate works without a key. The ETA card, and the practice address lookup on the doctor profile form, need one. **No key is included in this repository**, so the ETA result cannot be reproduced from a plain clone. To enable it:
+
+1. In Google Cloud Console, create (or pick) a project with billing enabled and turn on the **Maps JavaScript API** (address lookup) and the **Routes API** (driving time).
+2. Create an API key. Restrict it to **HTTP referrers** (`http://localhost:5173/*`, plus your deployed URL) and to those two APIs.
+3. Copy `.env.example` to `.env.local` and paste the key in:
+
+   ```
+   VITE_GOOGLE_MAPS_API_KEY=your-key-here
+   ```
+
+4. Restart `npm run dev` (Vite reads `.env.local` at startup).
+5. Log in as a secretary, open the doctor profile form on your **Profile** page, enter a practice address and save. The address is geocoded once and stored as coordinates. The ETA card only appears on a patient's next appointment once the doctor has coordinates.
+
+`.env.local` is git-ignored. Without a key, the ETA card is simply not shown and the rest of the app is unaffected. The ETA results in the report were produced with the authors' own restricted key; a marker who wants to reproduce them should use the steps above or ask the authors for a temporary key privately.
+
 ---
 
 ## Testing the Application
@@ -125,11 +143,11 @@ The app will be available at **http://localhost:5173**.
 The quickest way to see the full workflow is to create one account of each role and use them side by side.
 
 ### 1. Create a Secretary account
-Go to **Sign Up**, select **Secretary** and complete the form. Secretary registration requires a valid practice code:
+Secretary accounts cannot be self-created. The practice owner first adds the staff member's email address to the invite list, then that person signs up with the same address.
 
-```
-Practice code: NM001
-```
+To add the first invite (one time, in the [Firebase console](https://console.firebase.google.com/)): open **Firestore Database**, choose the `jj04` database, create a collection `staffInvites`, and add a document whose **ID is the email address in lowercase** (for example `sec@practice.com`). It needs at least one field, for example `by: "console"`. Once a secretary exists, they can invite colleagues from the app or the console the same way.
+
+Then go to **Sign Up**, select **Secretary**, and use that email address. Without an invite the form is rejected with a clear message, and the Firestore rules refuse the account even if someone bypasses the form.
 
 ### 2. Create a Patient account
 Go to **Sign Up**, select **Patient** and complete the form. You will be asked for an SA ID number (13 digits) or a passport number, which links any walk-in bookings or records a secretary created for that person before they had an account.
@@ -155,6 +173,7 @@ Because sessions are tab-scoped, log in as the secretary in one tab and the pati
 | `npm run build` | Create a production build in `/dist` |
 | `npm run preview` | Serve the production build locally to sanity-check it |
 | `npm run lint` | Run ESLint |
+| `npm run test:rules` | Start the local Firestore emulator and run the security rules tests (needs Java 11+) |
 
 ---
 
@@ -172,8 +191,11 @@ Now_Med/
 │   │   ├── patient/    Dashboard, Calendar (booking and reviews), Records, Profile, Our Doctors, Messaging
 │   │   └── secretary/  Dashboard, Schedule, PatientList, Doctors, Analytics, Messaging, Profile
 │   └── utils/          dateHelpers, validators
+├── tests/              Firestore security rules tests (run against the emulator)
 ├── firestore.rules     Firestore security rules (role-based access control)
-├── firebase.json       Deployment config for Hosting and Firestore rules
+├── firebase.json       Deployment config for Hosting and Firestore rules (database jj04)
+├── .firebaserc         Default Firebase project
+├── .env.example        Template for the Google Maps key (copy to .env.local)
 ├── index.html
 ├── vite.config.js
 └── eslint.config.js
@@ -183,10 +205,14 @@ Now_Med/
 
 ## Security and Access Control
 
-Access control is enforced by Firestore security rules (`firestore.rules`), deployed to the live project.
+Access control is enforced by Firestore security rules (`firestore.rules`). The file in this repository is the source of truth and is what the tests below run against. See [Deployment](#deployment) for how it is pushed to the live project.
 
 **Role-based access**
 - Secretaries can manage appointments, records, patient profiles, doctors and analytics. Patients can only read their own data.
+- **Who counts as a secretary** is decided by the `staffInvites` allow-list (document ID = lowercased email) together with a verified email on the signed-in account. It is not decided by the `role` field on the user document, because users write that document themselves at sign-up. Clients cannot create the first invite; it is added in the Firebase console.
+- **User documents** (names, emails, ID numbers) can be read by their owner and by secretaries only, and patients cannot list the collection. An owner cannot change their own `role`, `idNumber`, `email` or `uid`. A new account can only be created as a patient, or as a secretary if its email is on the invite list.
+- A uid-only `secretaryDirectory` collection lets a patient's action notify every secretary without the patient being able to read the users collection.
+- **Analytics** collections are secretary-only. Summaries are rebuilt from the source appointments and reviews when a secretary opens the analytics page; patients never write them.
 - Walk-in data a secretary entered under an ID number is automatically readable by the matching patient once they register with that ID, and by nobody else.
 - Patients can self-edit only contact and administrative profile fields. Clinical data (allergies, medications, conditions, history) is secretary-only, regardless of what the client sends.
 - Sensitive changes go through **change requests**, which a patient files and only a secretary can resolve.
@@ -203,9 +229,18 @@ Access control is enforced by Firestore security rules (`firestore.rules`), depl
 **Accounts**
 - An `idNumberIndex` collection ensures an ID or passport number can't be registered to more than one account per role.
 - **Tab-scoped session persistence** (`browserSessionPersistence`) is used instead of Firebase's default shared persistence. A secretary's workstation is a shared, always-on machine, and the default would keep any account signed in across every tab, including ones used by other staff or patients.
-- Email verification is required before login, and a practice code gates secretary registration.
+- Email verification is required before login. Secretary registration needs an invited email address (no shared code is stored in the app or this repository).
 
-**Tested directly:** attempts to reach another patient's records without authenticating as that patient were blocked.
+**Rules tests.** `tests/firestore.rules.test.js` runs against the Firestore emulator (`npm run test:rules`) and asserts, among others, that:
+- patient A cannot read patient B's appointment, record, intake form, profile or chat messages
+- a user cannot create a secretary account without an invite, cannot change their own role or ID number, and cannot list other users
+- a user document that merely says `role: secretary` gives no access to patient data
+- a patient cancelling 4 hours before an appointment succeeds and 2 hours before is rejected (3-hour window)
+- patients cannot write or read analytics collections, and cannot review an appointment that is not theirs
+
+**Known limits of the rules.**
+- A patient can still choose whichever ID number they type at registration; the `idNumberIndex` stops two accounts holding the same number, but it cannot prove the number belongs to the person. Walk-in data is matched by that number, so the practice should confirm identity at the first visit.
+- The review timing (15 minutes after the appointment time) and the one-intake-form-per-patient rule are enforced by the app, not by the rules.
 
 ---
 
@@ -220,11 +255,11 @@ Beta testing verified the PRD acceptance criteria rather than just confirming fe
 | Appointment booking | Pass | |
 | Concurrent booking | Pass | Firestore transaction allows only one booking per slot |
 | Delay marking | Pass | Updated ETA on the patient card needs to be more prominent |
-| Medical records access | Pass | Cross-patient access prevented |
+| Medical records access | Pass | Cross-patient and cross-role access covered by emulator rules tests (`npm run test:rules`), including the case where a user writes `role: secretary` themselves |
 | Password reset | Pass | Same-password reset is a design decision still to be made |
 | Real-time sync | Pass | |
 | Doctor reviews | Pass | |
-| ETA / location | Pass after fix | Initial API integration failure resolved |
+| ETA / location | Pass with own API key | Needs a Google Maps key to reproduce; see Getting Started |
 | Messaging | Pass | Language filter updated to warn rather than block |
 | Practice analytics | Partial | Live data working; acceptance testing pending |
 
@@ -239,11 +274,16 @@ npm run build
 firebase deploy
 ```
 
-To deploy only the security rules:
+`firebase.json` points the `jj04` Firestore database at `firestore.rules`, so the rules can be deployed on their own with:
 
 ```bash
-firebase deploy --only firestore:rules
+firebase login
+firebase deploy --only firestore
 ```
+
+**Before deploying these rules for the first time**, add every existing secretary's email to `staffInvites` in the console (see Testing the Application). Secretary access now comes from that list, so a secretary who is not on it loses access the moment the rules go live. Each secretary then needs to log in once so they appear in `secretaryDirectory` and receive patient notifications.
+
+Run the rules tests first with `npm run test:rules`, and re-check booking, record access, cancellation, reviews and the analytics page against the deployed rules afterwards.
 
 ---
 

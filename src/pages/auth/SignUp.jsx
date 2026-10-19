@@ -4,14 +4,12 @@ import { useAuth } from '../../context/AuthContext'
 import { sendEmailVerification } from 'firebase/auth'
 import { auth } from '../../firebase/config'
 
-const VALID_PRACTICE_CODE = 'NM001'
-
 export default function SignUp() {
   const [step, setStep] = useState(1)
   const [role, setRole] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
-    name: '', email: '', idNumber: '', idType: 'sa_id', password: '', practiceCode: '', agreedToTerms: false
+    name: '', email: '', idNumber: '', idType: 'sa_id', password: '', agreedToTerms: false
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -83,12 +81,6 @@ export default function SignUp() {
     if (role === 'secretary' && !formData.agreedToTerms) {
       return setError('You must agree to the terms')
     }
-    if (role === 'secretary' && !formData.practiceCode) {
-      return setError('Practice code is required')
-    }
-    if (role === 'secretary' && formData.practiceCode !== VALID_PRACTICE_CODE) {
-      return setError('Invalid practice code. Please contact your practice manager.')
-    }
 
     setLoading(true)
     setError('')
@@ -100,8 +92,7 @@ export default function SignUp() {
         formData.idNumber,
         formData.idType,
         role,
-        formData.name,
-        formData.practiceCode
+        formData.name
       )
       setStep(3)
     } catch (err) {
@@ -111,7 +102,7 @@ export default function SignUp() {
         setError('Password must be at least 6 characters.')
       } else if (err.code === 'auth/invalid-email') {
         setError('Please enter a valid email address.')
-      } else if (err.code === 'duplicate-id-number') {
+      } else if (err.code === 'duplicate-id-number' || err.code === 'not-invited') {
         setError(err.message)
       } else {
         setError('Something went wrong. Please try again.')
@@ -248,12 +239,10 @@ export default function SignUp() {
 
             {role === 'secretary' && (
               <>
-                <input
-                  placeholder="Practice code (e.g. NM001)"
-                  value={formData.practiceCode}
-                  onChange={e => setFormData({...formData, practiceCode: e.target.value})}
-                  className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
-                />
+                <p className="text-sm text-slate">
+                  Staff accounts can only be created with an email address your practice
+                  manager has approved. Use that address above.
+                </p>
                 <label className="flex items-center gap-3 text-sm text-slate cursor-pointer">
                   <input
                     type="checkbox"

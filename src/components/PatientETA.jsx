@@ -56,7 +56,12 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
   // appointment itself, or actually late.
   let assessment = null;
   if (eta) {
-    const estimatedArrival = new Date(Date.now() + eta.durationMinutes * 60000);
+    // Anchored to the moment the route was fetched. The old version used the
+    // current time on every render, so the displayed arrival time kept
+    // drifting later each time the component re-rendered.
+    const estimatedArrival = new Date(
+      eta.fetchedAt.getTime() + eta.durationMinutes * 60000,
+    );
     const recommendedArrivalBy = new Date(
       appointmentDate.getTime() - bufferMinutes * 60000,
     );
@@ -72,7 +77,7 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
     } else if (estimatedArrival <= appointmentDate) {
       assessment = {
         level: "tight",
-        message: `Leaving now gets you there around ${formatClockTime(estimatedArrival)} - later than the ${bufferMinutes}-min-early window the practice recommends, but still before your appointment time.`,
+        message: `Leaving at ${formatClockTime(eta.fetchedAt)} gets you there around ${formatClockTime(estimatedArrival)} - later than the ${bufferMinutes}-min-early window the practice recommends, but still before your appointment time.`,
       };
     } else {
       const minutesLate = Math.round(
@@ -80,7 +85,7 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
       );
       assessment = {
         level: "late",
-        message: `Leaving now, you'd likely arrive around ${formatClockTime(estimatedArrival)} - about ${minutesLate} min after your appointment time.`,
+        message: `Leaving at ${formatClockTime(eta.fetchedAt)}, you'd likely arrive around ${formatClockTime(estimatedArrival)} - about ${minutesLate} min after your appointment time.`,
         minutesLate,
       };
     }
@@ -108,7 +113,7 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
             destLat: doctor.lat,
             destLng: doctor.lng,
           });
-          setEta(result);
+          setEta({ ...result, fetchedAt: new Date() });
           setState("done");
         } catch (err) {
           setError(err.message || "Could not calculate a route.");

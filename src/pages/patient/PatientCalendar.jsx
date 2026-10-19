@@ -188,13 +188,6 @@ export default function PatientCalendar() {
   }, [myAppointments]);
 
   const selectedDayAppointments = ownAppointmentsByDate[selectedDate] || [];
-  const eligibleReviewAppointments = useMemo(
-    () =>
-      myAppointments.filter(
-        (a) => a.status !== "cancelled" && isReviewEligible(a, 15),
-      ),
-    [myAppointments],
-  );
 
   const activeBookedSlots = useMemo(
     () => bookedSlots.filter((b) => b.status !== "cancelled"),

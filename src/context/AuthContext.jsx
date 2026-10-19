@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   // Register a new user
-  async function register(email, password, idNumber, idType, role, name, practiceCode) {
+  async function register(email, password, idNumber, idType, role, name) {
     // Create the Firebase Auth account first - the duplicate-ID check below
     // reads the `users` collection, and Firestore rules require the caller
     // to be authenticated to do that. Checking before sign-up would fail
@@ -52,6 +52,22 @@ export function AuthProvider({ children }) {
     const result = await createUserWithEmailAndPassword(auth, email, password)
 
     try {
+      // Secretary accounts need an invite (staffInvites/{lowercased email},
+      // added by the practice owner in the Firebase console). Checked before
+      // anything else is written so a rejected sign-up leaves nothing behind.
+      // The Firestore rules enforce the same check independently; this only
+      // gives the person a clear error message.
+      if (role === 'secretary') {
+        const invite = await getDoc(doc(db, 'staffInvites', email.trim().toLowerCase()))
+        if (!invite.exists()) {
+          const err = new Error(
+            'This email address has not been approved for staff access. Ask your practice manager to add it, then try again.',
+          )
+          err.code = 'not-invited'
+          throw err
+        }
+      }
+
       // Two different people should never be able to register with the same
       // ID/passport number. The one deliberate exception: a secretary who
       // already has a staff account is allowed to register a *patient*
@@ -89,7 +105,6 @@ export function AuthProvider({ children }) {
       role,
       idNumber,
       idType, // 'sa_id' or 'passport'
-      practiceCode: practiceCode || '',
       hasCompletedIntake: false,
       intakeDeferred: false,
       createdAt: new Date()
@@ -182,6 +197,15 @@ useEffect(() => {
           setUserRole(data.role)
           setUserName(data.name)
           setUserIdNumber(data.idNumber || '')
+          // Secretaries list themselves (uid only) in secretaryDirectory so a
+          // patient's action can notify every secretary without being able to
+          // read the users collection. Needs a verified email, which login
+          // already requires. Idempotent, fire-and-forget.
+          if (data.role === 'secretary' && user.emailVerified) {
+            setDoc(doc(db, 'secretaryDirectory', user.uid), { uid: user.uid }).catch((e) =>
+              console.error('Could not register in the secretary directory:', e),
+            )
+          }
           // Older accounts created before this field existed won't have it —
           // treat missing as "already done" so nobody who registered before
           // this feature shipped gets an unexpected intake prompt. Staff never
