@@ -501,7 +501,8 @@ export default function PatientCalendar() {
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Check the browser console for the full Firestore error.
+            {error} Please refresh the page or try again in a moment. If it
+            keeps happening, contact the practice.
           </div>
         )}
 
@@ -768,7 +769,11 @@ export default function PatientCalendar() {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <Avatar name={doc.name || "Doctor"} character={doc.profileCharacter} size={36} />
+                      <Avatar
+                        name={doc.name || "Doctor"}
+                        character={doc.profileCharacter}
+                        size={36}
+                      />
                       <div>
                         <p className="text-sm font-medium">{doc.name}</p>
                         {doc.specialty && (

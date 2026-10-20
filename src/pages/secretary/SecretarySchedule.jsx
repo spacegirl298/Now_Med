@@ -598,7 +598,8 @@ export default function SecretarySchedule() {
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Check the browser console for the full Firestore error.
+            {error} Please refresh the page or try again in a moment. If it
+            keeps happening, contact the practice IT Department.
           </div>
         )}
 

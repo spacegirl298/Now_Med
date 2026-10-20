@@ -231,7 +231,8 @@ export default function PatientDashboard() {
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Check the browser console for the full Firestore error.
+            {error} Please refresh the page or try again in a moment. If it
+            keeps happening, contact the practice.
           </div>
         )}
 
@@ -538,7 +539,11 @@ export default function PatientDashboard() {
                       className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <Avatar name={doctor.name || "Doctor"} character={doctor.profileCharacter} size={40} />
+                        <Avatar
+                          name={doctor.name || "Doctor"}
+                          character={doctor.profileCharacter}
+                          size={40}
+                        />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-ink text-sm">

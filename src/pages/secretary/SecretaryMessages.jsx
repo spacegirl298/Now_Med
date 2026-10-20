@@ -36,7 +36,7 @@ export default function SecretaryMessages() {
   useEffect(() => {
     const onError = (err) => {
       console.error(err)
-      setLoadError('Could not load messages. Check the browser console for the Firestore error.')
+      setLoadError('Could not load messages. Please refresh the page or try again in a moment. If it keeps happening, contact the practice IT department.')
     }
     const unsubConversations = subscribeToAllConversations(setConversations, onError)
     const unsubPatients = subscribeToPatients(setPatients)
