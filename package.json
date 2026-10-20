@@ -11,7 +11,7 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-now-med \"vitest run\""
   },
   "dependencies": {
-    "firebase": "^9.14.0",
+    "firebase": "^12.13.0",
     "lucide-react": "^1.23.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@firebase/rules-unit-testing": "^2.0.7",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -28,7 +28,7 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "firebase-tools": "^14.23.0",
+    "firebase-tools": "^15.34.0",
     "globals": "^17.6.0",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
