@@ -1,4 +1,3 @@
-
 # Now Med
 
 **Real-time appointment transparency for patients, and one structured workspace for reception staff.**
@@ -9,7 +8,7 @@ Built with React, Vite, Firebase and the Google Maps API for DIGA4004A / DIGA400
 
 ## Run it
 
-You need [Node.js](https://nodejs.org/) 18 or later and an internet connection.
+You need [Node.js](https://nodejs.org/) 22.12 or later and an internet connection.
 
 ```bash
 git clone https://github.com/spacegirl298/Now_Med.git
@@ -64,7 +63,7 @@ The security rules (`firestore.rules`) have automated tests that run on a local 
 npm run test:rules
 ```
 
-This needs [Java](https://adoptium.net/) 11 or later. Manual testing results are in the project's testing report.
+This needs [Java](https://adoptium.net/) 21 or later. Manual testing results are in the project's testing report.
 
 ## Scripts
 
