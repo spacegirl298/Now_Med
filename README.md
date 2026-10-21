@@ -93,7 +93,7 @@ firebase.json   Firebase configuration
 ## Known limitations
 
 - Verification emails may land in spam (a custom sending domain is outside the current budget).
-- The ETA needs a Google Maps key, and the updated ETA on a delayed appointment could be more prominent.
+- The ETA needs a Google Maps key.
 - Analytics is functional but has had limited acceptance testing.
 - Notifications appear inside the app only; there are no push notifications.
 
