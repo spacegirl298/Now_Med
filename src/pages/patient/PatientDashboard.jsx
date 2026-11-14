@@ -44,6 +44,9 @@ import {
   updateDoctorRating,
 } from "../../firebase/firestore";
 
+// How long after its start time an online consult still counts as "next".
+const VIRTUAL_JOIN_GRACE_MINUTES = 15;
+
 export default function PatientDashboard() {
   const { currentUser, userName, intakeCompleted } = useAuth();
   const { appointments, loading, error } = useAppointments();
@@ -110,9 +113,14 @@ export default function PatientDashboard() {
         const start = a.appointmentAt?.toDate
           ? a.appointmentAt.toDate()
           : new Date(`${a.date}T${a.time}:00`);
-        // An online consult stays "upcoming" for an hour after its start
-        // time so the patient can still join once it has begun.
-        const graceMs = a.type === "virtual" ? 60 * 60 * 1000 : 0;
+        // An online consult that has a join link stays "upcoming" for a
+        // short while after its start time so the patient can still join
+        // late. With no link there is nothing to join, so it leaves the
+        // list at its start time like any other appointment.
+        const graceMs =
+          a.type === "virtual" && safeMeetingLink(a)
+            ? VIRTUAL_JOIN_GRACE_MINUTES * 60 * 1000
+            : 0;
         return start.getTime() + graceMs >= nowMs;
       })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
