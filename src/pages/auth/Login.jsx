@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import AuthShell, { inputClass, primaryButtonClass } from '../../components/AuthShell'
 import { useAuth } from '../../context/AuthContext'
 
 export default function Login() {
@@ -96,21 +96,11 @@ export default function Login() {
   }
   //Layout of the section
   return (
-    <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6 safe-top safe-bottom">
-      <div className="w-full max-w-sm mb-6">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-slate hover:text-ink py-2">
-          <ArrowLeft size={16} />
-          Back
-        </Link>
-      </div>
-      <h1 className="text-2xl font-semibold text-ink mb-1">Welcome back</h1>
-      <p className="text-slate text-sm mb-8">Log in to your Now Med account</p>
+    <AuthShell>
+      <h1 className="text-3xl font-semibold text-ink mb-1">Welcome back</h1>
+      <p className="text-slate mb-8">Log in to your Now Med account.</p>
 
-      <form
-        onSubmit={handleLogin}
-        autoComplete="on"
-        className="w-full max-w-sm flex flex-col gap-4"
-      >
+      <form onSubmit={handleLogin} autoComplete="on" className="flex flex-col gap-3">
         <input
           placeholder="Email address"
           type="email"
@@ -118,7 +108,7 @@ export default function Login() {
           autoComplete="email"
           value={email}
           onChange={e => setEmail(e.target.value)}
-          className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+          className={inputClass}
         />
 
         <div className="relative">
@@ -129,7 +119,7 @@ export default function Login() {
             autoComplete="current-password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none pr-12"
+            className={`${inputClass} pr-16`}
           />
           <button
             type="button"
@@ -140,36 +130,39 @@ export default function Login() {
           </button>
         </div>
 
-        {/* Remember me */}
-        <label className="flex items-center gap-3 text-sm text-slate cursor-pointer">
-          <input
-            type="checkbox"
-            checked={rememberMe}
-            onChange={e => setRememberMe(e.target.checked)}
-            className="accent-rose"
-          />
-          Remember me
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2.5 text-sm text-slate cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={e => setRememberMe(e.target.checked)}
+              className="accent-rose"
+            />
+            Remember me
+          </label>
+          <Link to="/forgot-password" className="text-sm text-rose font-medium py-2">
+            Forgot password?
+          </Link>
+        </div>
 
-        {error && <p className="text-red-500 text-sm">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red bg-pastel-red rounded-xl px-4 py-3">
+            {error}
+          </p>
+        )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50"
-        >
+        <button type="submit" disabled={loading} className={`${primaryButtonClass} mt-1`}>
           {loading ? 'Logging in...' : 'Log in'}
         </button>
-
-        <Link to="/forgot-password" className="text-sm text-rose text-center py-2">
-          Forgot password?
-        </Link>
-
-        <p className="text-sm text-slate text-center">
-          New to NowMed?{' '}
-          <Link to="/signup?role=patient" className="text-rose font-medium">Create an account</Link>
-        </p>
       </form>
-    </div>
+
+      <div className="mt-8 flex items-center justify-between text-sm text-slate">
+        <Link to="/" className="hover:text-ink py-2">← Back</Link>
+        <span>
+          New to Now Med?{' '}
+          <Link to="/signup?role=patient" className="text-rose font-semibold">Create an account</Link>
+        </span>
+      </div>
+    </AuthShell>
   )
 }

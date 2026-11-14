@@ -75,7 +75,7 @@ export default function Welcome() {
         </p>
         <p className="text-xs text-stone mt-1">
           Practice staff?{' '}
-          <Link to="/signup" className="underline hover:text-slate">
+          <Link to="/signup?role=secretary" className="underline hover:text-slate">
             Staff sign-up
           </Link>
         </p>

@@ -1,0 +1,14 @@
+{
+  "name": "NowMed",
+  "short_name": "NowMed",
+  "description": "Book appointments, follow your visit and message your practice.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FBEAF0",
+  "theme_color": "#993556",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

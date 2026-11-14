@@ -3,17 +3,19 @@ import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { sendEmailVerification } from 'firebase/auth'
 import { auth } from '../../firebase/config'
+import AuthShell, { inputClass, primaryButtonClass, StepBar } from '../../components/AuthShell'
 
 export default function SignUp() {
-  // "Get started" on the welcome page arrives with ?role=patient, which skips
-  // the role picker. Staff reach the picker (step 1) via the staff sign-up link.
+  // "Get started" on the welcome page arrives with ?role=patient and the staff
+  // link with ?role=secretary; both skip the role picker (step 1).
   const [searchParams] = useSearchParams()
-  const presetRole = searchParams.get('role') === 'patient' ? 'patient' : ''
+  const roleParam = searchParams.get('role')
+  const presetRole = roleParam === 'patient' || roleParam === 'secretary' ? roleParam : ''
   const [step, setStep] = useState(presetRole ? 2 : 1)
   const [role, setRole] = useState(presetRole)
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
-    name: '', email: '', idNumber: '', idType: 'sa_id', password: '', agreedToTerms: false
+    name: '', email: '', idNumber: '', idType: 'sa_id', password: ''
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -82,9 +84,6 @@ export default function SignUp() {
     if (formData.password.length < 6) {
       return setError('Password must be at least 6 characters')
     }
-    if (role === 'secretary' && !formData.agreedToTerms) {
-      return setError('You must agree to the terms')
-    }
 
     setLoading(true)
     setError('')
@@ -120,20 +119,31 @@ export default function SignUp() {
     setLoading(false)
   }
 
-  // Single main return - no early returns for any step
-  return (
-    <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6">
+  const isStaff = role === 'secretary'
+  const variant = isStaff ? 'staff' : role === 'patient' ? 'patient' : 'default'
 
+  function set(field) {
+    return e => setFormData({ ...formData, [field]: e.target.value })
+  }
+
+  function pickIdType(idType) {
+    setFormData({ ...formData, idType, idNumber: '' })
+  }
+
+  // One shell for all three steps: the brand half never moves, only the
+  // right half changes, so the flow reads as a single place.
+  return (
+    <AuthShell variant={variant}>
       {/* STEP 1 - Role selection */}
       {step === 1 && (
-        <>
-          <h1 className="text-2xl font-semibold text-ink mb-2">Create your account</h1>
-          <p className="text-slate text-sm mb-8">Who are you signing up as?</p>
+        <div>
+          <h1 className="text-3xl font-semibold text-ink mb-1">Create your account</h1>
+          <p className="text-slate mb-8">Who are you signing up as?</p>
 
-          <div className="flex flex-col gap-4 w-full max-w-sm">
+          <div className="flex flex-col gap-3">
             <button
               onClick={() => { setRole('patient'); setStep(2) }}
-              className="bg-white border-2 border-sand rounded-2xl p-6 text-left hover:border-rose transition-colors"
+              className="bg-white border-2 border-transparent rounded-2xl p-5 text-left hover:border-rose transition-colors focus-visible:outline-2 focus-visible:outline-rose"
             >
               <p className="font-semibold text-ink">Patient</p>
               <p className="text-sm text-slate mt-1">Book appointments and view your records</p>
@@ -141,96 +151,92 @@ export default function SignUp() {
 
             <button
               onClick={() => { setRole('secretary'); setStep(2) }}
-              className="bg-white border-2 border-sand rounded-2xl p-6 text-left hover:border-rose transition-colors"
+              className="bg-white border-2 border-transparent rounded-2xl p-5 text-left hover:border-rose transition-colors focus-visible:outline-2 focus-visible:outline-rose"
             >
-              <p className="font-semibold text-ink">Medical Secretary</p>
+              <p className="font-semibold text-ink">Medical secretary</p>
               <p className="text-sm text-slate mt-1">Manage appointments and patient records</p>
             </button>
-
-            <p className="text-sm text-slate text-center mt-2">
-              Already have an account?{' '}
-              <Link to="/login" className="text-rose font-medium">Log in</Link>
-            </p>
           </div>
-        </>
+
+          <p className="text-sm text-slate mt-8">
+            Already have an account?{' '}
+            <Link to="/login" className="text-rose font-semibold">Log in</Link>
+          </p>
+        </div>
       )}
 
       {/* STEP 2 - Details form */}
       {step === 2 && (
-        <>
-          <div className="w-full max-w-sm mb-8">
-            <div className="flex gap-2">
-              <div className="h-1 flex-1 rounded-full bg-rose" />
-              <div className="h-1 flex-1 rounded-full bg-rose" />
-              <div className="h-1 flex-1 rounded-full bg-sand" />
-            </div>
-            <p className="text-xs text-slate mt-2">Step 2 of 3 - Your details</p>
-          </div>
+        <form
+          onSubmit={e => { e.preventDefault(); handleSubmit() }}
+          noValidate
+        >
+          <StepBar step={2} />
+          <h1 className="text-3xl font-semibold text-ink mb-1">
+            {isStaff ? 'Create your staff account' : 'Create your account'}
+          </h1>
+          <p className="text-slate mb-6">
+            {isStaff ? 'Use your practice email address.' : 'Your details, so the practice can find you.'}
+          </p>
 
-          <div className="w-full max-w-sm flex flex-col gap-4">
+          <div className="grid sm:grid-cols-2 gap-3">
             <input
               placeholder="Full name"
+              autoComplete="name"
               value={formData.name}
-              onChange={e => setFormData({...formData, name: e.target.value})}
-              className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+              onChange={set('name')}
+              className={inputClass}
             />
-            <div>
-              <div className="flex gap-2 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setFormData({...formData, idType: 'sa_id', idNumber: ''})}
-                  className={`flex-1 rounded-xl py-2 text-sm font-medium border-2 transition-colors ${
-                    formData.idType === 'sa_id'
-                      ? 'border-rose bg-rose/10 text-rose'
-                      : 'border-sand text-slate'
-                  }`}
-                >
-                  South African ID
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({...formData, idType: 'passport', idNumber: ''})}
-                  className={`flex-1 rounded-xl py-2 text-sm font-medium border-2 transition-colors ${
-                    formData.idType === 'passport'
-                      ? 'border-rose bg-rose/10 text-rose'
-                      : 'border-sand text-slate'
-                  }`}
-                >
-                  Passport / Other ID
-                </button>
-              </div>
-              <input
-                placeholder={formData.idType === 'sa_id' ? '13-digit ID number' : 'Passport number'}
-                inputMode={formData.idType === 'sa_id' ? 'numeric' : 'text'}
-                maxLength={formData.idType === 'sa_id' ? 13 : 15}
-                value={formData.idNumber}
-                onChange={e => {
-                  const raw = e.target.value
-                  const value = formData.idType === 'sa_id' ? raw.replace(/\D/g, '') : raw
-                  setFormData({...formData, idNumber: value})
-                }}
-                className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
-              />
-              {formData.idType === 'sa_id' ? (
-                <p className="text-xs text-slate mt-1">Not a South African citizen? Switch to "Passport / Other ID" above.</p>
-              ) : (
-                <p className="text-xs text-slate mt-1">Enter the ID number exactly as it appears on your passport.</p>
-              )}
-            </div>
-            <input  
+            <input
               placeholder="Email address"
               type="email"
+              autoComplete="email"
               value={formData.email}
-              onChange={e => setFormData({...formData, email: e.target.value})}
-              className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+              onChange={set('email')}
+              className={inputClass}
+            />
+
+            <div className="sm:col-span-2 flex gap-2" role="group" aria-label="ID type">
+              {[
+                ['sa_id', 'South African ID'],
+                ['passport', 'Passport / other ID'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={formData.idType === value}
+                  onClick={() => pickIdType(value)}
+                  className={`flex-1 rounded-xl py-2.5 text-sm font-medium border-2 transition-colors ${
+                    formData.idType === value
+                      ? 'border-rose bg-blush/60 text-plum'
+                      : 'border-transparent bg-white text-slate hover:border-blush'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <input
+              placeholder={formData.idType === 'sa_id' ? '13-digit ID number' : 'Passport number'}
+              inputMode={formData.idType === 'sa_id' ? 'numeric' : 'text'}
+              maxLength={formData.idType === 'sa_id' ? 13 : 15}
+              value={formData.idNumber}
+              onChange={e => {
+                const raw = e.target.value
+                const value = formData.idType === 'sa_id' ? raw.replace(/\D/g, '') : raw
+                setFormData({ ...formData, idNumber: value })
+              }}
+              className={inputClass}
             />
             <div className="relative">
               <input
                 placeholder="Password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 value={formData.password}
-                onChange={e => setFormData({...formData, password: e.target.value})}
-                className="w-full border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none pr-12"
+                onChange={set('password')}
+                className={`${inputClass} pr-16`}
               />
               <button
                 type="button"
@@ -240,100 +246,70 @@ export default function SignUp() {
                 {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
+          </div>
 
-            {role === 'secretary' && (
-              <>
-                <p className="text-sm text-slate">
-                  Staff accounts can only be created with an email address your practice
-                  manager has approved. Use that address above.
-                </p>
-                <label className="flex items-center gap-3 text-sm text-slate cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.agreedToTerms}
-                    onChange={e => setFormData({...formData, agreedToTerms: e.target.checked})}
-                    className="accent-rose"
-                  />
-                  I confirm I am an authorised medical secretary
-                </label>
-              </>
-            )}
+          {error && (
+            <p role="alert" className="mt-4 text-sm text-red bg-pastel-red rounded-xl px-4 py-3">
+              {error}
+            </p>
+          )}
 
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+          <button type="submit" disabled={loading} className={`${primaryButtonClass} mt-6`}>
+            {loading ? 'Creating account...' : 'Continue'}
+          </button>
 
+          <div className="mt-5 flex items-center justify-between text-sm text-slate">
             <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Creating account...' : 'Continue'}
-            </button>
-
-            <button
+              type="button"
               onClick={() => (presetRole ? navigate('/') : setStep(1))}
-              className="text-sm text-slate text-center hover:text-ink py-2"
+              className="hover:text-ink py-2"
             >
               ← Back
             </button>
+            <span>
+              Already have an account?{' '}
+              <Link to="/login" className="text-rose font-semibold">Log in</Link>
+            </span>
           </div>
-        </>
+        </form>
       )}
 
       {/* STEP 3 - Email verification with countdown */}
       {step === 3 && (
-        <>
-          <div className="w-full max-w-sm mb-8">
-            <div className="flex gap-2">
-              <div className="h-1 flex-1 rounded-full bg-rose" />
-              <div className="h-1 flex-1 rounded-full bg-rose" />
-              <div className="h-1 flex-1 rounded-full bg-rose" />
-            </div>
-            <p className="text-xs text-slate mt-2">Step 3 of 3 - Verify your email</p>
-          </div>
-
-          <h2 className="text-xl font-semibold text-ink mb-2">Check your email</h2>
-          <p className="text-slate text-sm text-center mb-2">
-            We sent a verification link to <strong>{formData.email}</strong>.
-            Click the link to activate your account.
+        <div>
+          <StepBar step={3} />
+          <h1 className="text-3xl font-semibold text-ink mb-2">Check your email</h1>
+          <p className="text-slate mb-1">
+            We sent a verification link to <strong className="text-ink">{formData.email}</strong>.
+            Open it to activate your account.
           </p>
-          <p className="text-amber-600 text-xs text-center mb-8">
-            ⚠️ Can't find it? Check your spam or junk folder.
-          </p>
+          <p className="text-sm text-amber mb-6">Can't find it? Check your spam or junk folder.</p>
 
-          {/* Countdown box - always visible */}
-          <div className="bg-white rounded-2xl p-4 w-full max-w-sm text-center shadow-sm mb-6">
+          <div className="bg-white rounded-2xl p-5 flex items-center justify-between gap-4 mb-3">
             {canResend ? (
               <>
-                <p className="text-slate text-sm mb-3">Didn't receive the email?</p>
-                <button
-                  onClick={handleResend}
-                  className="text-rose font-medium text-sm hover:underline"
-                >
-                  Resend verification email
+                <p className="text-slate text-sm">Didn't receive it?</p>
+                <button onClick={handleResend} className="text-rose font-semibold text-sm hover:underline">
+                  Resend email
                 </button>
               </>
             ) : (
               <>
-                <p className="text-slate text-sm mb-1">Email resend available in</p>
-                <p className="text-4xl font-semibold text-rose">{countdown}</p>
-                <p className="text-slate text-xs mt-1">seconds</p>
+                <p className="text-slate text-sm">You can resend the email in</p>
+                <p className="text-3xl font-semibold text-rose tabular-nums">{countdown}s</p>
               </>
             )}
           </div>
 
           {resendMessage && (
-            <p className="text-green-600 text-sm text-center mb-4">{resendMessage}</p>
+            <p role="status" className="text-green text-sm mb-3">{resendMessage}</p>
           )}
 
-          <button
-            onClick={() => navigate('/login')}
-            className="bg-rose text-white rounded-xl px-8 py-3 font-medium hover:bg-plum transition-colors"
-          >
-            Go to Login
+          <button onClick={() => navigate('/login')} className={`${primaryButtonClass} mt-3`}>
+            Go to log in
           </button>
-        </>
+        </div>
       )}
-
-    </div>
+    </AuthShell>
   )
 }

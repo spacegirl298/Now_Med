@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { sendEmailVerification } from 'firebase/auth'
+import AuthShell, { primaryButtonClass } from '../../components/AuthShell'
 
 export default function EmailVerification() {
   const { currentUser } = useAuth()
@@ -51,41 +52,34 @@ export default function EmailVerification() {
   }
 
   return (
-    <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6">
-      <h1 className="text-2xl font-semibold text-ink mb-2">Verify your email</h1>
-      <p className="text-slate text-sm text-center mb-2">
-        We sent a verification link to your email address.
-        Click the link to activate your account.
+    <AuthShell>
+      <h1 className="text-3xl font-semibold text-ink mb-2">Verify your email</h1>
+      <p className="text-slate mb-1">
+        We sent a verification link to your email address. Open it to activate your account.
       </p>
-      <p className="text-amber-600 text-xs text-center mb-8">
-        ⚠️ Can't find it? Check your spam or junk folder.
-      </p>
+      <p className="text-sm text-amber mb-6">Can't find it? Check your spam or junk folder.</p>
 
-      {message && (
-        <p className="text-green-600 text-sm mb-4 text-center">{message}</p>
-      )}
+      {message && <p role="status" className="text-sm text-green mb-3">{message}</p>}
 
-      {/* Countdown or resend button */}
-      {canResend ? (
-        <button
-          onClick={handleResend}
-          className="text-rose text-sm mb-6 hover:underline font-medium"
-        >
-          Resend verification email
-        </button>
-      ) : (
-        <p className="text-slate text-sm mb-6">
-          Resend available in{' '}
-          <span className="text-rose font-medium">{countdown}s</span>
-        </p>
-      )}
+      <div className="bg-white rounded-2xl p-5 flex items-center justify-between gap-4 mb-3">
+        {canResend ? (
+          <>
+            <p className="text-slate text-sm">Didn't receive it?</p>
+            <button onClick={handleResend} className="text-rose font-semibold text-sm hover:underline">
+              Resend email
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-slate text-sm">You can resend the email in</p>
+            <p className="text-3xl font-semibold text-rose tabular-nums">{countdown}s</p>
+          </>
+        )}
+      </div>
 
-      <Link
-        to="/login"
-        className="bg-rose text-white rounded-xl px-8 py-3 font-medium hover:bg-plum transition-colors"
-      >
-        Go to Login
+      <Link to="/login" className={`${primaryButtonClass} block text-center mt-3`}>
+        Go to log in
       </Link>
-    </div>
+    </AuthShell>
   )
 }

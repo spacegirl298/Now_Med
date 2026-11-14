@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import AuthShell, { inputClass, primaryButtonClass } from "../../components/AuthShell";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -50,36 +51,45 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6">
-      <h1 className="text-2xl font-semibold text-ink mb-1">Reset password</h1>
-      <p className="text-slate text-sm mb-8">
-        We'll send a reset link to your email
-      </p>
+    <AuthShell>
+      <h1 className="text-3xl font-semibold text-ink mb-1">Reset your password</h1>
+      <p className="text-slate mb-8">We'll email you a link to set a new one.</p>
 
-      <div className="w-full max-w-sm flex flex-col gap-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleReset();
+        }}
+        className="flex flex-col gap-3"
+      >
         <input
           placeholder="Email address"
           type="email"
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="border border-stone rounded-xl px-4 py-3 text-ink focus:border-rose focus:outline-none"
+          className={inputClass}
         />
 
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-        {message && <p className="text-green-600 text-sm">{message}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red bg-pastel-red rounded-xl px-4 py-3">
+            {error}
+          </p>
+        )}
+        {message && (
+          <p role="status" className="text-sm text-green bg-pastel-green rounded-xl px-4 py-3">
+            {message}
+          </p>
+        )}
 
-        <button
-          onClick={handleReset}
-          disabled={loading}
-          className="bg-rose text-white rounded-xl py-3 font-medium hover:bg-plum transition-colors disabled:opacity-50"
-        >
+        <button type="submit" disabled={loading} className={`${primaryButtonClass} mt-1`}>
           {loading ? "Sending..." : "Send reset link"}
         </button>
+      </form>
 
-        <Link to="/login" className="text-sm text-slate text-center">
-          ← Back to login
-        </Link>
-      </div>
-    </div>
+      <Link to="/login" className="inline-block mt-8 text-sm text-slate hover:text-ink py-2">
+        ← Back to log in
+      </Link>
+    </AuthShell>
   );
 }

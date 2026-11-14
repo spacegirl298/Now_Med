@@ -1821,10 +1821,7 @@ export async function createChangeRequest({
     });
   } catch (err) {
     // Best-effort - the request itself has already been saved either way.
-    console.error(
-      "Change request saved, but the secretary notification failed:",
-      err,
-    );
+    console.error("Change request saved, but the secretary notification failed:", err);
   }
 
   return ref.id;

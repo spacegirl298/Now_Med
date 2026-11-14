@@ -41,7 +41,8 @@ function ProtectedRoute({ children, allowedRole }) {
   // Signed in but not verified yet (they are still on the sign-up flow):
   // nothing behind this wall works until the email is verified - staff access
   // in particular is denied by Firestore - so park them on the verify screen.
-  if (!currentUser.emailVerified) return <Navigate to="/verify-email" replace />;
+  if (!currentUser.emailVerified)
+    return <Navigate to="/verify-email" replace />;
 
   // Signed in, but no role resolved (the user doc is missing or couldn't be
   // read). Never guess a dashboard for them - that used to bounce patients
