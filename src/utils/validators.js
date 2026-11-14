@@ -58,6 +58,18 @@ export const GENDER_OPTIONS = [
 // Delay durations offered when a secretary marks an appointment as running late
 export const DELAY_OPTIONS = [10, 20, 30, 45];
 
+// Why the doctor/practice ran late. `value` is what gets stored on the
+// appointment (delayReason) and used by the analytics page; `label` is what
+// staff see. Add new reasons at the end so older records keep their meaning.
+export const DELAY_REASONS = [
+  { value: "previous_overran", label: "Previous consultation ran over" },
+  { value: "emergency", label: "Emergency / urgent case" },
+  { value: "procedure", label: "Procedure took longer than planned" },
+  { value: "doctor_late", label: "Doctor arrived late" },
+  { value: "admin_system", label: "Admin or system issue" },
+  { value: "other", label: "Other" },
+];
+
 export const APPOINTMENT_TYPES = ["in-person", "virtual"];
 
 // 'booked' = on the calendar but the patient hasn't confirmed yet.

@@ -34,7 +34,11 @@ import {
   isPastDate,
   parseDate,
 } from "../../utils/dateHelpers";
-import { DELAY_OPTIONS, CONFIRMATION_METHODS } from "../../utils/validators";
+import {
+  DELAY_OPTIONS,
+  DELAY_REASONS,
+  CONFIRMATION_METHODS,
+} from "../../utils/validators";
 import {
   getAllPatients,
   getUserByIdNumber,
@@ -104,6 +108,7 @@ export default function SecretarySchedule() {
   const [delayTarget, setDelayTarget] = useState(null);
   const [delayMinutes, setDelayMinutes] = useState(DELAY_OPTIONS[0]);
   const [delayNote, setDelayNote] = useState("");
+  const [delayReason, setDelayReason] = useState("");
 
   const [lateTarget, setLateTarget] = useState(null);
   const [lateMinutes, setLateMinutes] = useState(DELAY_OPTIONS[0]);
@@ -414,10 +419,17 @@ export default function SecretarySchedule() {
   async function handleConfirmDelay() {
     if (!delayTarget) return;
     const newTime = addMinutesToTime(delayTarget.time, delayMinutes);
-    await markAppointmentDelay(delayTarget, delayMinutes, delayNote, newTime);
+    await markAppointmentDelay(
+      delayTarget,
+      delayMinutes,
+      delayNote,
+      newTime,
+      delayReason,
+    );
     setDelayTarget(null);
     setDelayMinutes(DELAY_OPTIONS[0]);
     setDelayNote("");
+    setDelayReason("");
   }
 
   async function handleConfirmLate() {
@@ -1169,6 +1181,19 @@ export default function SecretarySchedule() {
             </button>
           ))}
         </div>
+        <label className="text-xs text-slate mb-1 block">Reason</label>
+        <select
+          value={delayReason}
+          onChange={(e) => setDelayReason(e.target.value)}
+          className="w-full border border-stone rounded-xl px-4 py-3 mb-4 text-ink bg-white focus:border-rose focus:outline-none"
+        >
+          <option value="">Select a reason (used in analytics)</option>
+          {DELAY_REASONS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
         <label className="text-xs text-slate mb-1 block">Note (optional)</label>
         <textarea
           value={delayNote}

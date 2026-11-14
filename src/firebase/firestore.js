@@ -20,6 +20,7 @@ import {
   limit,
   increment,
   setDoc,
+  arrayUnion,
 } from "firebase/firestore";
 import { db, auth } from "./config";
 
@@ -797,12 +798,34 @@ export async function markAppointmentDelay(
   delayMinutes,
   note,
   newTime,
+  reason = "",
 ) {
+  // Keep a record of every delay update (a delay can be revised, e.g. 10 min
+  // then 30 min) instead of only the latest value, so the analytics page can
+  // report how often and why the doctor ran late. Timestamp.now() is used
+  // because serverTimestamp() isn't allowed inside arrayUnion().
+  const entry = {
+    minutes: delayMinutes,
+    reason: reason || "",
+    note: note || "",
+    markedAt: Timestamp.now(),
+    markedBy: auth.currentUser?.uid || null,
+  };
+
   await updateAppointment(appointment.id, {
     status: "delayed",
+    // "delayed" replaces booked/confirmed in `status`, so remember what it
+    // was. Only set the first time - a second delay update must not overwrite
+    // the original status with "delayed".
+    ...(appointment.status !== "delayed" && {
+      statusBeforeDelay: appointment.status || "booked",
+    }),
     delayMinutes,
     delayNote: note || "",
+    delayReason: reason || "",
     delayedTime: newTime,
+    delayedAt: serverTimestamp(),
+    delayHistory: arrayUnion(entry),
   });
 
   if (appointment.doctorId && appointment.date) {

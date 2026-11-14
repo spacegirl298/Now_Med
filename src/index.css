@@ -25,3 +25,41 @@
   --color-pastel-blue: #E6F1FB; /*Pending background*/ 
 }
 
+
+
+/* ---------- Print / "Save as PDF" for the analytics report ----------
+   Only the element with id="analytics-report" is printed; the sidebar,
+   tab bar and buttons are hidden. Works with the browser's built-in
+   "Save as PDF" destination, so no PDF library is needed. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #analytics-report,
+  #analytics-report * {
+    visibility: visible;
+  }
+  #analytics-report {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #analytics-report * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    box-shadow: none !important;
+  }
+}
