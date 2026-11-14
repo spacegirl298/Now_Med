@@ -47,6 +47,7 @@ import {
   REVIEW_PROMPT_DELAY_MINUTES,
 } from "../../utils/dateHelpers";
 import { generateMeetingLink, safeMeetingLink } from "../../utils/meeting";
+import JoinLink from "../../components/JoinLink";
 import {
   subscribeToDoctors,
   subscribeToBookedSlots,
@@ -719,14 +720,11 @@ export default function PatientCalendar() {
                                   {a.type} consult
                                 </p>
                                 {safeMeetingLink(a) && a.status !== "cancelled" && (
-                                  <a
-                                    href={safeMeetingLink(a)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-rose rounded-lg px-3 py-2 hover:bg-plum transition-colors"
-                                  >
-                                    <Video size={13} /> Join online consult
-                                  </a>
+                                  <JoinLink
+                                    appointment={a}
+                                    variant="pill"
+                                    className="mt-2"
+                                  />
                                 )}
                                 <p className="text-xs text-slate mt-1">
                                   {a.doctorName

@@ -5,18 +5,7 @@
 // which scopes the Firestore query by role).
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  CalendarPlus,
-  Clock,
-  FileText,
-  CalendarCheck,
-  CalendarClock,
-  Phone,
-  ClipboardList,
-  ChevronDown,
-  Video,
-  Sparkles,
-} from "lucide-react";
+import { CalendarPlus, Clock, FileText, CalendarCheck, CalendarClock, Phone, ClipboardList, ChevronDown, Sparkles } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
 import PatientLayout from "./PatientLayout";
@@ -36,6 +25,7 @@ import {
   REVIEW_PROMPT_DELAY_MINUTES,
 } from "../../utils/dateHelpers";
 import { safeMeetingLink } from "../../utils/meeting";
+import JoinLink from "../../components/JoinLink";
 import {
   subscribeToPatientRecords,
   subscribeToDoctorRatings,
@@ -389,23 +379,7 @@ export default function PatientDashboard() {
 
             {nextAppointment.type === "virtual" ? (
               <div className="mt-3 pt-3 border-t border-sand">
-                {safeMeetingLink(nextAppointment) ? (
-                  <a
-                    href={safeMeetingLink(nextAppointment)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full flex items-center justify-center gap-2 bg-rose text-white rounded-xl py-3 text-sm font-medium hover:bg-plum transition-colors"
-                  >
-                    <Video size={18} />
-                    Join online consult
-                  </a>
-                ) : (
-                  <p className="text-xs text-slate flex items-center gap-1.5">
-                    <Video size={14} className="text-rose shrink-0" />
-                    Your online meeting link will appear here once the practice
-                    has sent it.
-                  </p>
-                )}
+                <JoinLink appointment={nextAppointment} />
                 <p className="text-xs text-slate mt-2">
                   This is an online visit - there's no need to travel to the
                   practice.
@@ -738,14 +712,7 @@ export default function PatientDashboard() {
                         {a.type} consult
                       </p>
                       {a.type === "virtual" && safeMeetingLink(a) ? (
-                        <a
-                          href={safeMeetingLink(a)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs font-medium text-rose hover:underline inline-flex items-center gap-1"
-                        >
-                          <Video size={12} /> Join online
-                        </a>
+                        <JoinLink appointment={a} variant="text" />
                       ) : (
                         a.practice && (
                           <p className="text-xs text-slate">{a.practice}</p>

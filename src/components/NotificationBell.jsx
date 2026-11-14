@@ -164,7 +164,7 @@ export default function NotificationBell({
                     }`}
                   >
                     <p className="text-sm text-ink break-words">{text}</p>
-                    {link && (
+                    {link && userRole !== "patient" && (
                       <a
                         href={link}
                         target="_blank"
