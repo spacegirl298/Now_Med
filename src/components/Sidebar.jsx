@@ -52,7 +52,7 @@ export default function Sidebar({ role = "secretary" }) {
   async function handleLogout() {
     try {
       await logout();
-      navigate("/login", { replace: true });
+      navigate("/", { replace: true });
     } catch (error) {
       console.error("Could not log out:", error);
     }

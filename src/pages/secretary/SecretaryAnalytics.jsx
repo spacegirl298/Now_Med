@@ -208,7 +208,7 @@ export default function SecretaryAnalytics() {
 
   return (
     <SecretaryLayout>
-      <div className="p-6 md:p-8 max-w-6xl mx-auto md:pr-24">
+      <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto md:pr-24">
         {/* Controls (hidden when printing) */}
         <div className="no-print flex flex-wrap items-end justify-between gap-4 mb-6">
           <div className="min-w-0">
@@ -225,7 +225,7 @@ export default function SecretaryAnalytics() {
               value={preset}
               onChange={(e) => choosePreset(e.target.value)}
               aria-label="Date range"
-              className="rounded-xl bg-white shadow-sm px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-rose"
+              className="rounded-xl bg-white shadow-sm px-3 py-2.5 text-base md:text-sm text-ink focus:outline-none focus:ring-2 focus:ring-rose"
             >
               {Object.entries(presets).map(([key, p]) => (
                 <option key={key} value={key}>
@@ -280,7 +280,7 @@ export default function SecretaryAnalytics() {
               value={doctorId}
               onChange={(e) => setDoctorId(e.target.value)}
               aria-label="Doctor"
-              className="rounded-xl bg-white shadow-sm px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-rose"
+              className="rounded-xl bg-white shadow-sm px-3 py-2.5 text-base md:text-sm text-ink focus:outline-none focus:ring-2 focus:ring-rose"
             >
               <option value="all">All doctors</option>
               {doctorOptions.map((d) => (
@@ -352,7 +352,7 @@ export default function SecretaryAnalytics() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               <Stat
                 icon={CalendarRange}
                 tone="bg-blush text-rose"
@@ -433,7 +433,7 @@ export default function SecretaryAnalytics() {
                         </p>
                       </div>
                       <p className="text-sm text-slate mt-1">{describeDoctor(d)}</p>
-                      <dl className="grid grid-cols-4 gap-2 mt-3 text-center">
+                      <dl className="grid grid-cols-2 min-[420px]:grid-cols-4 gap-2 mt-3 text-center">
                         {[
                           [d.booked, "Appts"],
                           [d.uniqueClients, "Clients"],

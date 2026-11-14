@@ -56,25 +56,25 @@ export default function PatientProfile() {
 
   return (
     <PatientLayout>
-      <div className="p-6 md:p-8 max-w-2xl mx-auto flex flex-col gap-6">
+      <div className="p-4 sm:p-6 md:p-8 max-w-2xl mx-auto flex flex-col gap-6">
         <BackButton />
         <h1 className="text-2xl font-semibold text-ink -mt-2">My Profile</h1>
 
         <Card>
           <div className="flex items-center gap-4 mb-5">
             <Avatar name={name || currentUser?.email} size={56} />
-            <div>
-              <p className="font-medium text-ink">{name || 'Patient'}</p>
-              <p className="text-sm text-slate">{currentUser?.email}</p>
+            <div className="min-w-0">
+              <p className="font-medium text-ink break-words">{name || 'Patient'}</p>
+              <p className="text-sm text-slate break-all">{currentUser?.email}</p>
               <p className="text-xs text-slate capitalize mt-1">{userRole}</p>
             </div>
           </div>
 
           {signupInfo && (
-            <div className="grid grid-cols-2 gap-3 mb-5 text-sm">
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 mb-5 text-sm">
               <div className="bg-mist rounded-xl px-3 py-2">
                 <p className="text-xs text-slate">ID / passport number</p>
-                <p className="text-ink">{signupInfo.idNumber || '-'}</p>
+                <p className="text-ink break-all">{signupInfo.idNumber || '-'}</p>
               </div>
               <div className="bg-mist rounded-xl px-3 py-2">
                 <p className="text-xs text-slate">ID type</p>

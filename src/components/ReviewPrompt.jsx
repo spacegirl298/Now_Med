@@ -12,7 +12,11 @@ import { Star, X } from "lucide-react";
 import Card from "./Card";
 import Button from "./Button";
 import StarRating from "./StarRating";
-import { isReviewEligible, formatShortDate } from "../utils/dateHelpers";
+import {
+  isReviewEligible,
+  formatShortDate,
+  REVIEW_PROMPT_DELAY_MINUTES,
+} from "../utils/dateHelpers";
 import {
   getDoctorRatingByAppointment,
   createDoctorRating,
@@ -22,7 +26,7 @@ import {
 export default function ReviewPrompt({
   appointments,
   patientId,
-  bufferMinutes = 15,
+  bufferMinutes = REVIEW_PROMPT_DELAY_MINUTES,
 }) {
   // Remembers how many pending reviews there were when the card was closed, so it
   // re-opens by itself if that number changes (new visit to review).
@@ -41,11 +45,38 @@ export default function ReviewPrompt({
   // Candidate pool: eligible appointments, oldest first. We check them one
   // at a time because getDoctorRatingByAppointment is a single getDoc and we
   // want to surface every unreviewed visit, not just the first one.
+  //
+  // `tick` is bumped by the timer below at the exact moment the next visit
+  // becomes reviewable, so the prompt appears on time without the patient
+  // having to refresh (eligibility depends on the clock, which useMemo
+  // can't see on its own).
+  const [tick, setTick] = useState(0);
   const eligiblePool = useMemo(() => {
     return appointments
       .filter((a) => isReviewEligible(a, bufferMinutes))
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  }, [appointments, bufferMinutes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointments, bufferMinutes, tick]);
+
+  useEffect(() => {
+    const nowMs = Date.now();
+    let soonest = Infinity;
+    for (const a of appointments) {
+      if (!a || a.status === "cancelled") continue;
+      const start = a.appointmentAt?.toDate
+        ? a.appointmentAt.toDate()
+        : new Date(`${a.date}T${a.time}:00`);
+      const wait = start.getTime() + bufferMinutes * 60000 - nowMs;
+      if (wait > 0 && wait < soonest) soonest = wait;
+    }
+    if (!Number.isFinite(soonest)) return;
+    // setTimeout caps at ~24.8 days; anything further out just re-checks then.
+    const id = setTimeout(
+      () => setTick((t) => t + 1),
+      Math.min(soonest + 500, 2147483000),
+    );
+    return () => clearTimeout(id);
+  }, [appointments, bufferMinutes, tick]);
 
   // Derived values (no effect needed). When there is nothing eligible the
   // stored list can be stale, so mask it rather than resetting it in an effect.

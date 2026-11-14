@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { X, ChevronLeft } from "lucide-react";
 
 // Generic confirmation / form modal. Confirming and cancelling always use
@@ -21,6 +22,22 @@ export default function Modal({
   onBack = null, // if set, shows a back chevron instead of the close X
   hideClose = false, // hide the header icon entirely (back or close)
 }) {
+  // Stop the page behind the modal from scrolling (matters on phones, where
+  // the sheet covers most of the screen), and let Escape close it.
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e) => {
+      if (e.key === "Escape" && onClose) onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const confirmClasses =
@@ -31,10 +48,12 @@ export default function Modal({
   const isDark = headerVariant === "dark";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-lg max-h-[90vh] overflow-y-auto">
+    // Bottom sheet on phones (thumb-reachable, full width), centred dialog
+    // from the sm breakpoint up.
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-ink/40">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-lg max-h-[92dvh] sm:max-h-[90dvh] flex flex-col">
         <div
-          className={`flex items-center gap-3 px-6 py-4 border-b ${
+          className={`shrink-0 flex items-center gap-3 px-4 sm:px-6 py-4 border-b rounded-t-2xl ${
             isDark ? "bg-rose border-rose" : "border-sand"
           }`}
         >
@@ -52,7 +71,7 @@ export default function Modal({
             </button>
           )}
           <h2
-            className={`text-lg font-semibold flex-1 ${isDark ? "text-white" : "text-ink"}`}
+            className={`text-lg font-semibold flex-1 min-w-0 break-words ${isDark ? "text-white" : "text-ink"}`}
           >
             {title}
           </h2>
@@ -71,10 +90,10 @@ export default function Modal({
           )}
         </div>
 
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-4 sm:px-6 py-5 overflow-y-auto flex-1 min-h-0">{children}</div>
 
         {!hideFooter && (
-          <div className="flex gap-3 px-6 py-4 border-t border-sand">
+          <div className="shrink-0 flex gap-3 px-4 sm:px-6 py-4 border-t border-sand safe-bottom">
             <button
               onClick={onClose}
               className="flex-1 border border-stone text-ink rounded-xl py-3 font-medium hover:border-rose transition-colors"

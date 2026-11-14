@@ -91,7 +91,7 @@ export default function SecretaryDashboard() {
 
   return (
     <SecretaryLayout>
-      <div className="p-6 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
         <h1 className="text-2xl font-semibold text-ink">
           {greetingForNow()}, {displayName}
         </h1>
@@ -99,13 +99,12 @@ export default function SecretaryDashboard() {
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Please refresh the page or try again in a moment. If it
-            keeps happening, contact the practice IT Department.
+            {error}
           </div>
         )}
 
         {/* Stat cards */}
-        <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 md:gap-4 mb-6">
           <Card className="text-center md:text-left">
             <p className="text-2xl md:text-3xl font-semibold text-ink">
               {todaysAppointments.length}

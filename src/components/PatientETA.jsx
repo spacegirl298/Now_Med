@@ -116,7 +116,11 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
           setEta({ ...result, fetchedAt: new Date() });
           setState("done");
         } catch (err) {
-          setError(err.message || "Could not calculate a route.");
+          // Never show developer text (e.g. a missing API key) to patients.
+          console.error("ETA lookup failed:", err);
+          setError(
+            "We couldn't work out your travel time right now. You can still open directions below.",
+          );
           setState("error");
         }
       },

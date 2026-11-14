@@ -390,7 +390,7 @@ export default function PatientRecords() {
 
   return (
     <PatientLayout>
-      <div className="p-6 md:p-8 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto">
         <BackButton />
         <div className="flex items-start justify-between gap-4 mb-1">
           <h1 className="text-2xl font-semibold text-ink">Medical records</h1>
@@ -406,12 +406,12 @@ export default function PatientRecords() {
           yourself; for anything clinical, use “Request a change” and the practice will update it.
         </p>
 
-        <div className="flex gap-2 mb-6 overflow-x-auto">
+        <div className="flex gap-2 mb-6 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              className={`px-4 py-2 rounded-full text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                 activeTab === tab.id ? 'bg-rose text-white' : 'bg-mist text-slate hover:bg-sand'
               }`}
             >
@@ -718,7 +718,7 @@ export default function PatientRecords() {
               className={inputClasses}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Emergency contact name">
               <input
                 value={editForm.emergencyContactName || ''}
@@ -739,7 +739,7 @@ export default function PatientRecords() {
               )}
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Medical aid provider">
               <input
                 value={editForm.medicalAidProvider || ''}

@@ -72,8 +72,8 @@ export default function PatientMessages() {
 
   return (
     <PatientLayout>
-      <div className="flex flex-col h-[calc(100dvh-5rem)] md:h-screen max-w-3xl mx-auto w-full">
-        <div className="px-6 md:px-8 pt-6 pb-4">
+      <div className="flex flex-col h-[calc(100dvh-8.5rem-env(safe-area-inset-bottom))] md:h-screen max-w-3xl mx-auto w-full">
+        <div className="px-4 sm:px-6 md:px-8 pt-4 md:pt-6 pb-3 md:pb-4">
           <h1 className="text-2xl font-semibold text-ink mb-1">Messages</h1>
           <p className="text-slate text-sm">
             Chat with the practice. For anything urgent, call the practice or
@@ -87,7 +87,7 @@ export default function PatientMessages() {
           </div>
         )}
 
-        <div className="flex-1 min-h-0 mx-4 md:mx-8 mb-4 bg-mist rounded-2xl overflow-hidden">
+        <div className="flex-1 min-h-0 mx-3 sm:mx-4 md:mx-8 mb-3 md:mb-4 bg-mist rounded-2xl overflow-hidden">
           <ChatThread
             messages={messages}
             myRole="patient"

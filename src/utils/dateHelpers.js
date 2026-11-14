@@ -172,7 +172,14 @@ export function minutesSinceAppointment(appointment) {
   return (Date.now() - start.getTime()) / 60000;
 }
 
-export function isReviewEligible(appointment, bufferMinutes = 15) {
+// How long after a visit starts before the patient is asked to review it.
+// One constant so the prompt, the calendar and the docs can't drift apart.
+export const REVIEW_PROMPT_DELAY_MINUTES = 15;
+
+export function isReviewEligible(
+  appointment,
+  bufferMinutes = REVIEW_PROMPT_DELAY_MINUTES,
+) {
   // The patient should be able to review a visit shortly after their
   // appointment time, without waiting for a separate dashboard reminder.
   // A 15-minute grace keeps the prompt useful after the session finishes,

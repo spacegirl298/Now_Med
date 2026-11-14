@@ -104,7 +104,7 @@ export default function ChatThread({
                 )}
                 <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                    className={`max-w-[85%] break-words rounded-2xl px-4 py-2.5 ${
                       isReminder
                         ? 'bg-pastel-amber text-ink rounded-bl-md'
                         : mine
@@ -153,7 +153,7 @@ export default function ChatThread({
             rows={1}
             maxLength={MAX_LENGTH}
             aria-label="Message"
-            className="flex-1 resize-none max-h-32 border border-stone rounded-xl px-4 py-2.5 text-sm text-ink focus:border-rose focus:outline-none"
+            className="flex-1 resize-none max-h-32 border border-stone rounded-xl px-4 py-2.5 text-base md:text-sm text-ink focus:border-rose focus:outline-none"
           />
           <button
             type="button"

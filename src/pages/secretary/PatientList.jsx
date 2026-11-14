@@ -52,7 +52,7 @@ export default function PatientList() {
 
   return (
     <SecretaryLayout>
-      <div className="p-6 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-ink">Patients</h1>
           <p className="text-sm text-slate mt-1">Search and open a patient's full record.</p>
@@ -65,7 +65,7 @@ export default function PatientList() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search by name, email, or ID number..."
-              className="w-full border border-stone rounded-xl pl-10 pr-4 py-3 text-ink focus:border-rose focus:outline-none"
+              className="w-full border border-stone rounded-xl pl-10 pr-4 py-3 text-base md:text-sm text-ink focus:border-rose focus:outline-none"
             />
           </div>
         </Card>

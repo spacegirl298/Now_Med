@@ -63,3 +63,37 @@
     box-shadow: none !important;
   }
 }
+
+/* ---------- Splash screen ---------- */
+.splash-word { animation: splash-rise 0.6s ease-out both; }
+.splash-tagline { animation: splash-rise 0.6s ease-out 0.4s both; }
+.splash-now-now { display: inline-block; text-decoration: line-through; text-decoration-color: transparent; animation: splash-strike 0.5s ease-in-out 1.2s forwards; }
+.splash-bar { animation: splash-slide 1.1s ease-in-out infinite; }
+@keyframes splash-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes splash-strike { to { text-decoration-color: currentColor; opacity: 0.55; } }
+@keyframes splash-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }
+@media (prefers-reduced-motion: reduce) {
+  .splash-word, .splash-tagline, .splash-now-now, .splash-bar { animation: none; }
+  .splash-bar { width: 100%; }
+}
+
+/* ---------- Mobile polish ---------- */
+html, body { overflow-x: hidden; }
+body { -webkit-tap-highlight-color: transparent; }
+/* iOS zooms the page when a focused field is under 16px; keep forms at 16px
+   on phones without touching the desktop type scale. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+/* Room for the home-indicator / gesture bar under the fixed tab bar. */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top { padding-top: env(safe-area-inset-top); }
+@keyframes toast-in {
+  from { transform: translateY(-12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.toast-in { animation: toast-in 0.25s ease-out; }

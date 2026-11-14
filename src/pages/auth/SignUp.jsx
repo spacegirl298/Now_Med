@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { sendEmailVerification } from 'firebase/auth'
 import { auth } from '../../firebase/config'
 
 export default function SignUp() {
-  const [step, setStep] = useState(1)
-  const [role, setRole] = useState('')
+  // "Get started" on the welcome page arrives with ?role=patient, which skips
+  // the role picker. Staff reach the picker (step 1) via the staff sign-up link.
+  const [searchParams] = useSearchParams()
+  const presetRole = searchParams.get('role') === 'patient' ? 'patient' : ''
+  const [step, setStep] = useState(presetRole ? 2 : 1)
+  const [role, setRole] = useState(presetRole)
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
     name: '', email: '', idNumber: '', idType: 'sa_id', password: '', agreedToTerms: false
@@ -266,8 +270,8 @@ export default function SignUp() {
             </button>
 
             <button
-              onClick={() => setStep(1)}
-              className="text-sm text-slate text-center hover:text-ink"
+              onClick={() => (presetRole ? navigate('/') : setStep(1))}
+              className="text-sm text-slate text-center hover:text-ink py-2"
             >
               ← Back
             </button>

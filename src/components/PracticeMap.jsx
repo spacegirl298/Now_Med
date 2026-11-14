@@ -40,7 +40,11 @@ export default function PracticeMap({ lat, lng, label }) {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || "Could not load the map.");
+        if (!cancelled) {
+          // Technical detail (e.g. missing API key) stays in the console.
+          console.error("Map failed to load:", err);
+          setError("The map isn't available right now - use the directions link below.");
+        }
       });
 
     return () => {

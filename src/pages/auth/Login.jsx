@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 export default function Login() {
@@ -82,6 +83,8 @@ export default function Login() {
         setError('Incorrect email or password')
       } else if (err.code === 'auth/user-not-found') {
         setError('No account found with this email')
+      } else if (err.code === 'auth/no-profile') {
+        setError("We couldn't load your profile. Check your connection and try again.")
       } else if (err.code === 'auth/too-many-requests') {
         setError('Too many attempts. Please try again later.')
       } else {
@@ -93,7 +96,13 @@ export default function Login() {
   }
   //Layout of the section
   return (
-    <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-mist flex flex-col items-center justify-center p-6 safe-top safe-bottom">
+      <div className="w-full max-w-sm mb-6">
+        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-slate hover:text-ink py-2">
+          <ArrowLeft size={16} />
+          Back
+        </Link>
+      </div>
       <h1 className="text-2xl font-semibold text-ink mb-1">Welcome back</h1>
       <p className="text-slate text-sm mb-8">Log in to your Now Med account</p>
 
@@ -152,13 +161,13 @@ export default function Login() {
           {loading ? 'Logging in...' : 'Log in'}
         </button>
 
-        <Link to="/forgot-password" className="text-sm text-rose text-center">
+        <Link to="/forgot-password" className="text-sm text-rose text-center py-2">
           Forgot password?
         </Link>
 
         <p className="text-sm text-slate text-center">
-          Don't have an account?{' '}
-          <Link to="/signup" className="text-rose font-medium">Sign up</Link>
+          New to NowMed?{' '}
+          <Link to="/signup?role=patient" className="text-rose font-medium">Create an account</Link>
         </p>
       </form>
     </div>

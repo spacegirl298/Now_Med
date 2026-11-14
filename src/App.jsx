@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 
 // Auth pages
+import Welcome from "./pages/auth/Welcome";
 import Login from "./pages/auth/Login";
 import SignUp from "./pages/auth/SignUp";
 import ForgotPassword from "./pages/auth/ForgotPassword";
@@ -35,7 +36,17 @@ function ProtectedRoute({ children, allowedRole }) {
     return children;
   }
 
-  if (!currentUser) return <Navigate to="/login" />;
+  if (!currentUser) return <Navigate to="/" replace />;
+
+  // Signed in but not verified yet (they are still on the sign-up flow):
+  // nothing behind this wall works until the email is verified - staff access
+  // in particular is denied by Firestore - so park them on the verify screen.
+  if (!currentUser.emailVerified) return <Navigate to="/verify-email" replace />;
+
+  // Signed in, but no role resolved (the user doc is missing or couldn't be
+  // read). Never guess a dashboard for them - that used to bounce patients
+  // into /secretary and loop. Send them back to log in instead.
+  if (!userRole) return <Navigate to="/login" replace />;
 
   if (allowedRole && userRole !== allowedRole) {
     return (
@@ -43,6 +54,7 @@ function ProtectedRoute({ children, allowedRole }) {
         to={
           userRole === "patient" ? "/patient/dashboard" : "/secretary/dashboard"
         }
+        replace
       />
     );
   }
@@ -78,7 +90,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {/* Public routes */}
-        <Route path="/" element={<Navigate to="/login" />} />
+        <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />

@@ -23,6 +23,7 @@ import {
   arrayUnion,
 } from "firebase/firestore";
 import { db, auth } from "./config";
+import { generateMeetingLink } from "../utils/meeting";
 
 // ---------- Collections ----------
 const usersCol = collection(db, "users");
@@ -402,6 +403,12 @@ export async function createAppointment(data) {
       data.appointmentAt ||
       Timestamp.fromDate(new Date(`${data.date}T${data.time}:00`)),
     type: data.type || "in-person",
+    // Virtual consults get their own online meeting room so the patient can
+    // join from their phone; in-person visits have no link.
+    meetingLink:
+      (data.type || "in-person") === "virtual"
+        ? data.meetingLink || generateMeetingLink()
+        : "",
     practice: data.practice || "",
     // Defaults to "booked" (on the calendar, not yet confirmed with the
     // patient) rather than "confirmed". Callers that know the booking is
@@ -487,7 +494,10 @@ export async function createAppointment(data) {
       recipientId: patientId,
       appointmentId: appointmentRef.id,
       type: "confirmation",
-      message: `Your appointment on ${data.date} at ${data.time} has been confirmed.`,
+      message:
+        newAppointment.type === "virtual"
+          ? `Your virtual appointment on ${data.date} at ${data.time} is booked. Join online: ${newAppointment.meetingLink}`
+          : `Your appointment on ${data.date} at ${data.time} has been confirmed.`,
     });
     // Fire-and-forget - a slow/failed intake check should never hold up
     // returning the new appointment id to the caller.
@@ -870,7 +880,11 @@ export async function confirmAppointment(appointment, method) {
       recipientId: appointment.patientId,
       appointmentId: appointment.id,
       type: "confirmation",
-      message: `Your appointment on ${appointment.date} at ${appointment.time} has been confirmed via ${methodLabel}.`,
+      message:
+        `Your appointment on ${appointment.date} at ${appointment.time} has been confirmed via ${methodLabel}.` +
+        (appointment.type === "virtual" && appointment.meetingLink
+          ? ` Join online: ${appointment.meetingLink}`
+          : ""),
     });
   }
 }
@@ -893,7 +907,11 @@ export async function sendConfirmationReminder(appointment) {
   });
 
   if (appointment.patientId) {
-    const message = `Please confirm your appointment on ${appointment.date} at ${appointment.time}. Reply via WhatsApp, call, or email to let us know you'll be attending.`;
+    const message =
+      `Please confirm your appointment on ${appointment.date} at ${appointment.time}. Reply via WhatsApp, call, or email to let us know you'll be attending.` +
+      (appointment.type === "virtual" && appointment.meetingLink
+        ? ` This is an online consult - join here: ${appointment.meetingLink}`
+        : "");
     await createNotification({
       recipientId: appointment.patientId,
       appointmentId: appointment.id,
@@ -1803,7 +1821,10 @@ export async function createChangeRequest({
     });
   } catch (err) {
     // Best-effort - the request itself has already been saved either way.
-    console.error("Change request saved, but the secretary notification failed:", err);
+    console.error(
+      "Change request saved, but the secretary notification failed:",
+      err,
+    );
   }
 
   return ref.id;

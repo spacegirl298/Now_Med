@@ -126,7 +126,7 @@ export default function SecretaryMessages() {
 
   return (
     <SecretaryLayout>
-      <div className="h-[calc(100dvh-5rem)] md:h-screen md:grid md:grid-cols-[320px_1fr]">
+      <div className="h-[calc(100dvh-8.5rem-env(safe-area-inset-bottom))] md:h-screen md:grid md:grid-cols-[320px_1fr]">
         {/* Conversation list */}
         <aside
           className={`${activeId ? 'hidden md:flex' : 'flex'} flex-col min-h-0 h-full bg-white border-r border-sand`}
@@ -139,7 +139,7 @@ export default function SecretaryMessages() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search or start a chat..."
-                className="w-full border border-stone rounded-xl pl-9 pr-3 py-2.5 text-sm text-ink focus:border-rose focus:outline-none"
+                className="w-full border border-stone rounded-xl pl-9 pr-3 py-2.5 text-base md:text-sm text-ink focus:border-rose focus:outline-none"
               />
             </div>
           </div>

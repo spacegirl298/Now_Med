@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase/config'
+import SplashScreen from '../components/SplashScreen'
 import {
   linkPatientDataByIdNumber,
   getIntakeFormForPatient,
@@ -42,6 +43,28 @@ export function AuthProvider({ children }) {
   const [intakeCompleted, setIntakeCompleted] = useState(undefined)
   const [intakeDeferred, setIntakeDeferred] = useState(undefined)
   const [loading, setLoading] = useState(true)
+  // The branded splash plays in full once per browser tab session, then only
+  // shows for as long as auth genuinely takes to resolve.
+  const [splashDone, setSplashDone] = useState(() => {
+    try {
+      return sessionStorage.getItem('nowmedSplashSeen') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    if (splashDone) return
+    const id = setTimeout(() => {
+      try {
+        sessionStorage.setItem('nowmedSplashSeen', '1')
+      } catch {
+        /* storage unavailable - splash will simply replay next load */
+      }
+      setSplashDone(true)
+    }, 2200)
+    return () => clearTimeout(id)
+  }, [splashDone])
 
   // Register a new user
   async function register(email, password, idNumber, idType, role, name) {
@@ -127,8 +150,22 @@ export function AuthProvider({ children }) {
   }
 
   // Log in
-  function login(email, password) {
-    return signInWithEmailAndPassword(auth, email, password)
+  async function login(email, password) {
+    const result = await signInWithEmailAndPassword(auth, email, password)
+    // Unverified accounts are bounced by the Login page, so there is nothing
+    // to load for them yet.
+    if (result.user.emailVerified) {
+      const found = await loadProfile(result.user)
+      if (!found) {
+        // Signed in but no readable profile: don't leave a half-logged-in
+        // session that the login screen would wait on forever.
+        await signOut(auth).catch(() => {})
+        const err = new Error('Could not load profile')
+        err.code = 'auth/no-profile'
+        throw err
+      }
+    }
+    return result
   }
 
   // Log out
@@ -187,57 +224,78 @@ export function AuthProvider({ children }) {
     }
   }
 
-useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid))
-        if (userDoc.exists()) {
-          const data = userDoc.data()
-          setUserRole(data.role)
-          setUserName(data.name)
-          setUserIdNumber(data.idNumber || '')
-          // Secretaries list themselves (uid only) in secretaryDirectory so a
-          // patient's action can notify every secretary without being able to
-          // read the users collection. Needs a verified email, which login
-          // already requires. Idempotent, fire-and-forget.
-          if (data.role === 'secretary' && user.emailVerified) {
-            setDoc(doc(db, 'secretaryDirectory', user.uid), { uid: user.uid }).catch((e) =>
-              console.error('Could not register in the secretary directory:', e),
-            )
-          }
-          // Older accounts created before this field existed won't have it —
-          // treat missing as "already done" so nobody who registered before
-          // this feature shipped gets an unexpected intake prompt. Staff never
-          // do intake.
-          let completed =
-            data.role === 'patient' ? (data.hasCompletedIntake ?? true) : true
-          if (data.role === 'patient' && completed === false) {
-            completed = await resolveIntakeCompleted(user.uid, data)
-          }
-          setIntakeCompleted(completed)
-          setIntakeDeferred(!!data.intakeDeferred)
-        }
-        setCurrentUser(user)
-      } catch (error) {
-        // If Firestore read fails, still set the user
-        // so they aren't stuck on a blank page
-        console.error('Error fetching user role:', error)
-        setCurrentUser(user)
-      }
-    } else {
-      setCurrentUser(null)
-      setUserRole(null)
-      setUserName(null)
-      setUserIdNumber('')
-      setIntakeCompleted(undefined)
-      setIntakeDeferred(undefined)
-    }
-    setLoading(false)
-  })
+  // Resolves everything the app needs to know about a signed-in user (role,
+  // name, intake state) from their Firestore user doc. Shared by the auth
+  // listener AND login()/register(): onAuthStateChanged does not fire again
+  // when the already-signed-in user logs in a second time (exactly what
+  // happens after sign-up -> "Go to Login"), and it can run before sign-up has
+  // finished writing the user doc. Calling this directly removes both races.
+  // Resolves to true when the user doc was found and read.
+  async function loadProfile(user) {
+    let found = false
+    try {
+      // Staff access is decided by Firestore rules from the ID token's
+      // email_verified claim. A token minted before the email was verified
+      // keeps the old claim until it is refreshed, which made every secretary
+      // query fail with permission-denied. Refresh once up front.
+      await user.getIdToken(true).catch(() => {})
 
-  return unsubscribe
-}, [])
+      const userDoc = await getDoc(doc(db, 'users', user.uid))
+      if (userDoc.exists()) {
+        const data = userDoc.data()
+        setUserRole(data.role)
+        setUserName(data.name)
+        setUserIdNumber(data.idNumber || '')
+        // Secretaries list themselves (uid only) in secretaryDirectory so a
+        // patient's action can notify every secretary without being able to
+        // read the users collection. Needs a verified email, which login
+        // already requires. Idempotent, fire-and-forget.
+        if (data.role === 'secretary' && user.emailVerified) {
+          setDoc(doc(db, 'secretaryDirectory', user.uid), { uid: user.uid }).catch((e) =>
+            console.error('Could not register in the secretary directory:', e),
+          )
+        }
+        // Older accounts created before this field existed won't have it -
+        // treat missing as "already done" so nobody who registered before
+        // this feature shipped gets an unexpected intake prompt. Staff never
+        // do intake.
+        let completed =
+          data.role === 'patient' ? (data.hasCompletedIntake ?? true) : true
+        if (data.role === 'patient' && completed === false) {
+          completed = await resolveIntakeCompleted(user.uid, data)
+        }
+        setIntakeCompleted(completed)
+        setIntakeDeferred(!!data.intakeDeferred)
+        found = true
+      }
+    } catch (error) {
+      // If Firestore read fails, still set the user
+      // so they aren't stuck on a blank page
+      console.error('Error fetching user role:', error)
+    }
+    setCurrentUser(user)
+    return found
+  }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        await loadProfile(user)
+      } else {
+        setCurrentUser(null)
+        setUserRole(null)
+        setUserName(null)
+        setUserIdNumber('')
+        setIntakeCompleted(undefined)
+        setIntakeDeferred(undefined)
+      }
+      setLoading(false)
+    })
+
+    return unsubscribe
+    // loadProfile only uses state setters and imported helpers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const value = {
     currentUser,
@@ -261,7 +319,7 @@ useEffect(() => {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {loading || !splashDone ? <SplashScreen /> : children}
     </AuthContext.Provider>
   )
 }

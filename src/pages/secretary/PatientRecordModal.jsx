@@ -70,7 +70,7 @@ function calculateBmi(heightCm, weightKg) {
   return (w / (m * m)).toFixed(1)
 }
 
-const inputClasses = 'w-full border border-stone rounded-lg px-3 py-2 text-sm text-ink bg-white focus:border-rose focus:outline-none'
+const inputClasses = 'w-full border border-stone rounded-lg px-3 py-2 text-base md:text-sm text-ink bg-white focus:border-rose focus:outline-none'
 const labelClasses = 'text-xs text-slate mb-1 block'
 
 function Field({ label, children }) {

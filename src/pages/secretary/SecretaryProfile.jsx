@@ -230,7 +230,7 @@ export default function SecretaryProfile() {
 
   return (
     <SecretaryLayout>
-      <div className="p-6 md:p-8 max-w-2xl mx-auto flex flex-col gap-6">
+      <div className="p-4 sm:p-6 md:p-8 max-w-2xl mx-auto flex flex-col gap-6">
         <BackButton />
         <h1 className="text-2xl font-semibold text-ink -mt-2">My Profile</h1>
 

@@ -14,6 +14,8 @@ import {
   Phone,
   ClipboardList,
   ChevronDown,
+  Video,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -31,7 +33,9 @@ import {
   formatShortDate,
   formatDisplayDate,
   greetingForNow,
+  REVIEW_PROMPT_DELAY_MINUTES,
 } from "../../utils/dateHelpers";
+import { safeMeetingLink } from "../../utils/meeting";
 import {
   subscribeToPatientRecords,
   subscribeToDoctorRatings,
@@ -52,7 +56,6 @@ export default function PatientDashboard() {
   const [reviewDrafts, setReviewDrafts] = useState({});
   const [savingReviewId, setSavingReviewId] = useState(null);
   const [reviewErrors, setReviewErrors] = useState({});
-  const [now] = useState(() => Date.now());
   const [ratingsByDoctor, setRatingsByDoctor] = useState({}); // doctorId -> reviews[]
   const [expandedReviews, setExpandedReviews] = useState(null); // doctorId or null
 
@@ -107,7 +110,10 @@ export default function PatientDashboard() {
         const start = a.appointmentAt?.toDate
           ? a.appointmentAt.toDate()
           : new Date(`${a.date}T${a.time}:00`);
-        return start.getTime() >= nowMs;
+        // An online consult stays "upcoming" for an hour after its start
+        // time so the patient can still join once it has begun.
+        const graceMs = a.type === "virtual" ? 60 * 60 * 1000 : 0;
+        return start.getTime() + graceMs >= nowMs;
       })
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   }, [appointments, nowMs]);
@@ -212,7 +218,7 @@ export default function PatientDashboard() {
           ? nextAppointment.appointmentAt.toDate()
           : `${nextAppointment.date}T${nextAppointment.time}:00`,
       ).getTime() -
-        now) /
+        nowMs) /
       (1000 * 60 * 60)
     : null;
   const needsIntakeReminder =
@@ -223,23 +229,22 @@ export default function PatientDashboard() {
 
   return (
     <PatientLayout>
-      <div className="p-6 md:p-8 max-w-5xl mx-auto">
-        <h1 className="text-2xl font-semibold text-ink">
+      <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+        <h1 className="text-xl sm:text-2xl font-semibold text-ink">
           {greetingForNow()}, {displayName}
         </h1>
         <p className="text-slate text-sm mb-6">{formatDisplayDate(today)}</p>
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Please refresh the page or try again in a moment. If it
-            keeps happening, contact the practice.
+            {error}
           </div>
         )}
 
         <ReviewPrompt
           appointments={appointments}
           patientId={currentUser?.uid}
-          bufferMinutes={15}
+          bufferMinutes={REVIEW_PROMPT_DELAY_MINUTES}
         />
 
         {isNextDelayed && (
@@ -265,6 +270,36 @@ export default function PatientDashboard() {
               form yet - tap here to complete it now.
             </span>
           </button>
+        )}
+
+        {/* First-time patient: nothing booked yet is the normal starting
+            point, so greet them and point at the next step instead of
+            showing empty lists. */}
+        {!loading && !error && appointments.length === 0 && (
+          <Card className="mb-6 bg-mist border border-blush">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0">
+                <Sparkles size={18} className="text-rose" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-ink mb-1">
+                  Welcome to NowMed
+                </p>
+                <p className="text-sm text-slate mb-3">
+                  You don't have any appointments yet - that's perfectly normal
+                  for a new account. Book your first visit whenever you're
+                  ready, in person or online.
+                </p>
+                <button
+                  onClick={() => navigate("/patient/calendar")}
+                  className="inline-flex items-center gap-2 bg-rose text-white rounded-xl px-4 py-3 text-sm font-medium hover:bg-plum transition-colors"
+                >
+                  <CalendarPlus size={18} />
+                  Book my first appointment
+                </button>
+              </div>
+            </div>
+          </Card>
         )}
 
         {/* Stat cards */}
@@ -344,16 +379,42 @@ export default function PatientDashboard() {
               </div>
             </div>
 
-            <PatientETA
-              appointment={nextAppointment}
-              doctor={nextAppointmentDoctor}
-              isNewPatient={isNewPatient}
-            />
+            {nextAppointment.type === "virtual" ? (
+              <div className="mt-3 pt-3 border-t border-sand">
+                {safeMeetingLink(nextAppointment) ? (
+                  <a
+                    href={safeMeetingLink(nextAppointment)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full flex items-center justify-center gap-2 bg-rose text-white rounded-xl py-3 text-sm font-medium hover:bg-plum transition-colors"
+                  >
+                    <Video size={18} />
+                    Join online consult
+                  </a>
+                ) : (
+                  <p className="text-xs text-slate flex items-center gap-1.5">
+                    <Video size={14} className="text-rose shrink-0" />
+                    Your online meeting link will appear here once the practice
+                    has sent it.
+                  </p>
+                )}
+                <p className="text-xs text-slate mt-2">
+                  This is an online visit - there's no need to travel to the
+                  practice.
+                </p>
+              </div>
+            ) : (
+              <PatientETA
+                appointment={nextAppointment}
+                doctor={nextAppointmentDoctor}
+                isNewPatient={isNewPatient}
+              />
+            )}
           </Card>
         )}
 
         {/* Book an appointment CTA */}
-        <Card className="mb-6 flex items-center justify-between gap-4">
+        <Card className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="font-semibold text-ink mb-1">
               Need to see the doctor?
@@ -365,7 +426,7 @@ export default function PatientDashboard() {
           </div>
           <button
             onClick={() => navigate("/patient/calendar")}
-            className="shrink-0 flex items-center gap-2 bg-rose text-white rounded-xl px-4 py-3 text-sm font-medium hover:bg-plum transition-colors"
+            className="shrink-0 flex items-center justify-center gap-2 bg-rose text-white rounded-xl px-4 py-3 text-sm font-medium hover:bg-plum transition-colors"
           >
             <CalendarPlus size={18} />
             Book
@@ -653,9 +714,9 @@ export default function PatientDashboard() {
               {upcomingAppointments.map((a) => (
                 <div
                   key={a.id}
-                  className="flex items-center justify-between px-5 py-4"
+                  className="flex items-center justify-between gap-3 px-4 sm:px-5 py-4"
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                     <div className="text-center w-14">
                       <p className="text-xs text-slate uppercase">
                         {formatShortDate(a.date)}
@@ -668,8 +729,19 @@ export default function PatientDashboard() {
                       <p className="text-sm font-medium text-ink capitalize">
                         {a.type} consult
                       </p>
-                      {a.practice && (
-                        <p className="text-xs text-slate">{a.practice}</p>
+                      {a.type === "virtual" && safeMeetingLink(a) ? (
+                        <a
+                          href={safeMeetingLink(a)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-medium text-rose hover:underline inline-flex items-center gap-1"
+                        >
+                          <Video size={12} /> Join online
+                        </a>
+                      ) : (
+                        a.practice && (
+                          <p className="text-xs text-slate">{a.practice}</p>
+                        )
                       )}
                     </div>
                   </div>

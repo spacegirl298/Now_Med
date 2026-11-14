@@ -17,6 +17,7 @@ import {
   Plus,
   Clock,
   XCircle,
+  Video,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -43,7 +44,9 @@ import {
   DAY_NAMES,
   MONTH_NAMES,
   isReviewEligible,
+  REVIEW_PROMPT_DELAY_MINUTES,
 } from "../../utils/dateHelpers";
+import { generateMeetingLink, safeMeetingLink } from "../../utils/meeting";
 import {
   subscribeToDoctors,
   subscribeToBookedSlots,
@@ -117,7 +120,13 @@ export default function PatientCalendar() {
   const { appointments, loading, error, createAppointment, cancelAppointment } =
     useAppointments();
   const navigate = useNavigate();
-  const [now] = useState(() => Date.now());
+  // "Now" lives in state so render stays pure; it ticks each minute so the
+  // cancellation window below is never evaluated against a stale clock.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -391,7 +400,10 @@ export default function PatientCalendar() {
 
     setSaving(true);
     try {
+      const meetingLink =
+        form.type === "virtual" ? generateMeetingLink() : "";
       await createAppointment({
+        meetingLink,
         patientId: currentUser.uid,
         patientName: userName || currentUser?.email,
         secretaryId: null,
@@ -407,6 +419,7 @@ export default function PatientCalendar() {
         time: bookingTime,
         type: form.type,
         status,
+        meetingLink,
         doctorName: selectedDoctor?.name || "",
       });
       setBookingStep("confirmed");
@@ -472,11 +485,11 @@ export default function PatientCalendar() {
 
   return (
     <PatientLayout>
-      <div className="p-6 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
         <BackButton />
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold text-ink">
+        <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-semibold text-ink">
               Book an appointment
             </h1>
             <p className="text-slate text-sm"></p>
@@ -501,8 +514,7 @@ export default function PatientCalendar() {
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Please refresh the page or try again in a moment. If it
-            keeps happening, contact the practice.
+            {error}
           </div>
         )}
 
@@ -516,13 +528,15 @@ export default function PatientCalendar() {
               <div className="flex gap-2">
                 <button
                   onClick={goToPrevMonth}
-                  className="p-2 rounded-lg hover:bg-mist text-slate"
+                  aria-label="Previous month"
+                  className="p-2.5 rounded-lg hover:bg-mist text-slate"
                 >
                   <ChevronLeft size={18} />
                 </button>
                 <button
                   onClick={goToNextMonth}
-                  className="p-2 rounded-lg hover:bg-mist text-slate"
+                  aria-label="Next month"
+                  className="p-2.5 rounded-lg hover:bg-mist text-slate"
                 >
                   <ChevronRight size={18} />
                 </button>
@@ -535,7 +549,7 @@ export default function PatientCalendar() {
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
               {grid.map((cell) => {
                 const dayBlockRecord = blockedSlots.find(
                   (b) => b.date === cell.dateStr && b.time === null,
@@ -562,7 +576,7 @@ export default function PatientCalendar() {
                           ? "Past date - view only"
                           : "Double-click to book"
                     }
-                    className={`aspect-square rounded-lg text-sm flex flex-col items-center justify-center gap-0.5 transition-colors
+                    className={`aspect-square min-w-0 rounded-lg text-sm flex flex-col items-center justify-center gap-0.5 transition-colors
                       ${!cell.inMonth ? "text-stone" : isPast ? "text-slate" : "text-ink"}
                       ${isSelected ? "bg-rose text-white" : isToday(cell.dateStr) ? "bg-blush" : "hover:bg-mist"}`}
                   >
@@ -609,7 +623,8 @@ export default function PatientCalendar() {
                     ? "No time slots left today"
                     : "Add appointment"
                 }
-                className="p-2 rounded-lg text-slate hover:bg-mist disabled:opacity-40"
+                aria-label="Add appointment"
+                className="p-2.5 rounded-lg text-slate hover:bg-mist disabled:opacity-40"
               >
                 <Plus size={18} />
               </button>
@@ -664,10 +679,10 @@ export default function PatientCalendar() {
                     <ReviewPrompt
                       appointments={myAppointments.filter(
                         (a) =>
-                          a.status !== "cancelled" && isReviewEligible(a, 15),
+                          a.status !== "cancelled" && isReviewEligible(a, REVIEW_PROMPT_DELAY_MINUTES),
                       )}
                       patientId={currentUser?.uid}
-                      bufferMinutes={15}
+                      bufferMinutes={REVIEW_PROMPT_DELAY_MINUTES}
                     />
 
                     {selectedDayAppointments.length === 0 ? (
@@ -698,6 +713,16 @@ export default function PatientCalendar() {
                                 <p className="text-xs text-slate capitalize">
                                   {a.type} consult
                                 </p>
+                                {safeMeetingLink(a) && a.status !== "cancelled" && (
+                                  <a
+                                    href={safeMeetingLink(a)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-rose rounded-lg px-3 py-2 hover:bg-plum transition-colors"
+                                  >
+                                    <Video size={13} /> Join online consult
+                                  </a>
+                                )}
                                 <p className="text-xs text-slate mt-1">
                                   {a.doctorName
                                     ? `Doctor: ${a.doctorName}`
@@ -799,7 +824,7 @@ export default function PatientCalendar() {
             <button
               type="button"
               onClick={() => setForm({ ...form, type: "in-person" })}
-              className={`rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+              className={`rounded-xl py-3 text-sm font-medium border transition-colors ${
                 form.type === "in-person"
                   ? "bg-rose text-white border-rose"
                   : "border-stone text-ink hover:border-rose"
@@ -810,7 +835,7 @@ export default function PatientCalendar() {
             <button
               type="button"
               onClick={() => setForm({ ...form, type: "virtual" })}
-              className={`rounded-xl py-2.5 text-sm font-medium border transition-colors ${
+              className={`rounded-xl py-3 text-sm font-medium border transition-colors ${
                 form.type === "virtual"
                   ? "bg-rose text-white border-rose"
                   : "border-stone text-ink hover:border-rose"
@@ -819,6 +844,15 @@ export default function PatientCalendar() {
               Virtual
             </button>
           </div>
+          {form.type === "virtual" && (
+            <p className="text-xs text-slate bg-mist rounded-xl px-4 py-3 flex items-start gap-2">
+              <Video size={14} className="shrink-0 mt-0.5 text-rose" />
+              <span>
+                Virtual consults happen online. We'll send you a link to join
+                from your phone or computer - no need to travel to the practice.
+              </span>
+            </p>
+          )}
 
           <div className="border border-blush rounded-2xl p-4">
             <p className="text-sm font-semibold text-ink mb-3">
@@ -935,7 +969,9 @@ export default function PatientCalendar() {
           <p className="text-xs text-rose bg-blush rounded-xl px-4 py-3">
             {computeBookingStatus(selectedDate) === "booked"
               ? "We will call you a few days before your appointment to confirm your appointment."
-              : "By confirming, you agree to arrive 5 minutes before your appointment time and 15 minutes for first time patients."}
+              : form.type === "virtual"
+                ? "A link to join your online consultation will be shown here once you book, and kept on your dashboard. Please join a few minutes early."
+                : "By confirming, you agree to arrive 5 minutes before your appointment time and 15 minutes for first time patients."}
           </p>
 
           {formError && <p className="text-red text-sm">{formError}</p>}
@@ -1008,6 +1044,16 @@ export default function PatientCalendar() {
               </p>
             </div>
             <Badge status={confirmedBooking.status} />
+            {confirmedBooking.meetingLink && (
+              <a
+                href={confirmedBooking.meetingLink}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full flex items-center justify-center gap-2 bg-plum text-white rounded-xl py-3 font-medium hover:bg-deep-plum transition-colors"
+              >
+                <Video size={18} /> Open online consult link
+              </a>
+            )}
             <div className="flex flex-col gap-2 w-full mt-2">
               <button
                 onClick={handleBackToDashboard}
@@ -1030,7 +1076,9 @@ export default function PatientCalendar() {
             <p className="text-xs text-slate mt-1">
               {confirmedBooking.status === "booked"
                 ? "The practice will contact you shortly to confirm this appointment."
-                : "Your appointment is now visible to the practice."}
+                : confirmedBooking.meetingLink
+                  ? "Your appointment is now visible to the practice. Your join link is saved on your dashboard and in your notifications."
+                  : "Your appointment is now visible to the practice."}
             </p>
           </div>
         )}
@@ -1064,7 +1112,7 @@ export default function PatientCalendar() {
             </p>
             <p className="text-xs text-red mt-1">
               {cancelIsVeryLate
-                ? "This appointment is within 2 hours. You cannot cancel online. Please contact the practice to cancel or reschedule. A late-cancellation warning or fee may apply."
+                ? "This appointment is within 2 hours. You cannot cancel online. Please contact the practice to cancel or reschedule."
                 : "This appointment is less than 3 hours away. You cannot cancel online. Please contact the practice to cancel or reschedule."}
             </p>
           </div>
@@ -1081,7 +1129,7 @@ export default function PatientCalendar() {
 }
 
 function TimeSlotButton({ time, selected, taken, onClick }) {
-  const base = "rounded-xl py-2.5 text-sm font-medium border transition-colors";
+  const base = "rounded-xl py-3 text-sm font-medium border transition-colors";
   if (selected) {
     return (
       <button

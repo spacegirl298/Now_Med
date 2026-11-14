@@ -21,8 +21,17 @@ Then open **http://localhost:5173**.
 
 ## Logging in
 
-- **Patient:** choose **Sign Up**, pick *Patient*, register and verify your email from the link, then log in.
-- **Secretary:** staff accounts are invite-only. Test secretary and patient accounts are supplied with the submission.
+- **Patient:** on the welcome screen tap **Get started**, register and verify your email from the link, then tap **Log in**. Returning users choose **Log in** on the welcome screen.
+- **Secretary:** staff accounts are invite-only. The practice owner adds the staff member's lower-cased email as a document ID in the `staffInvites` collection in the Firebase console (any field), then the person signs up as *Medical Secretary* with that email. Test accounts are supplied with the submission.
+
+## Deploying
+
+```bash
+npm run build
+firebase deploy --only hosting,firestore:rules
+```
+
+`firebase.json` points the rules at `firestore.rules` and the named Firestore database `jj04`.
 
 ## ETA feature (needs a Maps key)
 
@@ -32,7 +41,7 @@ The arrival-time estimate uses Google Maps. No key is included in this repositor
 VITE_GOOGLE_MAPS_API_KEY=your-key-here
 ```
 
-Restart `npm run dev` afterwards. Without a key everything else works and the ETA card is simply not shown.
+Restart `npm run dev` afterwards. Without a key everything else works; the ETA card shows a friendly "couldn't work out your travel time" message and the directions link still works. ETA and the map are only shown for in-person visits.
 
 ## What it does
 
@@ -41,6 +50,8 @@ Restart `npm run dev` afterwards. Without a key everything else works and the ET
 - Calendar booking that prevents double-booking
 - Cancel up to 3 hours before an appointment, or flag that you are running late
 - ETA to the practice, with a button to send a late-arrival message
+- Virtual consultations: each gets its own online meeting link (Jitsi Meet, no install needed), shown on the dashboard, calendar and in notifications; no travel ETA is shown for them
+- Notifications with in-app banners and, once allowed, phone alerts while the app is open or in the background
 - Messaging with the practice
 - Doctor reviews, with average ratings per doctor
 - Intake form (one question at a time) including medical aid details
@@ -54,6 +65,12 @@ Restart `npm run dev` afterwards. Without a key everything else works and the ET
 - Messaging, reminders and message moderation
 - Patient list, change request approval, doctor profiles and review moderation
 - Practice analytics: appointment volume, ratings, late arrivals and per-doctor breakdowns
+
+## Known limitations
+
+- Alerts reach a phone while NowMed is open or in the background. Alerts with the app fully closed need Firebase Cloud Messaging and a Cloud Function (paid Blaze plan) and are future work.
+- Family/guardian dashboard (parents managing children's accounts) is not built.
+- No late-cancellation fee exists; patients simply cannot cancel online inside 3 hours.
 
 ## Tests
 

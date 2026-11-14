@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   BellRing,
   Undo2,
+  Video,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -39,6 +40,7 @@ import {
   DELAY_REASONS,
   CONFIRMATION_METHODS,
 } from "../../utils/validators";
+import { generateMeetingLink, safeMeetingLink } from "../../utils/meeting";
 import {
   getAllPatients,
   getUserByIdNumber,
@@ -366,6 +368,12 @@ export default function SecretarySchedule() {
           doctorName: doctors.find((d) => d.id === form.doctorId)?.name || "",
           time: form.time,
           type: form.type,
+          // Keep an existing meeting link; create one if the visit has just
+          // become virtual; clear it if it is no longer virtual.
+          meetingLink:
+            form.type === "virtual"
+              ? editingAppointment.meetingLink || generateMeetingLink()
+              : "",
           notes: form.notes,
         });
       } else if (form.bookingMode === "existing") {
@@ -585,9 +593,9 @@ export default function SecretarySchedule() {
 
   return (
     <SecretaryLayout>
-      <div className="p-6 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto">
         <BackButton />
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-semibold text-ink">Schedule</h1>
             <p className="text-slate text-sm">
@@ -610,8 +618,7 @@ export default function SecretarySchedule() {
 
         {error && (
           <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
-            {error} Please refresh the page or try again in a moment. If it
-            keeps happening, contact the practice IT Department.
+            {error}
           </div>
         )}
 
@@ -784,6 +791,29 @@ export default function SecretarySchedule() {
                           {a.type} consult
                           {!a.patientId && " · not yet registered"}
                         </p>
+                        {a.type === "virtual" && safeMeetingLink(a) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <a
+                              href={safeMeetingLink(a)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs font-medium text-rose hover:underline inline-flex items-center gap-1"
+                            >
+                              <Video size={12} /> Open meeting
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                navigator.clipboard
+                                  ?.writeText(safeMeetingLink(a))
+                                  .catch(() => {})
+                              }
+                              className="text-xs text-slate hover:text-ink underline"
+                            >
+                              Copy link
+                            </button>
+                          </div>
+                        )}
                         {a.status === "delayed" && a.delayedTime && (
                           <p className="text-xs text-amber mt-1">
                             Running {a.delayMinutes} min late → now{" "}

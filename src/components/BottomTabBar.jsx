@@ -42,13 +42,13 @@ export default function BottomTabBar({ role = "secretary" }) {
   const unread = useUnreadMessages();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-sand flex justify-around py-2 z-40">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-sand flex justify-around py-2 z-40 safe-bottom">
       {links.map(({ to, label, icon: Icon, showUnread }) => (
         <NavLink
           key={to}
           to={to}
           className={({ isActive }) =>
-            `flex flex-col items-center gap-1 px-2 py-1 text-xs font-medium ${
+            `flex-1 min-w-0 flex flex-col items-center gap-1 px-1 py-1 text-[11px] font-medium ${
               isActive ? "text-rose" : "text-slate"
             }`
           }
