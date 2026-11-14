@@ -354,7 +354,13 @@ export function subscribeToBookedSlots(callback) {
   return onSnapshot(appointmentSlotsCol, (snap) => {
     const slots = snap.docs.map((d) => {
       const data = d.data();
-      return { date: data.date, time: data.time, status: data.status };
+      return {
+        date: data.date,
+        time: data.time,
+        status: data.status,
+        // Needed so the calendar can treat each doctor's slots separately.
+        doctorId: data.doctorId || null,
+      };
     });
     callback(slots);
   });
@@ -1026,6 +1032,18 @@ export function subscribeToNotifications(recipientId, callback) {
 
 export async function markNotificationRead(notificationId) {
   await updateDoc(doc(db, "notifications", notificationId), { read: true });
+}
+
+// Marks a list of notifications read in as few writes as possible (a batch
+// holds at most 500). Used by the bell's "Mark all as read".
+export async function markNotificationsRead(notificationIds) {
+  for (let i = 0; i < notificationIds.length; i += 400) {
+    const batch = writeBatch(db);
+    notificationIds.slice(i, i + 400).forEach((id) => {
+      batch.update(doc(db, "notifications", id), { read: true });
+    });
+    await batch.commit();
+  }
 }
 
 // Bulk-clears every unread bell notification tied to the patient's own
@@ -1821,7 +1839,10 @@ export async function createChangeRequest({
     });
   } catch (err) {
     // Best-effort - the request itself has already been saved either way.
-    console.error("Change request saved, but the secretary notification failed:", err);
+    console.error(
+      "Change request saved, but the secretary notification failed:",
+      err,
+    );
   }
 
   return ref.id;

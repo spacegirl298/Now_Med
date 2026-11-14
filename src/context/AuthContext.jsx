@@ -62,7 +62,7 @@ export function AuthProvider({ children }) {
         /* storage unavailable - splash will simply replay next load */
       }
       setSplashDone(true)
-    }, 2200)
+    }, 3800)
     return () => clearTimeout(id)
   }, [splashDone])
 

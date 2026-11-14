@@ -1,15 +1,16 @@
-// First screen for anyone who isn't signed in. The main path is for brand-new
-// patients ("Get started" -> sign-up as a patient); people who already have an
-// account get a smaller "Log in" option underneath. The "Welcome back" greeting
-// lives on the login page itself, after they've chosen to log in.
+// First screen for anyone who isn't signed in. Same split layout as log in and
+// sign up, so the whole entry flow feels like one place. The main path is for
+// brand-new patients ("Get started"); people with an account get a clear
+// "Log in" button beside it, and staff get a quiet link underneath.
 import { Navigate, useNavigate, Link } from 'react-router-dom'
 import { CalendarCheck, MessageSquare, Navigation } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import AuthShell, { primaryButtonClass } from '../../components/AuthShell'
 
 const HIGHLIGHTS = [
-  { icon: CalendarCheck, text: 'Book in a few taps' },
-  { icon: Navigation, text: 'Know when to leave' },
-  { icon: MessageSquare, text: 'Message your practice' },
+  { icon: CalendarCheck, title: 'Book in a few taps', text: 'Pick a time that suits you.' },
+  { icon: Navigation, title: 'Know when to leave', text: 'Live updates on your visit.' },
+  { icon: MessageSquare, title: 'Message your practice', text: 'Ask a question, get an answer.' },
 ]
 
 export default function Welcome() {
@@ -27,59 +28,42 @@ export default function Welcome() {
   }
 
   return (
-    <div className="min-h-screen bg-mist flex flex-col items-center justify-between px-6 py-10 safe-top safe-bottom">
-      <div />
+    <AuthShell variant="patient">
+      <h1 className="text-3xl font-semibold text-ink mb-2">Create your free account</h1>
+      <p className="text-slate mb-8">
+        Book appointments, follow your visit and keep your health records in one place.
+      </p>
 
-      <div className="w-full max-w-sm text-center">
-        <p
-          className="text-5xl font-extrabold tracking-tight text-plum uppercase mb-2"
-          style={{ fontFamily: "'Bricolage Grotesque', 'DM Sans', sans-serif" }}
-        >
-          Now Med
-        </p>
-        <h1 className="text-sm font-semibold text-rose uppercase tracking-wide mb-4">
-          Turning now now into now
-        </h1>
-        <p className="text-slate text-sm mb-8">
-          Create your free account to book appointments, see live updates about
-          your visit and keep your health records in one place.
-        </p>
+      <ul className="flex flex-col gap-4 mb-10">
+        {HIGHLIGHTS.map(({ icon: Icon, title, text }) => (
+          <li key={title} className="flex items-center gap-4">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-rose">
+              <Icon size={20} />
+            </span>
+            <span>
+              <span className="block font-medium text-ink">{title}</span>
+              <span className="block text-sm text-slate">{text}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
 
-        <ul className="flex justify-center gap-2 mb-8 text-[11px] text-slate">
-          {HIGHLIGHTS.map(({ icon: Icon, text }) => (
-            <li
-              key={text}
-              className="flex-1 flex flex-col items-center gap-1.5 bg-white rounded-2xl px-2 py-3"
-            >
-              <Icon size={18} className="text-rose" />
-              {text}
-            </li>
-          ))}
-        </ul>
+      <button onClick={() => navigate('/signup?role=patient')} className={primaryButtonClass}>
+        Get started
+      </button>
+      <p className="text-sm text-slate mt-3 text-center">It only takes a minute.</p>
 
-        <button
-          onClick={() => navigate('/signup?role=patient')}
-          className="w-full bg-rose text-white rounded-xl py-4 font-semibold text-base hover:bg-plum transition-colors"
-        >
-          Get started
-        </button>
-        <p className="text-xs text-slate mt-3">It only takes a minute.</p>
-      </div>
-
-      <div className="w-full max-w-sm text-center">
-        <p className="text-sm text-slate">
+      <div className="mt-10 flex items-center justify-between text-sm text-slate">
+        <span>
           Already have an account?{' '}
           <Link to="/login" className="text-rose font-semibold py-2 inline-block">
             Log in
           </Link>
-        </p>
-        <p className="text-xs text-stone mt-1">
-          Practice staff?{' '}
-          <Link to="/signup?role=secretary" className="underline hover:text-slate">
-            Staff sign-up
-          </Link>
-        </p>
+        </span>
+        <Link to="/signup?role=secretary" className="hover:text-ink py-2">
+          Practice staff
+        </Link>
       </div>
-    </div>
+    </AuthShell>
   )
 }

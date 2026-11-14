@@ -7,6 +7,7 @@ import Login from "./pages/auth/Login";
 import SignUp from "./pages/auth/SignUp";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import EmailVerification from "./pages/auth/EmailVerfication";
+import NotFound from "./pages/NotFound";
 
 // Patient pages
 import PatientDashboard from "./pages/patient/PatientDashboard";
@@ -41,8 +42,7 @@ function ProtectedRoute({ children, allowedRole }) {
   // Signed in but not verified yet (they are still on the sign-up flow):
   // nothing behind this wall works until the email is verified - staff access
   // in particular is denied by Firestore - so park them on the verify screen.
-  if (!currentUser.emailVerified)
-    return <Navigate to="/verify-email" replace />;
+  if (!currentUser.emailVerified) return <Navigate to="/verify-email" replace />;
 
   // Signed in, but no role resolved (the user doc is missing or couldn't be
   // read). Never guess a dashboard for them - that used to bounce patients
@@ -206,6 +206,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* Anything else */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

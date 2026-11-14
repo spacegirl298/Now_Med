@@ -133,7 +133,7 @@ export default function SignUp() {
   // One shell for all three steps: the brand half never moves, only the
   // right half changes, so the flow reads as a single place.
   return (
-    <AuthShell variant={variant}>
+    <AuthShell variant={variant} compact={step > 1}>
       {/* STEP 1 - Role selection */}
       {step === 1 && (
         <div>

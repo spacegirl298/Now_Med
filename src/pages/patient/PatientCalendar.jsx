@@ -261,9 +261,11 @@ export default function PatientCalendar() {
           .filter(
             (b) =>
               b.date === selectedDate &&
-              (!selectedDoctor ||
-                b.doctorId === selectedDoctor.id ||
-                !b.doctorId),
+              // Each doctor has their own diary: a slot is only "taken"
+              // when THIS doctor is booked at that time. (Practice-wide
+              // blocks such as public holidays are handled separately in
+              // blockedSlots and still apply to every doctor.)
+              (!selectedDoctor || b.doctorId === selectedDoctor.id),
           )
           .map((b) => b.time),
       ),
@@ -302,6 +304,9 @@ export default function PatientCalendar() {
     pastTimesForSelectedDay.size > 0;
 
   const selectedDateIsPast = isPastDate(selectedDate);
+
+  // With several doctors, times only make sense once one is chosen.
+  const needsDoctorFirst = doctors.length > 0 && !selectedDoctor;
 
   // True once every slot today has already gone by, so booking today is no
   // longer possible even though the date itself isn't "past" yet.
@@ -786,7 +791,12 @@ export default function PatientCalendar() {
                   <button
                     key={doc.id}
                     type="button"
-                    onClick={() => setForm({ ...form, doctorId: doc.id })}
+                    onClick={() => {
+                      setForm({ ...form, doctorId: doc.id });
+                      // A time chosen for one doctor may be taken for another.
+                      setBookingTime(null);
+                      setFormError("");
+                    }}
                     className={`text-left rounded-xl border px-4 py-3 transition-colors ${
                       form.doctorId === doc.id
                         ? "bg-rose text-white border-rose"
@@ -854,6 +864,11 @@ export default function PatientCalendar() {
             </p>
           )}
 
+          {needsDoctorFirst ? (
+            <p className="text-sm text-slate bg-mist rounded-2xl px-4 py-6 text-center">
+              Choose a doctor to see their available times.
+            </p>
+          ) : (
           <div className="border border-blush rounded-2xl p-4">
             <p className="text-sm font-semibold text-ink mb-3">
               Select a time slot
@@ -912,8 +927,9 @@ export default function PatientCalendar() {
               </span>
             </div>
           </div>
+          )}
 
-          {hasUnavailableSlot && (
+          {!needsDoctorFirst && hasUnavailableSlot && (
             <p className="text-xs text-rose bg-blush rounded-xl px-4 py-2 text-center">
               Unavailable slots are visible but not selectable
             </p>

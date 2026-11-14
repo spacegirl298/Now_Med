@@ -49,7 +49,7 @@ export default function NotificationBell({
   inline = false,
   alerts = null, // { permission, enableSystemAlerts } from useNotificationAlerts
 }) {
-  const { notifications, unreadCount, markNotificationRead } =
+  const { notifications, unreadCount, markNotificationRead, markAllNotificationsRead } =
     useNotifications();
   const { userRole } = useAuth();
   const [open, setOpen] = useState(false);
@@ -102,8 +102,17 @@ export default function NotificationBell({
               : "absolute right-0 mt-2 w-80 max-w-[90vw]"
           }`}
         >
-          <div className="px-4 py-3 border-b border-sand">
+          <div className="px-4 py-3 border-b border-sand flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-ink">Notifications</h2>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={() => markAllNotificationsRead().catch(() => {})}
+                className="text-xs font-medium text-rose hover:text-plum py-1"
+              >
+                Mark all as read
+              </button>
+            )}
           </div>
 
           {canAskForAlerts && (
