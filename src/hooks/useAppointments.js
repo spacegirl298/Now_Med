@@ -13,7 +13,9 @@ import {
   markPatientLate,
 } from '../firebase/firestore'
 
-export function useAppointments() {
+// `patientIdOverride` lets a parent load one of their children's appointments.
+// Every existing caller passes nothing and behaves exactly as before.
+export function useAppointments(patientIdOverride) {
   const { currentUser, userRole } = useAuth()
   const [appointments, setAppointments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -83,7 +85,7 @@ export function useAppointments() {
       unsubscribe =
         userRole === 'secretary'
           ? subscribeToAllAppointments(onData, onErr)
-          : subscribeToPatientAppointments(currentUser.uid, onData, onErr)
+          : subscribeToPatientAppointments(patientIdOverride || currentUser.uid, onData, onErr)
     }
 
     subscribe()
@@ -92,7 +94,7 @@ export function useAppointments() {
       cancelled = true
       if (unsubscribe) unsubscribe()
     }
-  }, [currentUser, userRole])
+  }, [currentUser, userRole, patientIdOverride])
 
   return {
     appointments,

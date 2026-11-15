@@ -16,6 +16,9 @@ import PatientRecords from "./pages/patient/PatientRecords";
 import PatientProfile from "./pages/patient/PatientProfile";
 import PatientIntake from "./pages/patient/PatientIntake";
 import PatientMessages from "./pages/patient/PatientMessages";
+import PatientFamily from "./pages/patient/PatientFamily";
+import PatientChild from "./pages/patient/PatientChild";
+import ChildCalendar from "./pages/patient/ChildCalendar";
 
 // Secretary pages
 import SecretaryDashboard from "./pages/secretary/SecretaryDashboard";
@@ -153,6 +156,38 @@ export default function App() {
               {/* Profile is reachable even mid-intake-skip so a patient can
                   always find/edit these fields later - not gated. */}
               <PatientProfile />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Family: a parent managing their children's profiles */}
+        <Route
+          path="/patient/family"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <RequireIntake>
+                <PatientFamily />
+              </RequireIntake>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/family/:childId"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <RequireIntake>
+                <PatientChild />
+              </RequireIntake>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/patient/family/:childId/calendar"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <RequireIntake>
+                <ChildCalendar />
+              </RequireIntake>
             </ProtectedRoute>
           }
         />

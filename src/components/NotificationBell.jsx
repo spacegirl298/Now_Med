@@ -34,6 +34,20 @@ function routeFor(notification, userRole) {
       : "/patient/dashboard";
 }
 
+// A notification addressed to one of the parent's children (a delay, a
+// cancellation, a message) opens that child's page instead of the parent's own.
+function targetFor(notification, userRole, ownUid) {
+  if (
+    userRole === "patient" &&
+    notification.recipientId &&
+    ownUid &&
+    notification.recipientId !== ownUid
+  ) {
+    return `/patient/family/${notification.recipientId}`;
+  }
+  return routeFor(notification, userRole);
+}
+
 // Notification text can carry an online-meeting link. Show the sentence
 // cleanly and offer the link as its own tappable "Join" button.
 function splitMeetingLink(message) {
@@ -51,7 +65,7 @@ export default function NotificationBell({
 }) {
   const { notifications, unreadCount, markNotificationRead, markAllNotificationsRead } =
     useNotifications();
-  const { userRole } = useAuth();
+  const { userRole, currentUser } = useAuth();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
   const navigate = useNavigate();
@@ -147,7 +161,7 @@ export default function NotificationBell({
                     onClick={() => {
                       if (!n.read) markNotificationRead(n.id);
                       setOpen(false);
-                      navigate(routeFor(n, userRole), {
+                      navigate(targetFor(n, userRole, currentUser?.uid), {
                         state: n.patientId
                           ? { patientId: n.patientId }
                           : undefined,

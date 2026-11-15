@@ -25,7 +25,7 @@ function stripUrls(text) {
 
 export function useNotificationAlerts() {
   const { notifications, unreadCount } = useNotifications()
-  const { userRole } = useAuth()
+  const { userRole, currentUser } = useAuth()
   const [toasts, setToasts] = useState([])
   const [permission, setPermission] = useState(() =>
     supported() ? Notification.permission : 'unsupported',
@@ -73,6 +73,10 @@ export function useNotificationAlerts() {
     if (fresh.length === 0) return
 
     const route = (n) => {
+      // A child's notification opens that child's page.
+      if (userRole === 'patient' && n.recipientId && currentUser?.uid && n.recipientId !== currentUser.uid) {
+        return `/patient/family/${n.recipientId}`
+      }
       const chat = ['message', 'reminder', 'intake_reminder'].includes(n.type)
       const base = userRole === 'secretary' ? '/secretary' : '/patient'
       return chat ? `${base}/messages` : `${base}/dashboard`
@@ -83,11 +87,7 @@ export function useNotificationAlerts() {
       setToasts((prev) => [...prev, { id: n.id, message: body, url: route(n) }].slice(-3))
       setTimeout(() => dismissToast(n.id), 7000)
 
-      try {
-        if (navigator.vibrate) navigator.vibrate([120, 60, 120])
-      } catch {
-        /* vibration not available */
-      }
+     
 
       if (supported() && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
         const options = {
@@ -108,7 +108,7 @@ export function useNotificationAlerts() {
         }
       }
     })
-  }, [notifications, userRole, dismissToast])
+  }, [notifications, userRole, currentUser?.uid, dismissToast])
 
   // Must be called from a tap (browsers require a user gesture).
   const enableSystemAlerts = useCallback(async () => {

@@ -116,10 +116,13 @@ function downloadAppointmentICS(booking, doctorName) {
   URL.revokeObjectURL(url);
 }
 
-export default function PatientCalendar() {
+// `forChild` (a validated child profile, passed by ChildCalendar) makes this
+// the child's calendar: their appointments are shown and new bookings are made
+// for them. With no prop it behaves exactly as before.
+export default function PatientCalendar({ forChild = null }) {
   const { currentUser, userName } = useAuth();
   const { appointments, loading, error, createAppointment, cancelAppointment } =
-    useAppointments();
+    useAppointments(forChild?.id);
   const navigate = useNavigate();
   // "Now" lives in state so render stays pure; it ticks each minute so the
   // cancellation window below is never evaluated against a stale clock.
@@ -179,8 +182,11 @@ export default function PatientCalendar() {
   // a client-side guard only; the Firestore security rules are what
   // actually enforce this at the database level and should mirror it.
   const myAppointments = useMemo(
-    () => appointments.filter((a) => a.patientId === currentUser?.uid),
-    [appointments, currentUser],
+    () =>
+      appointments.filter(
+        (a) => a.patientId === (forChild?.id || currentUser?.uid),
+      ),
+    [appointments, currentUser, forChild],
   );
 
   const ownAppointmentsByDate = useMemo(() => {
@@ -410,8 +416,8 @@ export default function PatientCalendar() {
         form.type === "virtual" ? generateMeetingLink() : "";
       await createAppointment({
         meetingLink,
-        patientId: currentUser.uid,
-        patientName: userName || currentUser?.email,
+        patientId: forChild?.id || currentUser.uid,
+        patientName: forChild?.name || userName || currentUser?.email,
         secretaryId: null,
         doctorId: selectedDoctor?.id || null,
         doctorName: selectedDoctor?.name || "",
@@ -496,7 +502,9 @@ export default function PatientCalendar() {
         <div className="flex items-center justify-between gap-3 mb-4 sm:mb-6">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-semibold text-ink">
-              Book an appointment
+              {forChild
+                ? `Book for ${forChild.firstName}`
+                : "Book an appointment"}
             </h1>
             <p className="text-slate text-sm"></p>
           </div>

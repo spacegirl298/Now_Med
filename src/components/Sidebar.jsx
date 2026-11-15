@@ -8,6 +8,7 @@ import {
   LogOut,
   MessageSquare,
   BarChart3,
+  Heart,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useUnreadMessages } from "../hooks/useUnreadMessages";
@@ -22,6 +23,7 @@ const PATIENT_LINKS = [
     icon: MessageSquare,
     showUnread: true,
   },
+  { to: "/patient/family", label: "Family", icon: Heart },
   { to: "/patient/profile", label: "Profile", icon: User },
 ];
 
