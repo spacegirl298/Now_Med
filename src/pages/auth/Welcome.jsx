@@ -1,7 +1,3 @@
-// First screen for anyone who isn't signed in. Same split layout as log in and
-// sign up, so the whole entry flow feels like one place. The main path is for
-// brand-new patients ("Get started"); people with an account get a clear
-// "Log in" button beside it, and staff get a quiet link underneath.
 import { Navigate, useNavigate, Link } from 'react-router-dom'
 import { CalendarCheck, MessageSquare, Navigation } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -17,7 +13,6 @@ export default function Welcome() {
   const { currentUser, userRole } = useAuth()
   const navigate = useNavigate()
 
-  // Already signed in (e.g. opened the home screen shortcut): skip straight in.
   if (currentUser && userRole) {
     return (
       <Navigate

@@ -1,24 +1,3 @@
-// The one-question-at-a-time intake wizard, shared by an adult's own intake
-// (pages/patient/PatientIntake.jsx) and by a parent filling in the form for
-// their child (pages/patient/ChildIntake.jsx).
-//
-// The wizard only handles the questions, validation and the review screen.
-// Where the answers go is up to the page that renders it:
-//   onSubmit(cleanAnswers)  save the form; throw to show an error
-//   onLater()               "Do this later" / "Finish later"
-//
-// Props
-//   initialAnswers  prefilled answers the person can still change
-//   lockedAnswers   answers the person is not asked about but that must be
-//                   part of the form (e.g. formType: 'child' and the child's
-//                   date of birth). They steer which questions appear and are
-//                   always saved with the form.
-//   intro           { eyebrow, title, lead, body, startLabel, laterLabel }
-//   consentTextOverride  alternate consent confirmation wording for staff
-//                        transcribing a signed paper form.
-//
-// Answers live in memory only. If the person leaves halfway, partial answers
-// are not kept (medical data isn't parked in browser storage).
 import { useMemo, useState, useEffect } from 'react'
 import { ArrowLeft, CheckCircle2, Clock3, LockKeyhole, Plus, ShieldCheck, X } from 'lucide-react'
 import Card from './Card'
@@ -41,7 +20,6 @@ function chipClasses(selected) {
   }`
 }
 
-// ---------- Input for a repeatable list (allergies, medication, ...) ----------
 
 function ListInput({ q, value, onChange, onDirtyChange }) {
   const blank = useMemo(
@@ -77,8 +55,6 @@ function ListInput({ q, value, onChange, onDirtyChange }) {
   }
 
   function onKeyDown(e) {
-    // Enter inside the add-entry fields adds the entry rather than
-    // submitting the whole step.
     if (e.key === 'Enter') {
       e.preventDefault()
       addItem()
@@ -361,8 +337,6 @@ export default function IntakeWizard({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // The consent checkbox is asked on the review screen (after the person
-  // has seen their answers), not as a numbered question.
   const allQuestions = useMemo(() => getVisibleQuestions(answers), [answers])
   const steps = useMemo(() => allQuestions.filter((x) => x.type !== 'consent'), [allQuestions])
   const consentQuestion = allQuestions.find((x) => x.type === 'consent')
@@ -406,8 +380,6 @@ export default function IntakeWizard({
       setStepError(message)
       return
     }
-    // Coming from "Change" on the review screen: go straight back, unless
-    // the answer changes which questions appear (e.g. medical aid yes/no).
     const backToReview = fromReview && !q.affectsFlow
     setFromReview(false)
     go(backToReview ? steps.length : index + 1)
@@ -438,7 +410,6 @@ export default function IntakeWizard({
     }
     setSaving(true)
     try {
-      // Trim free text and drop answers for questions that ended up hidden.
       const visibleIds = new Set(allQuestions.map((s) => s.id))
       const clean = {}
       Object.entries(answers).forEach(([k, v]) => {

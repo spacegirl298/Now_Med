@@ -1,5 +1,3 @@
-// Live list of the children the signed-in patient manages as a guardian.
-// Only subscribes for the patient role; staff and signed-out users get [].
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { subscribeToMyChildren } from '../firebase/family'
@@ -22,8 +20,6 @@ export function useChildren() {
       currentUser.uid,
       (list) => {
         setError('')
-        // Once a child turns 18 the parent's access ends, so they drop out of
-        // the list even before the database rules stop returning them.
         setChildren(list.filter((c) => isManageable(c)))
         setLoading(false)
       },

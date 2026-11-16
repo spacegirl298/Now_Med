@@ -23,8 +23,6 @@ export default function ForgotPassword() {
     setLoading(true);
     try {
       await resetPassword(email.trim());
-      // Same message whether or not the account exists, so this page cannot
-      // be used to find out which emails are registered.
       setMessage(
         "If an account exists for that email, we've sent a reset link. Check your inbox and spam folder.",
       );

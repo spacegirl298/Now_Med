@@ -1,11 +1,3 @@
-// One-off script to seed a few fake reviews for demo doctors.
-// Run from the project root with:
-//
-//   SEED_SECRETARY_EMAIL=you@practice.com SEED_SECRETARY_PASSWORD=yourpassword node scripts/seedDoctorReviews.mjs
-//
-// Requires the deployed firestore.rules to include the isSecretary()
-// bypass on doctorRatings' `create` rule (added alongside this script) -
-// without it, this will 403 the same way the app would.
 
 import { initializeApp } from "firebase/app";
 import {
@@ -34,10 +26,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app, "jj04"); // same named database the app uses
+const db = getFirestore(app, "jj04");
 
-// Edit these freely - each entry is { doctorNameMatch, reviews: [...] }
-// doctorNameMatch is matched case-insensitively against doctors.name.
+
 const SEED = [
   {
     doctorNameMatch: "House",
@@ -90,9 +81,7 @@ async function main() {
     }
 
     for (const [i, r] of entry.reviews.entries()) {
-      // Fake but stable appointmentId, since doctorRatings' doc ID *is*
-      // the appointmentId - doesn't need to correspond to a real
-      // appointment, doctorRatings has no such dependency.
+
       const fakeAppointmentId = `seed_${doctor.id}_${i}`;
       const patientId = `seed-patient-${doctor.id}-${i}`;
 

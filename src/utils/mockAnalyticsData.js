@@ -1,14 +1,3 @@
-// Sample data for the analytics page's "Demo data" switch. Built in memory
-// each time (nothing is written to Firestore) and shaped exactly like real
-// appointments, doctors and reviews, so every chart and table works on it.
-//
-// It is deterministic - the same seed always gives the same pattern - and it
-// tells a small story so the graphs have something to show:
-//   Dr Naidoo  - often runs over, but improving month by month; Mondays worst
-//   Dr Smith   - rarely late
-//   Dr Mokoena - emergencies cause delays, mostly Tuesdays and Thursdays
-// Statuses match what the app produces today: confirmed, booked (not yet
-// confirmed), delayed and cancelled.
 
 const FIRST = [
   "Thabo", "Naledi", "Sipho", "Ayesha", "Johan", "Lerato", "Pieter", "Zanele",
@@ -39,7 +28,6 @@ const DOCTORS = [
     id: "mock-d1",
     name: "Dr Naidoo",
     specialty: "General practitioner",
-    // delay chance per month, oldest -> newest (12 months; the "improving" story)
     rates: [0.4, 0.4, 0.38, 0.38, 0.36, 0.34, 0.32, 0.28, 0.24, 0.2, 0.18, 0.17],
     dow: { 1: 1.6 },
     reasons: { previous_overran: 0.55, emergency: 0.15, procedure: 0.15, admin_system: 0.1, other: 0.05 },
@@ -95,11 +83,9 @@ export function generateMockAnalyticsData(now = new Date(), months = 12) {
   const todayStr = ymd(now);
   const nowTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
-  // A growing client base: some clients are already known at the start, and
-  // new ones keep joining, so "new vs returning" is realistic every month.
+
   const clients = Array.from({ length: 1200 }, (_, i) => ({
     name: `${FIRST[i % FIRST.length]} ${LAST[(Math.floor(i / FIRST.length) + i * 3) % LAST.length]}`,
-    // About 7 in 10 have an app account; the rest are walk-ins booked by ID.
     patientId: i % 10 < 7 ? `mock-p${i}` : null,
     patientIdNumber: `MOCK-${i}`,
   }));
@@ -112,13 +98,13 @@ export function generateMockAnalyticsData(now = new Date(), months = 12) {
   const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
   for (let day = new Date(start); ymd(day) <= todayStr; day.setDate(day.getDate() + 1)) {
     const dow = day.getDay();
-    if (dow === 0 || dow === 6) continue; // closed weekends
+    if (dow === 0 || dow === 6) continue;
     const monthIndex =
       (day.getFullYear() - start.getFullYear()) * 12 + day.getMonth() - start.getMonth();
     const dateStr = ymd(day);
 
     for (const doc of DOCTORS) {
-      const count = 4 + Math.floor(rand() * 4); // 4-7 appointments a day
+      const count = 4 + Math.floor(rand() * 4);
       const slots = [...TIMES].sort(() => rand() - 0.5).slice(0, count).sort();
 
       for (const time of slots) {
@@ -157,7 +143,6 @@ export function generateMockAnalyticsData(now = new Date(), months = 12) {
           const delayChance = (doc.rates[monthIndex] ?? 0.2) * (doc.dow[dow] ?? 1);
           if (!isFuture && rand() < delayChance) {
             const reason = pickWeighted(rand, doc.reasons);
-            // On a doctor's bad weekdays the delays are longer as well as more frequent.
             const bad = (doc.dow[dow] ?? 1) > 1;
             const minutes = Number(
               pickWeighted(
@@ -181,7 +166,6 @@ export function generateMockAnalyticsData(now = new Date(), months = 12) {
           if (!isFuture && rand() < 0.06) {
             appt.patientLateMinutes = 10 + Math.floor(rand() * 3) * 10;
           }
-          // Past appointments: about a third leave a review, lower if delayed.
           if (!isFuture && appt.patientId && rand() < 0.33) {
             const base = doc.rating + (rand() - 0.5) * 1.6 - (appt.delayMinutes ? 0.9 : 0);
             reviews.push({

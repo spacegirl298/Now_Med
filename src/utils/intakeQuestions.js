@@ -1,32 +1,4 @@
-// Question definitions for the first-time digital intake form.
-//
-// The wizard (pages/patient/PatientIntake.jsx) shows ONE of these at a time;
-// IntakeSummary renders the same list back as a read-only review, for the
-// patient, and for the secretary on the patient's record.
-//
-// Question shape:
-//   id        answer key, stored in intakeForms/{id}.answers[id]
-//   section   grouping used for the progress label and the summary
-//   type      'text' | 'textarea' | 'tel' | 'date' | 'single' | 'multi' | 'list' | 'consent'
-//   label     the question itself
-//   help      optional one-line explanation
-//   required  blocks Continue until answered (everything else can be skipped)
-//   validate  (value) => error string, or '' when fine
-//   showIf    (answers) => boolean; hides the question entirely
-//   affectsFlow  the answer changes which later questions appear
-//   options   for single/multi: [{ value, label }]
-//   otherKey  multi only: answer key that stores a free-text "Other"
-//   fields / noneLabel / summarize   list-type config (see the list questions)
-//   adultOnly / childOnly  hide the question on the other form (see below)
-//   child     overrides (label, help, placeholder, required, options, ...)
-//             applied when the form is the child version
-//
-// Two versions of the form share this one list. A parent filling in a form
-// for their child stores answers.formType === 'child' (plus the child's date
-// of birth, which is already known). getVisibleQuestions(answers) then drops
-// the adult-only questions, adds the child-only ones and swaps in the
-// child wording, so anything that renders the form from
-// getVisibleQuestions(answers) - the wizard, IntakeSummary - needs no changes.
+
 import {
   GENDER_OPTIONS,
   isValidEmail,
@@ -61,10 +33,6 @@ const YES_NO = [
   { value: 'no', label: 'No' },
 ]
 
-// The only intake answers a patient is allowed to write straight to their
-// patientProfiles doc (mirrors patientEditableProfileFields() in the
-// Firestore rules). Everything else stays in the intake form until a
-// secretary imports it.
 export const PROFILE_SYNC_FIELDS = [
   'occupation',
   'maritalStatus',
@@ -113,10 +81,10 @@ const fmtDate = (v) => (v ? formatDisplayDate(v) : '')
 const joinParts = (parts, sep = ' · ') => parts.filter(Boolean).join(sep)
 
 export const QUESTIONS = [
-  // ---- About you ----
+  // About you
   {
     id: 'dateOfBirth',
-    adultOnly: true, // a child's date of birth is already on their profile
+    adultOnly: true,
     section: 'About you',
     type: 'date',
     label: 'What is your date of birth?',
@@ -259,7 +227,7 @@ export const QUESTIONS = [
     validate: emailRule,
   },
 
-  // ---- Emergency contact ----
+  // Emergency contact
   {
     id: 'emergencyContactName',
     child: {
@@ -298,7 +266,7 @@ export const QUESTIONS = [
     required: true,
   },
 
-  // ---- Medical aid ----
+  // Medical aid
   {
     id: 'hasMedicalAid',
     child: {
@@ -375,7 +343,6 @@ export const QUESTIONS = [
     required: true,
   },
 
-  // ---- Child only: birth, development and vaccines ----
   {
     id: 'birthHistory',
     section: 'Birth and development',
@@ -421,7 +388,7 @@ export const QUESTIONS = [
     placeholder: 'Optional',
   },
 
-  // ---- Your health ----
+  // Your health
   {
     id: 'bloodGroup',
     child: {
@@ -537,7 +504,7 @@ export const QUESTIONS = [
     options: opts(FAMILY_HISTORY_OPTIONS),
   },
 
-  // ---- Lifestyle ----
+  // Lifestyle
   {
     id: 'smoking',
     adultOnly: true,
@@ -555,7 +522,7 @@ export const QUESTIONS = [
     options: opts(['Never', 'Occasionally', 'Regularly']),
   },
 
-  // ---- Finishing up ----
+  // Finishing up
   {
     id: 'reasonForJoining',
     child: {
@@ -590,8 +557,6 @@ export function getVisibleQuestions(answers = {}) {
     .map((q) => (child && q.child ? { ...q, ...q.child } : q))
 }
 
-// Turns one answer into display lines. Returns null when unanswered, so the
-// summary can show "Not answered" instead of an empty row.
 export function formatAnswer(q, answers = {}) {
   const v = answers[q.id]
   switch (q.type) {
@@ -621,10 +586,6 @@ export function formatAnswer(q, answers = {}) {
   }
 }
 
-// Maps patient-reported intake answers onto the verified patientProfiles
-// shape used by the secretary's record. It only FILLS EMPTY fields - anything
-// the practice already entered is never overwritten. Returns just the fields
-// that would change (empty object = nothing to import).
 export function intakeToProfileUpdates(answers = {}, profile = {}) {
   const updates = {}
   const p = profile || {}
@@ -635,10 +596,6 @@ export function intakeToProfileUpdates(answers = {}, profile = {}) {
     if (!p[f] && answers[f] && answers[f] !== "I don't know") updates[f] = answers[f]
   })
 
-  // Contact and medical-aid details. For an adult these were already copied
-  // across by the patient (PROFILE_SYNC_FIELDS) so this does nothing; for a
-  // child the parent cannot write the child's profile, so staff import them
-  // here. A child's emergency contact defaults to the parent or guardian.
   const child = isChildForm(answers)
   const contactName = answers.emergencyContactName || (child ? answers.guardianName : '')
   const contactPhone = answers.emergencyContactPhone || (child ? answers.guardianPhone : '')

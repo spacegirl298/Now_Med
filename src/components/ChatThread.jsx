@@ -1,17 +1,9 @@
-// Message list + composer shared by the patient's Messages page and the
-// secretary's inbox. Purely presentational: the parent owns the Firestore
-// subscription and passes `onSend`.
-//
-// `myRole` decides which side the bubbles sit on. Messages with
-// kind === 'reminder' (sent by the practice via "Send reminder") get their
-// own amber style so they stand out from normal chat.
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Bell, Send } from 'lucide-react'
 import { formatDate, formatShortDate, formatTime, isToday } from '../utils/dateHelpers'
 
 const MAX_LENGTH = 1000
 
-// Pending writes have no server timestamp yet - treat them as "now".
 function toDate(ts) {
   if (!ts) return new Date()
   if (ts.toDate) return ts.toDate()
@@ -90,9 +82,6 @@ export default function ChatThread({
             const mine = m.senderRole === myRole
             const isReminder = m.kind === 'reminder'
             const isFlagged = showModerationFlags && m.explicitLanguage
-            // Crisis flag is shown to staff regardless of showModerationFlags -
-            // it's a safety signal, not a swearing/moderation one, and a
-            // secretary reading any thread should be able to see it.
             const isCrisis = myRole === 'secretary' && m.crisisLanguage
 
             return (

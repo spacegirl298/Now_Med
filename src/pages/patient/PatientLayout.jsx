@@ -1,6 +1,3 @@
-// Shared shell for every patient screen: sidebar on desktop; on phones a top
-// app bar (brand, notifications, log out) plus bottom tabs. Mirrors
-// SecretaryLayout so both roles share the same app chrome.
 import Sidebar from "../../components/Sidebar";
 import BottomTabBar from "../../components/BottomTabBar";
 import NotificationBell from "../../components/NotificationBell";
@@ -17,14 +14,11 @@ export default function PatientLayout({ children }) {
       <Sidebar role="patient" />
       <div className="flex-1 min-w-0 flex flex-col md:ml-60">
         <MobileTopBar role="patient" alerts={alerts}>
-          {/* Phone: sits in the top bar. Only rendered while the patient still
-              owes us their intake form. */}
           <span className="md:hidden">
             <IntakeFormButton inline />
           </span>
         </MobileTopBar>
 
-        {/* Desktop: floating bell / intake button at the top right. */}
         <div className="hidden md:block">
           <NotificationBell alerts={alerts} />
           <IntakeFormButton />

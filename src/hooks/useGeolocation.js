@@ -1,14 +1,7 @@
-// Wraps the browser Geolocation API for the Location & ETA feature.
-// Deliberately request-triggered (requestLocation()) rather than
-// automatic on mount - browsers show a permission prompt the moment you
-// call getCurrentPosition, and firing that on every dashboard load before
-// the patient has asked for an ETA would be a bad, easily-denied-out-of-
-// annoyance first impression.
 import { useState, useCallback } from "react";
 
 export function useGeolocation() {
-  const [position, setPosition] = useState(null); // { lat, lng } | null
-  // idle | loading | success | denied | unsupported | error
+  const [position, setPosition] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
 
@@ -31,7 +24,6 @@ export function useGeolocation() {
         setStatus("success");
       },
       (err) => {
-        // err.code: 1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT
         setStatus(err.code === 1 ? "denied" : "error");
         setError(
           err.code === 1

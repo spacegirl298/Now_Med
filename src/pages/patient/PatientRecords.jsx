@@ -1,32 +1,3 @@
-// Patient's own medical record (PRD: Medical Records - must-have).
-// Mirrors PatientRecordModal's tabs and section styling so this feels like
-// the same product as the secretary's full record view, but it's a page
-// (not a modal) and almost everything here is read-only. Clinical data -
-// allergies, medications, chronic conditions, surgical/admission history,
-// family history, and consultation notes - is entered and verified by the
-// practice, so patients can view it but not edit it here. The only fields a
-// patient can change themselves are administrative/self-reported ones
-// (occupation, marital status, emergency contact, medical aid details).
-//
-// Data is read live via subscribeToPatientProfile / subscribeToPatientRecords
-// (rather than a one-time fetch), so a change either side makes - a
-// secretary logging a new consultation, or the patient updating their
-// emergency contact - shows up for the other within moments.
-//
-// Records tagged internalOnly by a secretary (staff notes not meant for the
-// patient) are filtered out before anything ever reaches this screen.
-//
-// Anything a patient can't edit directly (date of birth, gender, allergies,
-// medications, ...) is changed by filing a request from the "Request a
-// change" button. A secretary makes the correction on the record, or
-// declines it, and the patient is notified; their requests and outcomes are
-// listed at the bottom of the Overview tab. The intake form they filled in on
-// first login appears read-only under "Intake form".
-//
-// If this patient's history was originally logged as a walk-in (booked by
-// phone/email/in person before they had an account), it was linked to their
-// uid automatically at registration - see linkPatientDataByIdNumber in
-// AuthContext - so it already shows up here with no extra work.
 import { useEffect, useMemo, useState } from 'react'
 import {
   FileText,
@@ -65,9 +36,6 @@ const TABS = [
 ]
 const INTAKE_TAB = { id: 'intake', label: 'Intake form' }
 
-// What a patient can ask the practice to change. Editable-by-patient details
-// (occupation, emergency contact, medical aid) are deliberately not listed:
-// they have the Edit button for those.
 const REQUEST_SECTIONS = [
   'Date of birth',
   'Gender',
@@ -89,8 +57,6 @@ const REQUEST_STATUS = {
   declined: { label: 'Declined', classes: 'bg-pastel-red text-red' },
 }
 
-// Snapshot of what the record says right now, so the secretary can see what
-// the patient is referring to without opening another tab.
 function currentValueFor(section, profile) {
   if (!profile) return ''
   switch (section) {
@@ -199,10 +165,6 @@ export default function PatientRecords() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [records, setRecords] = useState([])
   const [loadingRecords, setLoadingRecords] = useState(true)
-  // Surfaces a permission-denied / network error from either live
-  // subscription. Without this, a blocked read just leaves the page on
-  // "Loading your record..." forever with nothing but a console error to
-  // explain why.
   const [loadError, setLoadError] = useState('')
 
   const [editOpen, setEditOpen] = useState(false)
@@ -226,8 +188,6 @@ export default function PatientRecords() {
         setLoadingProfile(false)
       },
     )
-    // Staff-only entries are filtered out here, before they ever land in
-    // this component's state - not just hidden in the UI.
     const unsubRecords = subscribeToPatientRecords(
       currentUser.uid,
       (list) => {
@@ -245,7 +205,6 @@ export default function PatientRecords() {
       setRequests,
       (err) => console.error(err),
     )
-    // One-time fetch: the form is immutable once submitted.
     getIntakeForm(currentUser.uid)
       .then(setIntake)
       .catch((err) => console.error(err))
@@ -692,8 +651,6 @@ export default function PatientRecords() {
         )}
       </div>
 
-      {/* Edit the handful of admin/contact fields patients are allowed to
-          change themselves. Clinical data has no edit path here on purpose. */}
       <Modal
         isOpen={editOpen}
         onClose={() => setEditOpen(false)}
@@ -767,7 +724,6 @@ export default function PatientRecords() {
         </div>
       </Modal>
 
-      {/* Ask the practice to change something patients can't edit themselves. */}
       <Modal
         isOpen={reqOpen}
         onClose={() => setReqOpen(false)}

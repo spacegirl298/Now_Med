@@ -1,4 +1,4 @@
-// Mobile navigation
+// Mobile tabs
 import { NavLink } from "react-router-dom";
 import {
   Calendar,

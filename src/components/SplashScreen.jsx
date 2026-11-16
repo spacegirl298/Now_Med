@@ -1,4 +1,4 @@
-// Branded loading screen
+// Splash screen
 export default function SplashScreen() {
   return (
     <div

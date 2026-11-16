@@ -1,5 +1,3 @@
-// Collects the minimum needed to create a managed profile and asks the parent
-// to confirm they are authorised to manage the child's health information.
 import { useState } from 'react'
 import Modal from '../Modal'
 import { useAuth } from '../../context/AuthContext'

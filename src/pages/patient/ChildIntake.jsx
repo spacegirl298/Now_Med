@@ -1,15 +1,3 @@
-// /patient/family/:childId/intake
-// A parent filling in their child's intake form. It is the same wizard an
-// adult uses for their own form (components/IntakeWizard.jsx), run on the
-// child version of the questions (utils/intakeQuestions.js, formType 'child').
-//
-// The form is saved to `intakeForms` with the CHILD's id as patientId - like
-// everything else about a child - so it shows on the child's record for the
-// practice, and moves to the child's own account at hand-over.
-//
-// Unlike an adult, the parent cannot write the child's clinical profile, so
-// nothing is copied across here: staff review the form and import it from the
-// child's record (PatientRecordModal > Intake form > Import into profile).
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { CheckCircle2, ShieldAlert } from "lucide-react";
@@ -25,8 +13,6 @@ import PatientLayout from "./PatientLayout";
 import IntakeWizard from "../../components/IntakeWizard";
 import EmptyState from "../../components/EmptyState";
 
-// The family page says mother / father / ...; the intake form's own list is
-// Parent / Legal guardian / Foster parent / Other.
 const RELATIONSHIP_TO_INTAKE = {
   mother: "Parent",
   father: "Parent",
@@ -38,8 +24,8 @@ export default function ChildIntake() {
   const { childId } = useParams();
   const { currentUser, userName } = useAuth();
   const navigate = useNavigate();
-  const [child, setChild] = useState(undefined); // undefined = loading, null = unavailable
-  const [existing, setExisting] = useState(undefined); // undefined = checking, null = none yet
+  const [child, setChild] = useState(undefined);
+  const [existing, setExisting] = useState(undefined);
 
   useEffect(() => {
     const unsub = subscribeToChild(childId, setChild, (err) => {
@@ -55,7 +41,6 @@ export default function ChildIntake() {
     isManageable(child) &&
     child.verificationStatus !== "rejected";
 
-  // One-time check: a submitted form is immutable, so don't take a second one.
   useEffect(() => {
     if (!allowed) return;
     let cancelled = false;
@@ -72,7 +57,6 @@ export default function ChildIntake() {
 
   const childPage = `/patient/family/${childId}`;
 
-  // Prefill what we already know about the parent so they are not asked twice.
   const initialAnswers = useMemo(() => {
     if (!child) return {};
     const me = child.guardians?.[currentUser?.uid];
@@ -92,7 +76,6 @@ export default function ChildIntake() {
   );
 
   async function handleSubmit(clean) {
-    // Re-check right before saving in case it was submitted from another tab.
     const already = await getIntakeForm(child.id).catch(() => null);
     if (!already) {
       await saveIntakeForm({

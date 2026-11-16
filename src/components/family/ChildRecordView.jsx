@@ -1,4 +1,3 @@
-// Shows a child's record, including their profile, medical history, allergies, medications, visit history and intake form.
 import { FileText, HeartPulse, Pill, ShieldAlert, Stethoscope } from 'lucide-react'
 import Card from '../Card'
 import EmptyState from '../EmptyState'

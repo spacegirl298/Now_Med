@@ -1,5 +1,4 @@
-// Shown for any URL the app doesn't have a route for (firebase.json rewrites
-// every path to index.html, so unknown URLs land here instead of a blank page).
+
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AuthShell, { primaryButtonClass } from '../components/AuthShell'
@@ -7,7 +6,6 @@ import AuthShell, { primaryButtonClass } from '../components/AuthShell'
 export default function NotFound() {
   const { currentUser, userRole } = useAuth()
 
-  // Signed-in people go back to their own dashboard, everyone else to the start.
   const signedIn = currentUser && userRole
   const home = !signedIn
     ? '/'

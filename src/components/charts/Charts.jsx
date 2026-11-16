@@ -1,4 +1,3 @@
-// Small dependency-free charts for the analytics page
 
 const COLORS = {
   onTime: "var(--color-green)",
@@ -40,8 +39,6 @@ export function Legend({ items }) {
   );
 }
 
-// Appointments per day / week / month (the caller decides), stacked:
-// on time / delayed / cancelled. Each item: { label, title, onTime, delayed, cancelled }.
 export function PeriodStackChart({ data, unit = "day" }) {
   const total = data.reduce((s, d) => s + d.onTime + d.delayed + d.cancelled, 0);
   if (!total) return <Empty />;
@@ -129,7 +126,7 @@ export function PeriodStackChart({ data, unit = "day" }) {
   );
 }
 
-// Horizontal bars 
+// Horizontal bars
 export function HBarChart({ items, color = COLORS.bar, empty }) {
   if (!items.length) return <Empty>{empty}</Empty>;
   const max = Math.max(...items.map((i) => i.value), 1);
@@ -154,7 +151,7 @@ export function HBarChart({ items, color = COLORS.bar, empty }) {
   );
 }
 
-// Vertical columns
+// Vertical bars
 export function ColumnChart({ items, unit = "", empty }) {
   if (!items.some((i) => i.value > 0)) return <Empty>{empty}</Empty>;
   const W = 420;
@@ -218,7 +215,7 @@ export function LineChart({ points, unit = "", empty }) {
   const x = (i) => pad.l + (points.length === 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
   const y = (v) => pad.t + innerH - (v / max) * innerH;
   const path = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.value)}`).join(" ");
-  const every = Math.max(1, Math.ceil(points.length / 8)); // thin the x labels
+  const every = Math.max(1, Math.ceil(points.length / 8));
   const showValues = points.length <= 12;
   const showDots = points.length <= 40;
 

@@ -33,13 +33,11 @@ import {
 } from "../../utils/analyticsHelpers";
 import { generateMockAnalyticsData } from "../../utils/mockAnalyticsData";
 
-const ROW_LIMIT = 300; // visits shown on screen / in the PDF; the CSV has all
+const ROW_LIMIT = 300;
 const minutes = (n) => `${Math.round(n)} min`;
 const percent = (n) => `${Math.round(n)}%`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-// One plain-language sentence per doctor, e.g. "Ran late on 4 of 22
-// appointments (18%), averaging 17 min. Most common reason: ..."
 function describeDoctor(d) {
   if (!d.booked) return "No appointments this month.";
   if (!d.delayedCount) {
@@ -103,7 +101,6 @@ export default function SecretaryAnalytics() {
     end: presets.this_month.end,
   }));
   const [doctorId, setDoctorId] = useState("all");
-  // Demo mode swaps in generated sample data. Nothing is written to Firestore.
   const [demo, setDemo] = useState(false);
   const mock = useMemo(() => (demo ? generateMockAnalyticsData() : null), [demo]);
 
@@ -146,8 +143,6 @@ export default function SecretaryAnalytics() {
     }
   }
 
-  // Editing a date makes it a custom range. Keep start <= end by moving the
-  // other date along if the person crosses them over.
   function changeDate(field, value) {
     if (!value) return;
     setPreset("custom");
@@ -167,8 +162,6 @@ export default function SecretaryAnalytics() {
         perDoctor.find((d) => d.id === doctorId)?.name ||
         "Doctor";
 
-  // Doctors for the dropdown: everyone on file plus anyone who only appears
-  // on appointments.
   const doctorOptions = useMemo(() => {
     const map = new Map(source.doctors.map((d) => [d.id, d.name || "Doctor"]));
     for (const d of perDoctor) if (!map.has(d.id)) map.set(d.id, d.name);
@@ -186,8 +179,6 @@ export default function SecretaryAnalytics() {
   }
 
   function handlePdf() {
-    // Uses the browser's print dialog - choose "Save as PDF" as the printer.
-    // The file name suggested by the browser comes from the page title.
     const previous = document.title;
     document.title = `Now Med analytics ${demo ? "DEMO " : ""}${range.start} to ${range.end} ${scopeName}`;
     const restore = () => {
@@ -203,13 +194,12 @@ export default function SecretaryAnalytics() {
 
   function toggleDemo() {
     setDemo((on) => !on);
-    setDoctorId("all"); // doctor ids differ between real and demo data
+    setDoctorId("all");
   }
 
   return (
     <SecretaryLayout>
       <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto md:pr-24">
-        {/* Controls (hidden when printing) */}
         <div className="no-print flex flex-wrap items-end justify-between gap-4 mb-6">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-ink">
@@ -335,8 +325,6 @@ export default function SecretaryAnalytics() {
           </Card>
         ) : (
           <div id="analytics-report" className="space-y-6">
-            {/* Report heading - shown on screen as context, and is the title
-                block of the PDF. */}
             <div>
               <p className="text-xl font-semibold text-plum">
                 {scopeName} · {label}

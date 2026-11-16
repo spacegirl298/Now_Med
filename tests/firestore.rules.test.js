@@ -1,9 +1,4 @@
-// Security rules tests, run against the local Firestore emulator.
-//
-//   npm run test:rules
-//
-// Each test is one claim from the report, written as something that either
-// succeeds or is rejected by the rules. Nothing here touches the live project.
+
 import { readFileSync } from 'node:fs'
 import {
   initializeTestEnvironment,
@@ -26,20 +21,17 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 const HOUR = 60 * 60 * 1000
 let testEnv
 
-// ---- who is calling -------------------------------------------------------
-// Patients: verified email, no invite.
+
 const patient = (uid) =>
   testEnv
     .authenticatedContext(uid, { email: `${uid}@test.com`, email_verified: true })
     .firestore()
 
-// Secretary: verified email that is on the staffInvites list (see seed()).
 const secretary = () =>
   testEnv
     .authenticatedContext('sec1', { email: 'sec@practice.com', email_verified: true })
     .firestore()
 
-// Invited email, but the address has not been verified yet.
 const unverifiedStaff = () =>
   testEnv
     .authenticatedContext('sec2', { email: 'new@practice.com', email_verified: false })
@@ -94,7 +86,6 @@ async function seed() {
       patientId: 'childA',
     })
 
-    // patA has one appointment 4 hours out and one 2 hours out; patB has one.
     const appt = (patientId, hoursAhead) => ({
       patientId,
       doctorId: 'doc1',
@@ -141,7 +132,7 @@ beforeEach(async () => {
   await seed()
 })
 
-// ---------------------------------------------------------------------------
+
 describe('user documents (names, emails, ID numbers)', () => {
   it('a patient can read their own user doc', async () => {
     await assertSucceeds(getDoc(doc(patient('patA'), 'users/patA')))
@@ -194,7 +185,7 @@ describe('role assignment', () => {
 
 describe('privilege escalation (the practice-code attack)', () => {
   it('a user doc that says role=secretary gives no access to records', async () => {
-    // Simulates the old exploit: someone who managed to write role=secretary.
+
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'users/evil'), userDoc('evil', 'secretary'))
     })

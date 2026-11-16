@@ -1,34 +1,31 @@
 @import "tailwindcss";
 
 @theme {
-  /*Primary Colour Palette*/
-  --color-deep-plum: #4b1528; /*For hover states on dark elements*/
-  --color-plum: #72243e; /*Headings and emphasis text*/
-  --color-rose: #993556; /*Primary branc colour, applied to buttons, active navigation, & key interactive elements*/
-  --color-bloom: #d4537e; /*Large-text hover states only*/
-  --color-blush: #f4c0d1; /*Selected states & tag backgrounds*/
-  --color-mist: #fbeaf0; /*card & surface bg*/
-  /*Neutral Colour Palette*/
-  --color-ink: #2c2c2a; /*Primary body text*/
-  --color-slate: #5f5e5a; /*secondary &muted text*/
-  --color-stone: #b4b2a9; /*placeholders &disabled sates*/
-  --color-sand: #f1efe8; /*page background*/
-  --color-white: #ffffff; /*card surfaces*/
-  /*Status Colour Palette*/
-  --color-green: #085041; /*Confirmed text*/
-  --color-pastel-green: #e1f5ee; /*confirmed background*/
-  --color-amber: #633806; /*Delayed text*/
-  --color-pastel-amber: #faeeda; /*Delayed Background*/
-  --color-red: #791f1f; /*Cancelled text*/
-  --color-pastel-red: #fcebeb; /*Cancelled Background*/
-  --color-blue: #0c447c; /*Pending Text*/
-  --color-pastel-blue: #e6f1fb; /*Pending background*/
+  /* Primary colors */
+  --color-deep-plum: #4b1528;
+  --color-plum: #72243e;
+  --color-rose: #993556;
+  --color-bloom: #d4537e;
+  --color-blush: #f4c0d1;
+  --color-mist: #fbeaf0;
+  /* Neutrals */
+  --color-ink: #2c2c2a;
+  --color-slate: #5f5e5a;
+  --color-stone: #b4b2a9;
+  --color-sand: #f1efe8;
+  --color-white: #ffffff;
+  /* Status colors */
+  --color-green: #085041;
+  --color-pastel-green: #e1f5ee;
+  --color-amber: #633806;
+  --color-pastel-amber: #faeeda;
+  --color-red: #791f1f;
+  --color-pastel-red: #fcebeb;
+  --color-blue: #0c447c;
+  --color-pastel-blue: #e6f1fb;
 }
 
-/* ---------- Print / "Save as PDF" for the analytics report ----------
-   Only the element with id="analytics-report" is printed; the sidebar,
-   tab bar and buttons are hidden. Works with the browser's built-in
-   "Save as PDF" destination, so no PDF library is needed. */
+
 @media print {
   @page {
     size: A4;
@@ -62,7 +59,7 @@
   }
 }
 
-/* ---------- Splash screen ---------- */
+/* Splash screen */
 .splash-word {
   animation: splash-rise 0.6s ease-out both;
 }
@@ -114,7 +111,7 @@
   }
 }
 
-/* ---------- Mobile polish ---------- */
+/* Mobile polish */
 html,
 body {
   overflow-x: hidden;
@@ -122,8 +119,7 @@ body {
 body {
   -webkit-tap-highlight-color: transparent;
 }
-/* iOS zooms the page when a focused field is under 16px; keep forms at 16px
-   on phones without touching the desktop type scale. */
+
 @media (max-width: 767px) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   select,
@@ -131,7 +127,7 @@ body {
     font-size: 16px;
   }
 }
-/* Room for the home-indicator / gesture bar under the fixed tab bar. */
+
 
 .safe-top {
   padding-top: env(safe-area-inset-top);

@@ -1,4 +1,3 @@
-// Shows the child's name, date of birth, guardian and verification status.
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'

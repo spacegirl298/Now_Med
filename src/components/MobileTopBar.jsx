@@ -1,4 +1,3 @@
-// Phone-only app bar
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";

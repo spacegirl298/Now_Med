@@ -1,8 +1,3 @@
-// Read-only view of an intake form's answers, grouped by section.
-// Used in three places: the wizard's final review step (with `onChange` so
-// each answer has a "Change" link), the patient's own Medical Records page,
-// and the secretary's patient record. Hidden questions (e.g. medical aid
-// number when the patient has no medical aid) are left out.
 import { getVisibleQuestions, formatAnswer } from '../utils/intakeQuestions'
 
 export default function IntakeSummary({ answers = {}, onChange }) {

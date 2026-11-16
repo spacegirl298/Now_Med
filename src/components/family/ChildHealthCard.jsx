@@ -1,4 +1,3 @@
-// Birth, vaccination and development answers from a child's intake form.
 const wrap = 'bg-mist rounded-xl p-4'
 
 export default function ChildHealthCard({ answers }) {

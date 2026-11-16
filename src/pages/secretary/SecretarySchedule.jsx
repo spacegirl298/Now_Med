@@ -1,6 +1,3 @@
-// Secretary's operational hub: month calendar, day detail panel, appointment
-// CRUD, delay marking, and marking dates unavailable. (PRD: Calendar Management
-// - must-have.)
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -59,8 +56,6 @@ import {
 } from "../../firebase/family";
 import { AppointmentListSkeleton } from "../../components/Skeleton";
 
-// Only meaningful for today - any time slot on a future date is fine, and
-// isPastDate() already rules out past dates entirely.
 function isPastTimeSlot(dateStr, timeStr) {
   if (!isToday(dateStr)) return false;
   const [h, m] = timeStr.split(":").map(Number);
@@ -70,7 +65,7 @@ function isPastTimeSlot(dateStr, timeStr) {
 }
 
 const EMPTY_FORM = {
-  bookingMode: "existing", // 'existing' patient on file, or a 'new' walk-in/phone/email patient
+  bookingMode: "existing",
   patientId: "",
   patientName: "",
   patientIdNumber: "",
@@ -129,7 +124,7 @@ export default function SecretarySchedule() {
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const [showBlockModal, setShowBlockModal] = useState(false);
-  const [blockMode, setBlockMode] = useState("day"); // 'day' | 'hours'
+  const [blockMode, setBlockMode] = useState("day");
   const [blockTitle, setBlockTitle] = useState("");
   const [blockDoctorId, setBlockDoctorId] = useState("");
   const [blockStart, setBlockStart] = useState("08:00");
@@ -137,7 +132,7 @@ export default function SecretarySchedule() {
   const [blockError, setBlockError] = useState("");
   const [savingBlock, setSavingBlock] = useState(false);
 
-  const [confirmTarget, setConfirmTarget] = useState(null); // appointment being confirmed
+  const [confirmTarget, setConfirmTarget] = useState(null);
   const [confirmMethod, setConfirmMethod] = useState("whatsapp");
   const [confirmingBusy, setConfirmingBusy] = useState(false);
   const [reminderBusyId, setReminderBusyId] = useState(null);
@@ -178,9 +173,6 @@ export default function SecretarySchedule() {
     (b) => b.date === selectedDate && b.time === null,
   );
 
-  // Titled hour-range blocks (e.g. "Lunch break" 12:00-13:00) for the
-  // selected day, grouped back together by groupId so they render - and get
-  // removed - as one entry instead of one row per 30-minute slot.
   const blockedHourGroupsForSelectedDay = useMemo(() => {
     const groups = {};
     blockedSlots
@@ -312,8 +304,6 @@ export default function SecretarySchedule() {
     setShowAddModal(true);
   }
 
-  // Double-clicking a day on the calendar jumps straight to booking on that
-  // day, skipping the extra step of selecting it first.
   function handleDayDoubleClick(dateStr) {
     if (isPastDate(dateStr)) return;
     setSelectedDate(dateStr);
@@ -372,8 +362,6 @@ export default function SecretarySchedule() {
           doctorName: doctors.find((d) => d.id === form.doctorId)?.name || "",
           time: form.time,
           type: form.type,
-          // Keep an existing meeting link; create one if the visit has just
-          // become virtual; clear it if it is no longer virtual.
           meetingLink:
             form.type === "virtual"
               ? editingAppointment.meetingLink || generateMeetingLink()
@@ -394,12 +382,7 @@ export default function SecretarySchedule() {
           status: "booked",
         });
       } else {
-        // New / walk-in patient booked by phone, email, or in person. If
-        // this ID number already belongs to a registered account, attach
-        // the appointment straight to that account instead of leaving it
-        // unlinked.
         const idNumber = form.patientIdNumber.trim();
-        // A registered patient, or a child profile with this ID number.
         const existingUser =
           (await getUserByIdNumber(idNumber)) ||
           (await getChildByIdNumber(idNumber));
@@ -461,10 +444,6 @@ export default function SecretarySchedule() {
     setDeleteTarget(null);
   }
 
-  // Cancelling (unlike deleting) keeps the appointment on record as
-  // "cancelled" and notifies the patient if they have an account - use this
-  // for a patient-initiated or practice-initiated cancellation. Delete is
-  // for permanently removing a mistaken/duplicate entry.
   async function handleConfirmCancel() {
     if (!cancelTarget) return;
     setCancelling(true);
@@ -485,9 +464,6 @@ export default function SecretarySchedule() {
     setCancelling(false);
   }
 
-  // Quick toggle for the Ban icon: unblocking needs no extra info so it
-  // happens instantly. Blocking needs a title (and mode) patients will see,
-  // so that opens the one combined modal instead.
   async function handleBanIconClick() {
     if (isDayBlocked && blockedRecordForDay) {
       await unblockSlot(blockedRecordForDay.id);
@@ -1250,11 +1226,6 @@ export default function SecretarySchedule() {
         )}
       </Modal>
 
-      {/* Mark patient late modal - records lateness on the patient's side of
-          the same appointment, for the practice's own record-keeping. Unlike
-          "Mark delay" above, this doesn't change the appointment status or
-          notify the patient (it's a record of something that already
-          happened, not a heads-up about something upcoming). */}
       <Modal
         isOpen={!!lateTarget}
         onClose={() => setLateTarget(null)}
@@ -1341,9 +1312,6 @@ export default function SecretarySchedule() {
         </p>
       </Modal>
 
-      {/* Block availability modal - one entry point (the Ban icon) for
-          blocking either the whole day or specific hours, with a title
-          patients see instead of open slots on their calendar. */}
       <Modal
         isOpen={showBlockModal}
         onClose={() => setShowBlockModal(false)}
@@ -1449,7 +1417,6 @@ export default function SecretarySchedule() {
         </div>
       </Modal>
 
-      {/* Confirm appointment modal - records how the confirmation happened */}
       <Modal
         isOpen={!!confirmTarget}
         onClose={() => setConfirmTarget(null)}

@@ -15,11 +15,7 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 
-// Use tab-scoped sessionStorage instead of the default shared
-// localStorage persistence, so each browser tab can hold its own
-// logged-in user (useful for testing multiple roles at once, and
-// avoids one tab's login silently kicking out another tab's user).
 setPersistence(auth, browserSessionPersistence);
 
-export const db = getFirestore(app, 'jj04');  // 👈 add your database name here
+export const db = getFirestore(app, 'jj04');
 export default app;

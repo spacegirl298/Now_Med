@@ -1,9 +1,3 @@
-// One child's page for their parent: appointments (with live delay info),
-// the chat with the practice, records, and details + the 18th-birthday
-// hand-over. Route: /patient/family/:childId
-//
-// Access is checked here for a friendly message, but the database rules are
-// what actually enforce it (see FAMILY_SETUP.md).
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { CalendarPlus, ChevronLeft, ClipboardList, ShieldAlert } from 'lucide-react'
@@ -38,10 +32,6 @@ import {
   isPastSlot,
 } from '../../utils/dateHelpers'
 
-// Children aged 12+ can consent to their own treatment, so by default a parent
-// does not see their clinical records until the practice has a way to flag
-// what is private. Flip to true to share records with parents of teenagers.
-// (The intake form the parent submitted themselves stays visible either way.)
 const SHOW_RECORDS_TO_PARENTS_OF_TEENS = false
 
 const TABS = [
@@ -236,7 +226,6 @@ function ChildRecords({ child }) {
   )
 }
 
-// A nudge until the parent has filled in the child's intake form.
 function IntakeBanner({ child }) {
   const { intake, loading, error } = useChildIntake(child.id)
   if (loading || error || intake || child.hasCompletedIntake) return null
@@ -349,8 +338,7 @@ export default function PatientChild() {
   const { currentUser } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [child, setChild] = useState(undefined) // undefined = loading, null = unavailable
-  // Arriving from the intake form lands on Records.
+  const [child, setChild] = useState(undefined)
   const [tab, setTab] = useState(() =>
     TABS.some((t) => t.id === location.state?.tab) ? location.state.tab : 'appointments',
   )

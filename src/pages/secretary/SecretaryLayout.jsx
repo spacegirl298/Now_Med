@@ -1,6 +1,3 @@
-// Shared shell for every secretary screen: sidebar on desktop; on phones a top
-// app bar (brand, notifications, log out) plus bottom tabs. Keeps individual
-// pages focused on content.
 import Sidebar from "../../components/Sidebar";
 import BottomTabBar from "../../components/BottomTabBar";
 import NotificationBell from "../../components/NotificationBell";
