@@ -694,7 +694,10 @@ export default function SecretarySchedule() {
           </Card>
 
           {/* Day detail panel */}
-          <Card padded={false} className="h-fit">
+          <Card
+            padded={false}
+            className="h-fit md:sticky md:top-6 md:self-start md:max-h-[650px] md:flex md:flex-col md:overflow-hidden"
+          >
             <div className="px-5 py-4 border-b border-sand flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate">Selected day</p>
@@ -770,7 +773,9 @@ export default function SecretarySchedule() {
             </button>
 
             {loading ? (
-              <AppointmentListSkeleton rows={3} showActions />
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <AppointmentListSkeleton rows={3} showActions />
+              </div>
             ) : selectedDayAppointments.length === 0 ? (
               <EmptyState
                 icon={Clock}
@@ -778,7 +783,7 @@ export default function SecretarySchedule() {
                 message="Nothing booked for this day yet."
               />
             ) : (
-              <div className="divide-y divide-sand">
+              <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-sand">
                 {selectedDayAppointments.map((a) => (
                   <div key={a.id} className="px-5 py-4">
                     <div className="flex items-start justify-between">
