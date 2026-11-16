@@ -58,7 +58,10 @@ function splitMeetingLink(message) {
   const match = String(message || "").match(/https:\/\/\S+/);
   if (!match) return { text: message, link: "" };
   return {
-    text: message.replace(match[0], "").replace(/\s*(Join online:|join here:)\s*$/i, "").trim(),
+    text: message
+      .replace(match[0], "")
+      .replace(/\s*(Join online:|join here:)\s*$/i, "")
+      .trim(),
     link: match[0],
   };
 }
@@ -67,8 +70,12 @@ export default function NotificationBell({
   inline = false,
   alerts = null, // { permission, enableSystemAlerts } from useNotificationAlerts
 }) {
-  const { notifications, unreadCount, markNotificationRead, markAllNotificationsRead } =
-    useNotifications();
+  const {
+    notifications,
+    unreadCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+  } = useNotifications();
   const { userRole, currentUser } = useAuth();
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
@@ -95,7 +102,9 @@ export default function NotificationBell({
   return (
     <div
       ref={wrapperRef}
-      className={inline ? "relative" : "fixed top-4 right-4 md:top-6 md:right-20 z-40"}
+      className={
+        inline ? "relative" : "fixed top-4 right-4 md:top-6 md:right-20 z-40"
+      }
     >
       <button
         onClick={() => setOpen((v) => !v)}
@@ -104,7 +113,10 @@ export default function NotificationBell({
           inline ? "bg-transparent" : "bg-white shadow-sm"
         }`}
       >
-        <Bell size={20} className="text-white transition-colors group-hover:text-plum" />
+        <Bell
+          size={20}
+          className="text-plum transition-colors group-hover:text-plum"
+        />
         {unreadCount > 0 && (
           <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-full bg-rose text-white text-[10px] font-semibold flex items-center justify-center hover: text-plum transition-colors">
             {unreadCount > 9 ? "9+" : unreadCount}
