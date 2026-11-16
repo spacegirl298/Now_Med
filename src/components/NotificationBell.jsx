@@ -96,13 +96,13 @@ export default function NotificationBell({
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-        className={`relative w-11 h-11 rounded-full flex items-center justify-center hover:bg-mist transition-colors ${
+        className={`group relative w-11 h-11 rounded-full flex items-center justify-center hover:bg-mist transition-colors ${
           inline ? "bg-transparent" : "bg-white shadow-sm"
         }`}
       >
-        <Bell size={20} className="text-plum" />
+        <Bell size={20} className="text-white transition-colors group-hover:text-plum" />
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-full bg-rose text-white text-[10px] font-semibold flex items-center justify-center">
+          <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-full bg-rose text-white text-[10px] font-semibold flex items-center justify-center hover: text-plum transition-colors">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
@@ -113,7 +113,7 @@ export default function NotificationBell({
           className={`bg-white rounded-2xl shadow-lg border border-sand overflow-hidden ${
             inline
               ? "fixed left-3 right-3 top-16 z-50"
-              : "absolute right-0 mt-2 w-80 max-w-[90vw]"
+              : "absolute right-0 mt-2 w-80 max-w-[90vw] "
           }`}
         >
           <div className="px-4 py-3 border-b border-sand flex items-center justify-between gap-3">

@@ -1,6 +1,4 @@
-// Phone-only app bar (hidden from md up, where the sidebar takes over).
-// Holds the brand, notifications and - importantly - the log-out button, which
-// used to exist only in the desktop sidebar and so was unreachable on phones.
+// Phone-only app bar
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";
@@ -27,30 +25,30 @@ export default function MobileTopBar({ role = "patient", alerts = null, children
 
   return (
     <>
-      <header className="md:hidden sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-sand safe-top">
-        <div className="h-14 px-3 flex items-center justify-between gap-2">
+      <header className="md:hidden sticky top-0 z-40 /95 border-b border-sand safe-top">
+        <div className="h-14 px-3 flex bg-plum text-white items-center justify-between gap-2">
           <div className="min-w-0 pl-1">
             <p
-              className="text-lg font-semibold leading-tight text-plum"
+              className="text-lg font-semibold leading-tight text-white"
               style={{ fontFamily: "'Bricolage Grotesque', 'DM Sans', sans-serif" }}
             >
-              Now<span className="text-rose">Med</span>
+              <span className="text-white">Now Med</span>
             </p>
-            <p className="text-[10px] uppercase tracking-wide text-slate leading-none">
+            <p className="text-[10px] uppercase tracking-wide text-blush leading-none">
               {role === "secretary" ? "Secretary Portal" : "Patient Portal"}
             </p>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 ">
             {children}
             <NotificationBell inline alerts={alerts} />
             <button
               type="button"
               onClick={() => setConfirming(true)}
               aria-label="Log out"
-              className="w-11 h-11 rounded-full flex items-center justify-center text-plum hover:bg-mist transition-colors"
+              className="group w-11 h-11 rounded-full flex items-center justify-center text-white hover:bg-mist transition-colors"
             >
-              <LogOut size={20} />
+              <LogOut size={20} className="transition-colors group-hover:text-plum" />
             </button>
           </div>
         </div>
@@ -65,7 +63,7 @@ export default function MobileTopBar({ role = "patient", alerts = null, children
         onConfirm={handleLogout}
         cancelLabel="Stay logged in"
       >
-        <p className="text-sm text-slate">
+        <p className="text-sm text-blush">
           You'll need to log in again to see your appointments and messages.
         </p>
       </Modal>

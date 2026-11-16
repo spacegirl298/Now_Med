@@ -1,7 +1,4 @@
-// Branded loading screen: the NOW MED wordmark and the tagline
-// "Turning now now into now" ("now now" being South African for "in a little
-// while"). Pure CSS animation (keyframes in index.css), so it costs nothing
-// while auth resolves.
+// Branded loading screen
 export default function SplashScreen() {
   return (
     <div

@@ -57,7 +57,7 @@ export default function Sidebar({ role = "secretary" }) {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-60 shrink-0 bg-plum text-white h-screen sticky top-0 overflow-y-auto px-4 py-6">
+    <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 w-60 bg-plum text-white overflow-y-auto px-4 py-6">
       <div className="mb-8 px-2">
         <p className="text-lg font-semibold">Now Med</p>
         <p className="text-xs text-blush">

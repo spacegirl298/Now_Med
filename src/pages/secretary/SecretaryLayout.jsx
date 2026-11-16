@@ -14,7 +14,7 @@ export default function SecretaryLayout({ children }) {
   return (
     <div className="min-h-screen bg-sand flex">
       <Sidebar role="secretary" />
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col md:ml-60">
         <MobileTopBar role="secretary" alerts={alerts} />
 
         <div className="hidden md:block">

@@ -15,7 +15,7 @@ export default function PatientLayout({ children }) {
   return (
     <div className="min-h-screen bg-sand flex">
       <Sidebar role="patient" />
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col md:ml-60">
         <MobileTopBar role="patient" alerts={alerts}>
           {/* Phone: sits in the top bar. Only rendered while the patient still
               owes us their intake form. */}
