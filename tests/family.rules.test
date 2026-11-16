@@ -1,11 +1,12 @@
-// Security rules tests for the family dashboard (guardian access to children).
+
+// Security rules tests for the secretary side of the family feature:
+// listing and confirming children, booking and messaging for them, refusing a
+// guardian, and the hand-over to an adult account at 18.
 //
 //   npm run test:rules
 //
-// Kept in its own file with its own project id so it can run in parallel with
-// firestore.rules.test.js without the two clearing each other's data.
-// The writes below copy what the app really sends (createAppointment,
-// cancelAppointment, sendMessage, createDoctorRating, addChild).
+// Own project id, so it can run in parallel with the other rules test files.
+// The writes copy what src/firebase/family.js sends (handOverChild etc).
 import { readFileSync } from 'node:fs'
 import {
   initializeTestEnvironment,
@@ -17,14 +18,12 @@ import {
   getDoc,
   getDocs,
   setDoc,
-  addDoc,
   updateDoc,
-  deleteDoc,
+  addDoc,
   writeBatch,
   collection,
   query,
   where,
-  increment,
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore'
@@ -33,11 +32,11 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const YEAR = 365 * DAY
+const ID = '0101015009087' // the adult's ID number (rules never validate it)
 let testEnv
 
 const at = (ms) => Timestamp.fromMillis(Date.now() + ms)
 
-// ---- who is calling -------------------------------------------------------
 const parent = (uid) =>
   testEnv
     .authenticatedContext(uid, { email: `${uid}@test.com`, email_verified: true })
@@ -47,8 +46,6 @@ const secretary = () =>
     .authenticatedContext('sec1', { email: 'sec@practice.com', email_verified: true })
     .firestore()
 
-// ---- data -----------------------------------------------------------------
-// parentA is guardian of every kid below; parentB is a stranger.
 const childDoc = (extra = {}) => ({
   firstName: 'Kid',
   lastName: 'Test',
@@ -61,20 +58,11 @@ const childDoc = (extra = {}) => ({
   guardians: { parentA: { name: 'Parent A', relationship: 'mother' } },
   status: 'managed',
   verificationStatus: 'pending',
-  turns12At: at(4 * YEAR), // under 12
+  turns12At: at(4 * YEAR),
   turns18At: at(10 * YEAR),
   createdBy: 'parentA',
   createdAt: Timestamp.now(),
   ...extra,
-})
-
-const appt = (patientId, hoursAhead) => ({
-  patientId,
-  doctorId: 'doc1',
-  status: 'confirmed',
-  date: '2030-01-01',
-  time: '10:00',
-  appointmentAt: at(hoursAhead * HOUR),
 })
 
 async function seed() {
@@ -83,64 +71,59 @@ async function seed() {
     await setDoc(doc(db, 'staffInvites/sec@practice.com'), { by: 'console' })
     await setDoc(doc(db, 'secretaryDirectory/sec1'), { uid: 'sec1' })
 
-    // young + pending (the state right after a parent adds a child)
-    await setDoc(doc(db, 'children/kidPending'), childDoc())
-    // young + verified by the practice
-    await setDoc(doc(db, 'children/kidVerified'), childDoc({ verificationStatus: 'verified' }))
-    // 12-17: verified, but past the 12th birthday
+    // The young adult's own account (patient), and a staff member who shares
+    // an ID number with a patient account (allowed by the sign-up rules).
+    await setDoc(doc(db, 'users/adult1'), {
+      uid: 'adult1', name: 'Alex Adult', email: 'adult1@test.com', role: 'patient', idNumber: ID, idType: 'sa_id',
+    })
+
+    await setDoc(doc(db, 'children/kidPending'), childDoc({ idNumber: '1801015009087', idType: 'sa_id' }))
+    await setDoc(doc(db, 'children/kidRejected'), childDoc({ verificationStatus: 'rejected' }))
+    // turned 18 yesterday, ready to be handed over
     await setDoc(
-      doc(db, 'children/kidTeen'),
-      childDoc({ verificationStatus: 'verified', turns12At: at(-2 * YEAR), turns18At: at(4 * YEAR) }),
-    )
-    // already 18
-    await setDoc(
-      doc(db, 'children/kidAdult'),
-      childDoc({ verificationStatus: 'verified', turns12At: at(-6 * YEAR), turns18At: at(-DAY) }),
+      doc(db, 'children/kidGrown'),
+      childDoc({ verificationStatus: 'verified', idNumber: ID, idType: 'sa_id', turns12At: at(-6 * YEAR), turns18At: at(-DAY) }),
     )
 
-    await setDoc(doc(db, 'appointments/apptKid4h'), appt('kidPending', 4))
-    await setDoc(doc(db, 'appointments/apptKid2h'), appt('kidPending', 2))
-    await setDoc(doc(db, 'appointments/apptAdult'), appt('kidAdult', 4))
+    // data belonging to the child who is being handed over
+    await setDoc(doc(db, 'appointments/apptGrown'), {
+      patientId: 'kidGrown', patientName: 'Kid Test', doctorId: 'doc1', status: 'confirmed',
+      date: '2030-01-01', time: '10:00', appointmentAt: at(5 * DAY),
+    })
+    await setDoc(doc(db, 'appointmentSlots/slotGrown'), {
+      date: '2030-01-01', time: '10:00', status: 'booked', appointmentId: 'apptGrown', patientId: 'kidGrown', doctorId: 'doc1',
+    })
+    await setDoc(doc(db, 'records/recGrown'), { patientId: 'kidGrown', notes: 'history' })
+    await setDoc(doc(db, 'patientProfiles/profGrown'), { patientId: 'kidGrown', allergies: 'none' })
+    await setDoc(doc(db, 'intakeForms/intakeGrown'), { patientId: 'kidGrown', submittedBy: 'secretary' })
+    await setDoc(doc(db, 'notifications/nGrown'), {
+      recipientId: 'kidGrown', patientId: 'kidGrown', type: 'message', message: 'hi', read: false,
+    })
+    await setDoc(doc(db, 'conversations/kidGrown'), {
+      patientId: 'kidGrown', lastMessage: 'see you', lastSenderRole: 'secretary', unreadForStaff: 0, unreadForPatient: 1,
+    })
+    await setDoc(doc(db, 'conversations/kidGrown/messages/m1'), {
+      senderId: 'parentA', senderRole: 'patient', kind: 'message', text: 'hello',
+    })
+    await setDoc(doc(db, 'conversations/kidGrown/messages/m2'), {
+      senderId: 'sec1', senderRole: 'secretary', kind: 'message', text: 'see you',
+    })
 
-    await setDoc(doc(db, 'records/recPending'), { patientId: 'kidPending', notes: 'private' })
-    await setDoc(doc(db, 'records/recVerified'), { patientId: 'kidVerified', notes: 'private' })
-    await setDoc(doc(db, 'records/recTeen'), { patientId: 'kidTeen', notes: 'private' })
-    await setDoc(doc(db, 'records/recAdult'), { patientId: 'kidAdult', notes: 'private' })
-    await setDoc(doc(db, 'patientProfiles/profVerified'), { patientId: 'kidVerified', allergies: 'x' })
-    await setDoc(doc(db, 'intakeForms/intakeVerified'), { patientId: 'kidVerified', submittedBy: 'secretary' })
-
-    await setDoc(doc(db, 'conversations/kidPending'), {
-      patientId: 'kidPending',
-      lastSenderRole: 'secretary',
-      unreadForStaff: 0,
-      unreadForPatient: 1,
+    // a refused guardian's child, with data parentA must no longer reach
+    await setDoc(doc(db, 'appointments/apptRejected'), {
+      patientId: 'kidRejected', doctorId: 'doc1', status: 'confirmed', date: '2030-01-01', time: '11:00', appointmentAt: at(5 * DAY),
     })
-    await setDoc(doc(db, 'conversations/kidPending/messages/m1'), {
-      senderId: 'sec1',
-      senderRole: 'secretary',
-      kind: 'message',
-      text: 'hello',
+    await setDoc(doc(db, 'conversations/kidRejected'), { patientId: 'kidRejected', unreadForStaff: 0, unreadForPatient: 0 })
+    await setDoc(doc(db, 'conversations/kidRejected/messages/m1'), {
+      senderId: 'sec1', senderRole: 'secretary', kind: 'message', text: 'hi',
     })
-
-    await setDoc(doc(db, 'notifications/nKid'), {
-      recipientId: 'kidPending',
-      patientId: 'kidPending',
-      type: 'message',
-      message: 'New message from the practice',
-      read: false,
-    })
-    await setDoc(doc(db, 'notifications/nAdult'), {
-      recipientId: 'kidAdult',
-      type: 'confirmation',
-      message: 'old',
-      read: false,
-    })
+    await setDoc(doc(db, 'notifications/nRejected'), { recipientId: 'kidRejected', type: 'message', message: 'x', read: false })
   })
 }
 
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
-    projectId: 'demo-now-med-family',
+    projectId: 'demo-now-med-secretary',
     firestore: { rules: readFileSync('firestore.rules', 'utf8') },
   })
 })
@@ -152,321 +135,168 @@ beforeEach(async () => {
   await seed()
 })
 
-const byField = (db, col, field, value) =>
-  getDocs(query(collection(db, col), where(field, '==', value)))
-
 // ---------------------------------------------------------------------------
-describe('child profiles', () => {
-  it('a guardian can read their child', async () => {
-    await assertSucceeds(getDoc(doc(parent('parentA'), 'children/kidPending')))
+describe('the secretary can see and confirm children', () => {
+  it('lists every child (the patient directory query)', async () => {
+    await assertSucceeds(getDocs(collection(secretary(), 'children')))
   })
-  it('a guardian can list their children (the Family page query)', async () => {
-    const q = query(collection(parent('parentA'), 'children'), where('guardianIds', 'array-contains', 'parentA'))
-    await assertSucceeds(getDocs(q))
+  it('finds a child by ID number (the booking form lookup)', async () => {
+    await assertSucceeds(getDocs(query(collection(secretary(), 'children'), where('idNumber', '==', '1801015009087'))))
   })
-  it("a stranger cannot read someone else's child", async () => {
-    await assertFails(getDoc(doc(parent('parentB'), 'children/kidPending')))
+  it('a patient cannot list all children', async () => {
+    await assertFails(getDocs(collection(parent('parentA'), 'children')))
   })
-  it('a guardian cannot read the profile once the child is 18', async () => {
-    await assertFails(getDoc(doc(parent('parentA'), 'children/kidAdult')))
+  it('confirms, refuses and undoes a guardian', async () => {
+    const db = secretary()
+    const set = (status) =>
+      updateDoc(doc(db, 'children/kidPending'), { verificationStatus: status, reviewedBy: 'sec1', reviewedAt: serverTimestamp() })
+    await assertSucceeds(set('verified'))
+    await assertSucceeds(set('rejected'))
+    await assertSucceeds(set('pending'))
   })
-  it('a secretary can read and verify a child', async () => {
-    await assertSucceeds(getDoc(doc(secretary(), 'children/kidPending')))
-    await assertSucceeds(updateDoc(doc(secretary(), 'children/kidPending'), { verificationStatus: 'verified' }))
+  it('adds an ID number to a child profile', async () => {
+    await assertSucceeds(updateDoc(doc(secretary(), 'children/kidRejected'), { idType: 'sa_id', idNumber: ID }))
   })
-  it('a parent cannot verify their own child', async () => {
-    await assertFails(updateDoc(doc(parent('parentA'), 'children/kidPending'), { verificationStatus: 'verified' }))
-  })
-  it('a parent cannot add another guardian by editing the profile', async () => {
-    await assertFails(updateDoc(doc(parent('parentA'), 'children/kidPending'), { guardianIds: ['parentA', 'parentB'] }))
-  })
-  it('a parent cannot delete a child profile', async () => {
-    await assertFails(deleteDoc(doc(parent('parentA'), 'children/kidPending')))
-  })
-})
-
-describe('adding a child (what addChild sends)', () => {
-  const create = (db, id, extra) =>
-    setDoc(doc(db, `children/${id}`), {
-      ...childDoc({ createdAt: serverTimestamp() }),
-      guardianIds: ['parentB'],
-      primaryGuardianId: 'parentB',
-      createdBy: 'parentB',
-      guardians: { parentB: { name: 'Parent B', relationship: 'father' } },
-      ...extra,
-    })
-
-  it('a parent can add a child as pending', async () => {
-    await assertSucceeds(create(parent('parentB'), 'newKid'))
-  })
-  it('cannot be created already verified', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { verificationStatus: 'verified' }))
-  })
-  it('cannot list someone else as the guardian', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { guardianIds: ['parentA'] }))
-  })
-  it('cannot be created in another parent\'s name', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { createdBy: 'parentA' }))
-  })
-  it('cannot carry extra fields', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { relationship: 'mother' }))
-  })
-  it('cannot be created for someone who is already 18', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { turns18At: at(-DAY) }))
-  })
-  it('cannot push the 18th-birthday cut-off past 18 years', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { turns18At: at(30 * YEAR) }))
-  })
-  // Expected to FAIL until rules patch 3 is applied (see the notes in chat):
-  // without it, a parent can stretch the "under 12" window as far as they like.
-  it('cannot push the 12th-birthday cut-off into the future', async () => {
-    await assertFails(create(parent('parentB'), 'newKid', { turns12At: at(15 * YEAR) }))
+  it('a parent cannot confirm themselves or edit the ID number', async () => {
+    const db = parent('parentA')
+    await assertFails(updateDoc(doc(db, 'children/kidPending'), { verificationStatus: 'verified' }))
+    await assertFails(updateDoc(doc(db, 'children/kidPending'), { idNumber: '9999999999999' }))
   })
 })
 
-describe('booking for a child (what createAppointment sends)', () => {
-  const book = (db, childId) => {
+describe('the secretary works with a child like any patient', () => {
+  it('books an appointment, its slot and the notification for a child', async () => {
+    const db = secretary()
     const batch = writeBatch(db)
-    batch.set(doc(db, 'appointments/newAppt'), appt(childId, 24))
-    batch.set(doc(db, 'appointmentSlots/slot1'), {
-      date: '2030-01-02',
-      time: '09:00',
-      status: 'booked',
-      appointmentId: 'newAppt',
-      patientId: childId,
-      doctorId: 'doc1',
+    batch.set(doc(db, 'appointments/new1'), {
+      patientId: 'kidPending', patientName: 'Kid Test', doctorId: 'doc1', status: 'booked',
+      date: '2030-02-01', time: '09:00', appointmentAt: at(30 * DAY),
     })
-    return batch.commit()
+    batch.set(doc(db, 'appointmentSlots/slotNew'), {
+      date: '2030-02-01', time: '09:00', status: 'booked', appointmentId: 'new1', patientId: 'kidPending', doctorId: 'doc1',
+    })
+    await assertSucceeds(batch.commit())
+    await assertSucceeds(addDoc(collection(db, 'notifications'), {
+      recipientId: 'kidPending', type: 'confirmation', message: 'booked', read: false, createdAt: serverTimestamp(),
+    }))
+  })
+  it('messages a child\'s conversation', async () => {
+    const db = secretary()
+    const batch = writeBatch(db)
+    batch.set(doc(collection(db, 'conversations/kidPending/messages')), {
+      senderId: 'sec1', senderRole: 'secretary', senderName: 'Practice', text: 'Hello', kind: 'message',
+    })
+    batch.set(doc(db, 'conversations/kidPending'), {
+      patientId: 'kidPending', lastMessage: 'Hello', lastSenderRole: 'secretary', unreadForPatient: 1,
+    }, { merge: true })
+    await assertSucceeds(batch.commit())
+  })
+  it('writes a record and a profile for a child', async () => {
+    const db = secretary()
+    await assertSucceeds(setDoc(doc(db, 'records/newRec'), { patientId: 'kidPending', patientIdNumber: '', notes: 'checkup' }))
+    await assertSucceeds(setDoc(doc(db, 'patientProfiles/newProf'), { patientId: 'kidPending', allergies: 'pollen' }))
+  })
+})
+
+describe('a guardian the practice refuses', () => {
+  const db = () => parent('parentA')
+  it('can still read the child profile, so the app can explain what happened', async () => {
+    await assertSucceeds(getDoc(doc(db(), 'children/kidRejected')))
+  })
+  // Expected to FAIL until the isGuardianOf patch is applied (see FAMILY_SETUP.md):
+  // today a refused guardian keeps access to everything except clinical records.
+  it('loses access to appointments', async () => {
+    await assertFails(getDoc(doc(db(), 'appointments/apptRejected')))
+    await assertFails(getDocs(query(collection(db(), 'appointments'), where('patientId', '==', 'kidRejected'))))
+  })
+  it('loses access to the chat', async () => {
+    await assertFails(getDoc(doc(db(), 'conversations/kidRejected')))
+    await assertFails(getDoc(doc(db(), 'conversations/kidRejected/messages/m1')))
+  })
+  it('loses access to notifications', async () => {
+    await assertFails(getDocs(query(collection(db(), 'notifications'), where('recipientId', '==', 'kidRejected'))))
+  })
+  it('cannot book for the child', async () => {
+    await assertFails(setDoc(doc(db(), 'appointments/sneaky'), { patientId: 'kidRejected', date: '2030-03-01' }))
+  })
+  it('regains access if the practice undoes the decision', async () => {
+    await testEnv.withSecurityRulesDisabled((ctx) =>
+      updateDoc(doc(ctx.firestore(), 'children/kidRejected'), { verificationStatus: 'pending' }))
+    await assertSucceeds(getDoc(doc(db(), 'appointments/apptRejected')))
+  })
+})
+
+describe('handing a child over to their own account at 18', () => {
+  // Same writes as handOverChild() in src/firebase/family.js.
+  async function handOver() {
+    const db = secretary()
+    // 1. find the adult: patient role + ID number
+    await assertSucceeds(getDocs(query(collection(db, 'users'), where('idNumber', '==', ID), where('role', '==', 'patient'))))
+
+    // 2. re-point the child's data to the adult
+    const b1 = writeBatch(db)
+    b1.update(doc(db, 'appointments/apptGrown'), { patientId: 'adult1', patientName: 'Alex Adult' })
+    b1.update(doc(db, 'appointmentSlots/slotGrown'), { patientId: 'adult1' })
+    b1.update(doc(db, 'records/recGrown'), { patientId: 'adult1' })
+    b1.update(doc(db, 'patientProfiles/profGrown'), { patientId: 'adult1' })
+    b1.update(doc(db, 'intakeForms/intakeGrown'), { patientId: 'adult1' })
+    b1.update(doc(db, 'notifications/nGrown'), { recipientId: 'adult1', patientId: 'adult1' })
+    await assertSucceeds(b1.commit())
+
+    // 3. copy the chat, then remove the child's copy
+    const b2 = writeBatch(db)
+    b2.set(doc(db, 'conversations/adult1/messages/m1'), {
+      senderId: 'parentA', senderRole: 'patient', kind: 'message', text: 'hello',
+    })
+    b2.set(doc(db, 'conversations/adult1/messages/m2'), {
+      senderId: 'sec1', senderRole: 'secretary', kind: 'message', text: 'see you',
+    })
+    b2.set(doc(db, 'conversations/adult1'), {
+      patientId: 'adult1', patientName: 'Alex Adult', lastMessage: 'see you', lastSenderRole: 'secretary',
+      unreadForStaff: 0, unreadForPatient: 1,
+    }, { merge: true })
+    await assertSucceeds(b2.commit())
+    const b3 = writeBatch(db)
+    b3.delete(doc(db, 'conversations/kidGrown/messages/m1'))
+    b3.delete(doc(db, 'conversations/kidGrown/messages/m2'))
+    b3.delete(doc(db, 'conversations/kidGrown'))
+    await assertSucceeds(b3.commit())
+
+    // 4. mark the child profile handed over
+    await assertSucceeds(updateDoc(doc(db, 'children/kidGrown'), {
+      status: 'handed_over', handedOverTo: 'adult1', handedOverAt: serverTimestamp(), handedOverBy: 'sec1',
+    }))
   }
 
-  it('a guardian can book an appointment and its slot for their child', async () => {
-    await assertSucceeds(book(parent('parentA'), 'kidPending'))
+  it('lets staff run every step of the hand-over', async () => {
+    await handOver()
   })
-  it("a stranger cannot book for someone else's child", async () => {
-    await assertFails(book(parent('parentB'), 'kidPending'))
+  it('afterwards the adult can see their own history', async () => {
+    await handOver()
+    const adult = parent('adult1')
+    await assertSucceeds(getDoc(doc(adult, 'appointments/apptGrown')))
+    await assertSucceeds(getDoc(doc(adult, 'records/recGrown')))
+    await assertSucceeds(getDoc(doc(adult, 'patientProfiles/profGrown')))
+    await assertSucceeds(getDoc(doc(adult, 'conversations/adult1/messages/m1')))
+    await assertSucceeds(getDocs(query(collection(adult, 'notifications'), where('recipientId', '==', 'adult1'))))
   })
-  it('a guardian cannot book once the child is 18', async () => {
-    await assertFails(book(parent('parentA'), 'kidAdult'))
+  it('afterwards the former guardian cannot see any of it', async () => {
+    await handOver()
+    const old = parent('parentA')
+    await assertFails(getDoc(doc(old, 'appointments/apptGrown')))
+    await assertFails(getDoc(doc(old, 'records/recGrown')))
+    await assertFails(getDoc(doc(old, 'conversations/adult1/messages/m1')))
   })
-  // Expected to FAIL until rules patch 1 is applied. createAppointment awaits
-  // this write right after the booking commits, so without the patch the parent
-  // sees an error even though the appointment was created.
-  it('a guardian can send the booking confirmation notification for the child', async () => {
-    await assertSucceeds(
-      addDoc(collection(parent('parentA'), 'notifications'), {
-        recipientId: 'kidPending',
-        appointmentId: 'newAppt',
-        patientId: null,
-        changeRequestId: null,
-        type: 'confirmation',
-        message: 'Your appointment is booked.',
-        read: false,
-        createdAt: serverTimestamp(),
-      }),
-    )
+  it('the adult can still cancel the appointment that was moved to them', async () => {
+    await handOver()
+    await assertSucceeds(updateDoc(doc(parent('adult1'), 'appointments/apptGrown'), {
+      status: 'cancelled', cancelledAt: serverTimestamp(), cancelledBy: 'adult1', updatedAt: serverTimestamp(),
+    }))
   })
-  it("a stranger cannot send notifications to someone else's child", async () => {
-    await assertFails(
-      addDoc(collection(parent('parentB'), 'notifications'), {
-        recipientId: 'kidPending',
-        type: 'confirmation',
-        message: 'spam',
-        read: false,
-        createdAt: serverTimestamp(),
-      }),
-    )
-  })
-})
-
-describe("reading a child's appointments", () => {
-  it('a guardian can read one appointment', async () => {
-    await assertSucceeds(getDoc(doc(parent('parentA'), 'appointments/apptKid4h')))
-  })
-  it('a guardian can list their child\'s appointments (the Family page query)', async () => {
-    await assertSucceeds(byField(parent('parentA'), 'appointments', 'patientId', 'kidPending'))
-  })
-  it("a stranger cannot read or list a child's appointments", async () => {
-    await assertFails(getDoc(doc(parent('parentB'), 'appointments/apptKid4h')))
-    await assertFails(byField(parent('parentB'), 'appointments', 'patientId', 'kidPending'))
-  })
-  it('a guardian loses access to appointments at 18', async () => {
-    await assertFails(getDoc(doc(parent('parentA'), 'appointments/apptAdult')))
-    await assertFails(byField(parent('parentA'), 'appointments', 'patientId', 'kidAdult'))
-  })
-})
-
-describe("cancelling and reporting late for a child's appointment", () => {
-  const cancel = (db, id) =>
-    updateDoc(doc(db, `appointments/${id}`), {
-      status: 'cancelled',
-      cancelledAt: serverTimestamp(),
-      cancelledBy: 'parentA',
-      updatedAt: serverTimestamp(),
-    })
-
-  it('a guardian can cancel 4 hours before', async () => {
-    await assertSucceeds(cancel(parent('parentA'), 'apptKid4h'))
-  })
-  it('a guardian cannot cancel 2 hours before', async () => {
-    await assertFails(cancel(parent('parentA'), 'apptKid2h'))
-  })
-  it("a stranger cannot cancel a child's appointment", async () => {
-    await assertFails(cancel(parent('parentB'), 'apptKid4h'))
-  })
-  it('a guardian can say they are running late', async () => {
-    await assertSucceeds(
-      updateDoc(doc(parent('parentA'), 'appointments/apptKid4h'), {
-        patientRunningLate: true,
-        patientRunningLateMinutes: 10,
-        patientRunningLateAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }),
-    )
-  })
-  it('a guardian cannot change the appointment in other ways', async () => {
-    await assertFails(updateDoc(doc(parent('parentA'), 'appointments/apptKid4h'), { doctorId: 'someone-else' }))
-  })
-  // Same notification write as booking: needs rules patch 1.
-  it('a guardian can send the cancellation notification for the child', async () => {
-    await assertSucceeds(
-      addDoc(collection(parent('parentA'), 'notifications'), {
-        recipientId: 'kidPending',
-        appointmentId: 'apptKid4h',
-        type: 'cancellation',
-        message: 'Your appointment has been cancelled.',
-        read: false,
-        createdAt: serverTimestamp(),
-      }),
-    )
-  })
-})
-
-describe("a child's medical data", () => {
-  it('is hidden from a guardian until the practice verifies them', async () => {
-    await assertFails(getDoc(doc(parent('parentA'), 'records/recPending')))
-    await assertFails(byField(parent('parentA'), 'records', 'patientId', 'kidPending'))
-  })
-  it('becomes readable once verified (record, profile, intake form)', async () => {
+  it('a parent cannot run the hand-over themselves', async () => {
     const db = parent('parentA')
-    await assertSucceeds(getDoc(doc(db, 'records/recVerified')))
-    await assertSucceeds(byField(db, 'records', 'patientId', 'kidVerified'))
-    await assertSucceeds(getDoc(doc(db, 'patientProfiles/profVerified')))
-    await assertSucceeds(getDoc(doc(db, 'intakeForms/intakeVerified')))
-  })
-  it('is hidden from a verified guardian after the 12th birthday', async () => {
-    await assertFails(getDoc(doc(parent('parentA'), 'records/recTeen')))
-  })
-  it('is hidden from a guardian after the 18th birthday', async () => {
-    await assertFails(getDoc(doc(parent('parentA'), 'records/recAdult')))
-  })
-  it('is hidden from a stranger even when verified', async () => {
-    await assertFails(getDoc(doc(parent('parentB'), 'records/recVerified')))
-  })
-  it('can never be written by a guardian', async () => {
-    const db = parent('parentA')
-    await assertFails(setDoc(doc(db, 'records/forged'), { patientId: 'kidVerified', notes: 'forged' }))
-    await assertFails(updateDoc(doc(db, 'records/recVerified'), { notes: 'edited' }))
-    await assertFails(updateDoc(doc(db, 'patientProfiles/profVerified'), { allergies: 'none' }))
-  })
-  it('stays readable by a secretary', async () => {
-    await assertSucceeds(getDoc(doc(secretary(), 'records/recPending')))
-  })
-})
-
-describe("messaging the practice about a child (what sendMessage sends)", () => {
-  // Built per caller so senderId matches the signed-in user, as sendMessage does.
-  const sendAs = (uid, childId) => {
-    const db = parent(uid)
-    const batch = writeBatch(db)
-    batch.set(doc(collection(db, `conversations/${childId}/messages`)), {
-      senderId: uid,
-      senderRole: 'patient',
-      senderName: 'Parent (guardian of Kid)',
-      text: 'Is the doctor running late?',
-      kind: 'message',
-      explicitLanguage: false,
-      crisisLanguage: false,
-      appointmentId: null,
-      createdAt: serverTimestamp(),
-    })
-    batch.set(
-      doc(db, `conversations/${childId}`),
-      {
-        patientId: childId,
-        patientName: 'Kid Test',
-        lastMessage: 'Is the doctor running late?',
-        lastMessageAt: serverTimestamp(),
-        lastSenderRole: 'patient',
-        unreadForStaff: increment(1),
-      },
-      { merge: true },
-    )
-    return batch.commit()
-  }
-
-  it('a guardian can read the conversation', async () => {
-    const db = parent('parentA')
-    await assertSucceeds(getDoc(doc(db, 'conversations/kidPending')))
-    await assertSucceeds(getDoc(doc(db, 'conversations/kidPending/messages/m1')))
-  })
-  it('a guardian can send into an existing conversation', async () => {
-    await assertSucceeds(sendAs('parentA', 'kidPending'))
-  })
-  it('a guardian can start a brand-new conversation for the child', async () => {
-    await assertSucceeds(sendAs('parentA', 'kidVerified'))
-  })
-  it('a guardian can mark the conversation read', async () => {
-    await assertSucceeds(updateDoc(doc(parent('parentA'), 'conversations/kidPending'), { unreadForPatient: 0 }))
-  })
-  it("a stranger cannot read or write a child's conversation", async () => {
-    await assertFails(getDoc(doc(parent('parentB'), 'conversations/kidPending')))
-    await assertFails(sendAs('parentB', 'kidPending'))
-  })
-  it('a guardian cannot send once the child is 18', async () => {
-    await assertFails(sendAs('parentA', 'kidAdult'))
-  })
-  it('a guardian cannot post as the practice', async () => {
-    const db = parent('parentA')
-    await assertFails(
-      setDoc(doc(collection(db, 'conversations/kidPending/messages')), {
-        senderId: 'parentA',
-        senderRole: 'secretary',
-        kind: 'message',
-        text: 'pretending',
-      }),
-    )
-  })
-})
-
-describe("a child's notifications (delay alerts reach the parent)", () => {
-  it('a guardian can list them (the bell query) and mark one read', async () => {
-    const db = parent('parentA')
-    await assertSucceeds(byField(db, 'notifications', 'recipientId', 'kidPending'))
-    await assertSucceeds(updateDoc(doc(db, 'notifications/nKid'), { read: true }))
-  })
-  it("a stranger cannot read a child's notifications", async () => {
-    await assertFails(byField(parent('parentB'), 'notifications', 'recipientId', 'kidPending'))
-  })
-  it('a guardian stops receiving them at 18', async () => {
-    await assertFails(byField(parent('parentA'), 'notifications', 'recipientId', 'kidAdult'))
-  })
-})
-
-describe('reviewing a visit for a child', () => {
-  const review = (patientId, appointmentId) => ({
-    patientId, // the reviewer: the parent
-    appointmentId,
-    doctorId: 'doc1',
-    rating: 5,
-    comment: 'Great',
-    hidden: false,
-  })
-  // Expected to FAIL until rules patch 2 is applied: ReviewPrompt appears on the
-  // child's calendar, and without the patch every review shows an error.
-  it('a guardian can review their child\'s visit', async () => {
-    await assertSucceeds(setDoc(doc(parent('parentA'), 'doctorRatings/apptKid4h'), review('parentA', 'apptKid4h')))
-  })
-  it("a stranger cannot review someone else's child's visit", async () => {
-    await assertFails(setDoc(doc(parent('parentB'), 'doctorRatings/apptKid4h'), review('parentB', 'apptKid4h')))
+    await assertFails(updateDoc(doc(db, 'records/recGrown'), { patientId: 'parentA' }))
+    await assertFails(updateDoc(doc(db, 'appointments/apptGrown'), { patientId: 'parentA' }))
+    await assertFails(updateDoc(doc(db, 'children/kidGrown'), { status: 'handed_over' }))
   })
 })

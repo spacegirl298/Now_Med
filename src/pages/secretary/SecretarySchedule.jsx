@@ -42,7 +42,6 @@ import {
 } from "../../utils/validators";
 import { generateMeetingLink, safeMeetingLink } from "../../utils/meeting";
 import {
-  getAllPatients,
   getUserByIdNumber,
   getDoctors,
   blockDate,
@@ -54,6 +53,7 @@ import {
   unconfirmAppointment,
   sendConfirmationReminder,
 } from "../../firebase/firestore";
+import { getAllPatientsAndChildren, getChildByIdNumber } from "../../firebase/family";
 
 // Only meaningful for today - any time slot on a future date is fine, and
 // isPastDate() already rules out past dates entirely.
@@ -139,7 +139,7 @@ export default function SecretarySchedule() {
   const [reminderBusyId, setReminderBusyId] = useState(null);
 
   useEffect(() => {
-    getAllPatients()
+    getAllPatientsAndChildren()
       .then(setPatients)
       .catch(() => setPatients([]));
     getDoctors()
@@ -395,7 +395,10 @@ export default function SecretarySchedule() {
         // the appointment straight to that account instead of leaving it
         // unlinked.
         const idNumber = form.patientIdNumber.trim();
-        const existingUser = await getUserByIdNumber(idNumber);
+        // A registered patient, or a child profile with this ID number.
+        const existingUser =
+          (await getUserByIdNumber(idNumber)) ||
+          (await getChildByIdNumber(idNumber));
 
         await createAppointment({
           patientId: existingUser?.id || null,
@@ -1028,7 +1031,11 @@ export default function SecretarySchedule() {
                         className="w-full text-left px-4 py-2.5 text-sm text-ink hover:bg-mist transition-colors"
                       >
                         {p.name}{" "}
-                        {p.idNumber ? `· ID: ${p.idNumber}` : `(${p.email})`}
+                        {p.isChild
+                          ? `· Child${p.guardianName ? ` of ${p.guardianName}` : ""}`
+                          : p.idNumber
+                            ? `· ID: ${p.idNumber}`
+                            : `(${p.email})`}
                       </button>
                     ))
                   )}

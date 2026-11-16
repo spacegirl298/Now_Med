@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ShieldAlert } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { subscribeToChild } from '../../firebase/firestore'
+import { subscribeToChild } from '../../firebase/family'
 import { isManageable } from '../../utils/childAge'
 import PatientLayout from './PatientLayout'
 import PatientCalendar from './PatientCalendar'
@@ -34,7 +34,11 @@ export default function ChildCalendar() {
     )
   }
 
-  const allowed = child && child.guardianIds?.includes(currentUser?.uid) && isManageable(child)
+  const allowed =
+    child &&
+    child.guardianIds?.includes(currentUser?.uid) &&
+    isManageable(child) &&
+    child.verificationStatus !== 'rejected'
   if (!allowed) {
     return (
       <PatientLayout>

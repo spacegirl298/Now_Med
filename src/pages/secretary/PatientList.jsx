@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Search } from 'lucide-react'
-import { subscribeToPatients } from '../../firebase/firestore'
+import { subscribeToPatientsAndChildren } from '../../firebase/family'
+import { formatAge } from '../../utils/childAge'
 import { useAppointments } from '../../hooks/useAppointments'
 import SecretaryLayout from './SecretaryLayout'
 import PatientRecordModal from './PatientRecordModal'
@@ -18,9 +19,11 @@ export default function PatientList() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedPatient, setSelectedPatient] = useState(null)
   const [selectedTab, setSelectedTab] = useState('overview')
+  // 'all' | 'children' | 'pending' (children whose guardian is awaiting confirmation)
+  const [filter, setFilter] = useState(location.state?.filter || 'all')
 
   useEffect(() => {
-    const unsubscribe = subscribeToPatients((nextPatients) => {
+    const unsubscribe = subscribeToPatientsAndChildren((nextPatients) => {
       setPatients(nextPatients)
       setLoading(false)
     })
@@ -40,15 +43,32 @@ export default function PatientList() {
     })
   }, [location.state, patients])
 
+  // Arriving from the dashboard's "children waiting for confirmation" shortcut.
+  useEffect(() => {
+    if (location.state?.filter) setFilter(location.state.filter) // eslint-disable-line react-hooks/set-state-in-effect -- apply the requested filter on navigation
+  }, [location.state])
+
+  const childCount = useMemo(() => patients.filter((p) => p.isChild).length, [patients])
+  const pendingChildCount = useMemo(
+    () => patients.filter((p) => p.isChild && p.verificationStatus === 'pending').length,
+    [patients],
+  )
+
   const filteredPatients = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
-    if (!term) return patients
-    return patients.filter((patient) =>
-      [patient.name, patient.email, patient.idNumber]
+    const scoped =
+      filter === 'children'
+        ? patients.filter((p) => p.isChild)
+        : filter === 'pending'
+          ? patients.filter((p) => p.isChild && p.verificationStatus === 'pending')
+          : patients
+    if (!term) return scoped
+    return scoped.filter((patient) =>
+      [patient.name, patient.email, patient.idNumber, patient.guardianName]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(term)),
     )
-  }, [patients, searchTerm])
+  }, [patients, searchTerm, filter])
 
   return (
     <SecretaryLayout>
@@ -68,6 +88,27 @@ export default function PatientList() {
               className="w-full border border-stone rounded-xl pl-10 pr-4 py-3 text-base md:text-sm text-ink focus:border-rose focus:outline-none"
             />
           </div>
+          {childCount > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Filter patients">
+              {[
+                ['all', 'Everyone'],
+                ['children', `Children (${childCount})`],
+                ['pending', `Awaiting confirmation (${pendingChildCount})`],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(value)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                    filter === value ? 'bg-rose text-white' : 'bg-mist text-slate hover:bg-sand'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </Card>
 
         {loading ? (
@@ -91,8 +132,28 @@ export default function PatientList() {
               >
                 <Avatar name={patient.name} size={42} />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink truncate">{patient.name || 'Unnamed patient'}</p>
-                  <p className="text-xs text-slate truncate">{patient.email || patient.idNumber || 'No contact details'}</p>
+                  <p className="text-sm font-medium text-ink truncate">
+                    {patient.name || 'Unnamed patient'}
+                    {patient.isChild && (
+                      <span className="ml-2 align-middle text-[11px] font-medium rounded-full bg-pastel-blue text-blue px-2 py-0.5">
+                        Child
+                      </span>
+                    )}
+                    {patient.isChild && patient.verificationStatus !== 'verified' && (
+                      <span
+                        className={`ml-1.5 align-middle text-[11px] font-medium rounded-full px-2 py-0.5 ${
+                          patient.verificationStatus === 'rejected' ? 'bg-pastel-red text-red' : 'bg-pastel-amber text-amber'
+                        }`}
+                      >
+                        {patient.verificationStatus === 'rejected' ? 'Not confirmed' : 'Needs confirmation'}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate truncate">
+                    {patient.isChild
+                      ? `${patient.dateOfBirth ? formatAge(patient.dateOfBirth) : 'Age unknown'}${patient.guardianName ? ` · Guardian: ${patient.guardianName}` : ''}`
+                      : patient.email || patient.idNumber || 'No contact details'}
+                  </p>
                 </div>
                 <span className="ml-auto text-xs font-medium text-rose">View record</span>
               </button>

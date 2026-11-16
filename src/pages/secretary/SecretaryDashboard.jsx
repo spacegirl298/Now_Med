@@ -8,6 +8,7 @@ import {
   MessageSquare,
   ClipboardList,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
@@ -24,10 +25,10 @@ import {
   greetingForNow,
 } from "../../utils/dateHelpers";
 import {
-  getAllPatients,
   subscribeToPendingChangeRequests,
   acknowledgePatientRunningLate,
 } from "../../firebase/firestore";
+import { getAllPatientsAndChildren } from "../../firebase/family";
 
 export default function SecretaryDashboard() {
   const { currentUser, userName } = useAuth();
@@ -41,7 +42,7 @@ export default function SecretaryDashboard() {
   const unreadMessages = useUnreadMessages();
 
   useEffect(() => {
-    getAllPatients()
+    getAllPatientsAndChildren()
       .then(setPatients)
       .catch(() => setPatients([]));
   }, []);
@@ -78,6 +79,12 @@ export default function SecretaryDashboard() {
     }
     setAcknowledgingId(null);
   }
+
+  // Children whose guardian the practice has not confirmed yet.
+  const pendingChildren = useMemo(
+    () => patients.filter((p) => p.isChild && p.verificationStatus === "pending"),
+    [patients],
+  );
 
   const searchResults = useMemo(() => {
     if (!searchTerm.trim()) return [];
@@ -157,7 +164,11 @@ export default function SecretaryDashboard() {
                   <Avatar name={p.name} size={36} />
                   <div>
                     <p className="text-sm font-medium text-ink">{p.name}</p>
-                    <p className="text-xs text-slate">{p.email}</p>
+                    <p className="text-xs text-slate">
+                      {p.isChild
+                        ? `Child${p.guardianName ? ` · Guardian: ${p.guardianName}` : ""}`
+                        : p.email}
+                    </p>
                   </div>
                 </button>
               ))}
@@ -166,7 +177,7 @@ export default function SecretaryDashboard() {
         </Card>
 
         {/* Needs attention: unread chat + pending record-change requests */}
-        {(unreadMessages > 0 || pendingRequests.length > 0) && (
+        {(unreadMessages > 0 || pendingRequests.length > 0 || pendingChildren.length > 0) && (
           <Card padded={false} className="mb-6">
             <div className="px-5 py-4 border-b border-sand">
               <h2 className="font-semibold text-ink">Needs your attention</h2>
@@ -181,6 +192,21 @@ export default function SecretaryDashboard() {
                   <p className="text-sm text-ink">
                     {unreadMessages} unread message
                     {unreadMessages === 1 ? "" : "s"} from patients
+                  </p>
+                </button>
+              )}
+              {pendingChildren.length > 0 && (
+                <button
+                  onClick={() =>
+                    navigate("/secretary/patients", { state: { filter: "pending" } })
+                  }
+                  className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-mist transition-colors"
+                >
+                  <ShieldCheck size={18} className="text-amber shrink-0" />
+                  <p className="text-sm text-ink">
+                    {pendingChildren.length} child
+                    {pendingChildren.length === 1 ? "" : "ren"} waiting for guardian
+                    confirmation
                   </p>
                 </button>
               )}

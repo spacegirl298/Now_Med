@@ -16,7 +16,7 @@ import EmptyState from '../../components/EmptyState'
 import JoinLink from '../../components/JoinLink'
 import ChatThread from '../../components/ChatThread'
 import TransitionCard from '../../components/family/TransitionCard'
-import { subscribeToChild, RELATIONSHIPS } from '../../firebase/firestore'
+import { subscribeToChild, RELATIONSHIPS } from '../../firebase/family'
 import {
   subscribeToPatientAppointments,
   subscribeToPatientRecords,
@@ -354,6 +354,14 @@ export default function PatientChild() {
             icon={ShieldAlert}
             title="We can't show this profile"
             message="It may not exist, or you may no longer have access to it (access ends when a child turns 18)."
+            actionLabel="Back to family"
+            onAction={() => navigate('/patient/family')}
+          />
+        ) : child.verificationStatus === 'rejected' ? (
+          <EmptyState
+            icon={ShieldAlert}
+            title="The practice couldn't confirm this profile"
+            message="They weren't able to confirm that you are this child's parent or guardian. Please contact the practice and bring the child's birth certificate."
             actionLabel="Back to family"
             onAction={() => navigate('/patient/family')}
           />

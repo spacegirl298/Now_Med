@@ -8,7 +8,6 @@ import { ArrowLeft, FileText, MessageSquare, Search } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import {
   subscribeToAllConversations,
-  subscribeToPatients,
   subscribeToMessages,
   sendMessage,
   markConversationRead,
@@ -18,6 +17,7 @@ import SecretaryLayout from './SecretaryLayout'
 import ChatThread from '../../components/ChatThread'
 import Avatar from '../../components/Avatar'
 import { formatTimeAgo } from '../../utils/dateHelpers'
+import { subscribeToPatientsAndChildren } from '../../firebase/family'
 
 export default function SecretaryMessages() {
   const { currentUser, userName } = useAuth()
@@ -39,7 +39,7 @@ export default function SecretaryMessages() {
       setLoadError('Could not load messages. Please refresh the page or try again in a moment. If it keeps happening, contact the practice IT department.')
     }
     const unsubConversations = subscribeToAllConversations(setConversations, onError)
-    const unsubPatients = subscribeToPatients(setPatients)
+    const unsubPatients = subscribeToPatientsAndChildren(setPatients)
     return () => {
       unsubConversations && unsubConversations()
       unsubPatients && unsubPatients()
@@ -200,8 +200,14 @@ export default function SecretaryMessages() {
                 <Avatar name={activeName} size={36} />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-ink truncate">{activeName}</p>
-                  {patientById[activeId]?.phone && (
-                    <p className="text-xs text-slate">{patientById[activeId].phone}</p>
+                  {patientById[activeId]?.isChild ? (
+                    <p className="text-xs text-slate">
+                      Child{patientById[activeId].guardianName ? ` · replies go to ${patientById[activeId].guardianName}` : ''}
+                    </p>
+                  ) : (
+                    patientById[activeId]?.phone && (
+                      <p className="text-xs text-slate">{patientById[activeId].phone}</p>
+                    )
                   )}
                 </div>
                 <button

@@ -14,16 +14,17 @@ import { subscribeToPatientAppointments } from '../../firebase/firestore'
 import { formatAge, transitionStage, ageTier } from '../../utils/childAge'
 import { formatShortDate, formatTime, getTodayString, isPastSlot } from '../../utils/dateHelpers'
 
-function useUpcoming(childId) {
+function useUpcoming(childId, enabled = true) {
   const [appointments, setAppointments] = useState([])
   useEffect(() => {
+    if (!enabled) return
     const unsub = subscribeToPatientAppointments(
       childId,
       setAppointments,
       (err) => console.error('Could not load a child appointment list:', err),
     )
     return () => unsub && unsub()
-  }, [childId])
+  }, [childId, enabled])
 
   return useMemo(() => {
     const today = getTodayString()
@@ -39,12 +40,14 @@ function Chip({ tone, children }) {
     amber: 'bg-pastel-amber text-amber',
     blue: 'bg-pastel-blue text-blue',
     green: 'bg-pastel-green text-green',
+    red: 'bg-pastel-red text-red',
   }
   return <span className={`text-xs font-medium rounded-full px-2.5 py-1 ${tones[tone]}`}>{children}</span>
 }
 
 function ChildCard({ child, onOpen }) {
-  const next = useUpcoming(child.id)
+  // A refused guardian can no longer read the child's appointments.
+  const next = useUpcoming(child.id, child.verificationStatus !== 'rejected')
   const stage = transitionStage(child.dateOfBirth)
   const tier = ageTier(child.dateOfBirth)
 
@@ -79,6 +82,7 @@ function ChildCard({ child, onOpen }) {
           <Chip tone="amber">Running {next.delayMinutes} min late</Chip>
         )}
         {child.verificationStatus === 'pending' && <Chip tone="blue">Waiting for the practice to confirm</Chip>}
+        {child.verificationStatus === 'rejected' && <Chip tone="red">The practice couldn't confirm this profile</Chip>}
         {tier === 'teen' && <Chip tone="blue">Can consent to own treatment</Chip>}
         {stage === 'notice' && <Chip tone="amber">Turns 18 soon</Chip>}
       </div>

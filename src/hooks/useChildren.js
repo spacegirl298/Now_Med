@@ -2,7 +2,7 @@
 // Only subscribes for the patient role; staff and signed-out users get [].
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { subscribeToMyChildren } from '../firebase/firestore'
+import { subscribeToMyChildren } from '../firebase/family'
 import { isManageable } from '../utils/childAge'
 
 export function useChildren() {

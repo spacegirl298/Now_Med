@@ -87,7 +87,11 @@ export function useNotificationAlerts() {
       setToasts((prev) => [...prev, { id: n.id, message: body, url: route(n) }].slice(-3))
       setTimeout(() => dismissToast(n.id), 7000)
 
-     
+      try {
+        if (navigator.vibrate) navigator.vibrate([120, 60, 120])
+      } catch {
+        /* vibration not available */
+      }
 
       if (supported() && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
         const options = {

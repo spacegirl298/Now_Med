@@ -24,7 +24,6 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "./config";
 import { generateMeetingLink } from "../utils/meeting";
-import { dateAtAge, CONSENT_AGE, MAJORITY_AGE } from '../utils/childAge'
 
 // ---------- Collections ----------
 const usersCol = collection(db, "users");
@@ -73,7 +72,6 @@ const changeRequestsCol = collection(db, "changeRequests");
 const conversationsCol = collection(db, "conversations");
 const analyticsSummaryCol = collection(db, "analyticsSummary");
 
-const childrenCol = collection(db, 'children');
 // ================= USERS / PATIENTS =================
 
 // One-time fetch of every registered patient (used by the secretary patient list)
@@ -84,13 +82,6 @@ export async function getAllPatients() {
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 }
-
-export const RELATIONSHIPS = [
-  { value: 'mother', label: 'Mother' },
-  { value: 'father', label: 'Father' },
-  { value: 'legal_guardian', label: 'Legal guardian' },
-  { value: 'other', label: 'Other caregiver' },
-]
 
 // Live subscription version, for a dashboard that should reflect new signups instantly
 export function subscribeToPatients(callback) {
@@ -120,12 +111,6 @@ export async function getUserByIdNumber(idNumber) {
   const d = snap.docs[0];
   return { id: d.id, ...d.data() };
 }
-
-export const CHILD_ID_TYPES = [
-  { value: 'sa_id', label: 'SA ID number' },
-  { value: 'birth_certificate', label: 'Birth certificate number' },
-  { value: 'none', label: 'Not available yet' },
-]
 
 // Reserves this ID/passport number for a new account, using the
 // idNumberIndex collection instead of querying `users` directly (a
@@ -221,53 +206,6 @@ export function subscribeToPatientRecords(patientUid, callback, onError) {
   );
 }
 
-// Live subscription to one specific child's profile.
-export function subscribeToChild(childId, callback, onError) {
-  if (!childId) return () => {};
-
-  const childRef = doc(db, "children", childId);
-
-  return onSnapshot(
-    childRef,
-    (snap) => {
-      if (!snap.exists()) {
-        callback(null);
-        return;
-      }
-
-      callback({
-        id: snap.id,
-        ...snap.data(),
-      });
-    },
-    onError,
-  );
-}
-
-// Live list of the children this guardian manages, oldest first.
-// Sorted client-side so no composite index is needed.
-export function subscribeToMyChildren(guardianUid, onData, onError) {
-  if (!guardianUid) return () => {}
-
-  const q = query(
-    childrenCol,
-    where('guardianIds', 'array-contains', guardianUid),
-    where('turns18At', '>', Timestamp.fromMillis(Date.now() + 60000))
-  )
-
-  return onSnapshot(
-    q,
-    (snap) => {
-      const list = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (a.dateOfBirth || '').localeCompare(b.dateOfBirth || ''))
-
-      onData(list)
-    },
-    onError,
-  )
-}
-
 // Lets a secretary add a medical record for a patient. If the patient has
 // no account yet, pass patientId: null and patientIdNumber instead — the
 // record will be linked automatically once they register (see
@@ -315,46 +253,6 @@ export async function addPatientRecord({
     createdAt: serverTimestamp(),
   });
   return ref.id;
-}
-
-// Creates a child profile managed by `guardian` ({ uid, name }). Returns the
-// new child's id.
-//
-// verificationStatus starts as 'pending': the practice confirms the
-// relationship (see FAMILY_SETUP.md) before a guardian can see clinical data.
-// turns12At / turns18At are stored as timestamps so Firestore rules can end a
-// parent's access on the 18th birthday without any client or server job.
-export async function addChild({
-  guardian,
-  firstName,
-  lastName,
-  dateOfBirth,
-  relationship,
-  idType = 'none',
-  idNumber = '',
-}) {
-  const first = firstName.trim()
-  const last = lastName.trim()
-  const ref = await addDoc(childrenCol, {
-    firstName: first,
-    lastName: last,
-    name: `${first} ${last}`,
-    dateOfBirth,
-    idType,
-    idNumber: idNumber.trim(),
-    guardianIds: [guardian.uid],
-    primaryGuardianId: guardian.uid,
-    guardians: {
-      [guardian.uid]: { name: guardian.name || '', relationship },
-    },
-    status: 'managed',
-    verificationStatus: 'pending',
-    turns12At: Timestamp.fromDate(dateAtAge(dateOfBirth, CONSENT_AGE)),
-    turns18At: Timestamp.fromDate(dateAtAge(dateOfBirth, MAJORITY_AGE)),
-    createdBy: guardian.uid,
-    createdAt: serverTimestamp(),
-  })
-  return ref.id
 }
 
 // ================= PATIENT CLINICAL PROFILE =================
@@ -1890,6 +1788,12 @@ async function notifyIfIntakeIncomplete(patientId, patientName, date, time) {
     const userDoc = await getDoc(doc(db, "users", patientId));
     const data = userDoc.exists() ? userDoc.data() : null;
     if (data && data.hasCompletedIntake) return;
+    // A child profile has no user doc and no intake form to complete yet, so
+    // there is nothing for the practice to chase.
+    if (!userDoc.exists()) {
+      const childDoc = await getDoc(doc(db, "children", patientId));
+      if (childDoc.exists()) return;
+    }
     const form = await getIntakeFormForPatient(patientId, data?.idNumber);
     if (form) return; // form exists but the user doc hasn't caught up yet
     await notifyAllSecretaries({

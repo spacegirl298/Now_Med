@@ -25,6 +25,7 @@ import { formatShortDate, formatDisplayDate, formatDate, getTodayString } from '
 import { GENDER_OPTIONS, isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
 import { intakeToProfileUpdates } from '../../utils/intakeQuestions'
 import IntakeSummary from '../../components/IntakeSummary'
+import ChildBanner from '../../components/family/ChildBanner'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -257,12 +258,14 @@ export default function PatientRecordModal({ patient, appointments = [], initial
         <div className="flex items-center justify-between px-6 py-4 border-b border-sand shrink-0">
           <div>
             <h2 className="text-lg font-semibold text-ink">{patient.name || 'Unnamed patient'}</h2>
-            <p className="text-xs text-slate">Full patient record</p>
+            <p className="text-xs text-slate">{patient.isChild ? 'Child record' : 'Full patient record'}</p>
           </div>
           <button onClick={onClose} className="text-slate hover:text-ink" aria-label="Close">
             <X size={20} />
           </button>
         </div>
+
+        {patient.isChild && <ChildBanner child={patient} />}
 
         <div className="flex gap-2 px-6 py-3 border-b border-sand overflow-x-auto shrink-0">
           {tabs.map((tab) => (

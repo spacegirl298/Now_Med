@@ -1,4 +1,4 @@
-// Desktop navigation. Persistent left sidebar, links vary by role.
+// Desktop navigation. 
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Calendar,
@@ -47,10 +47,6 @@ export default function Sidebar({ role = "secretary" }) {
   const unread = useUnreadMessages();
   const links = role === "patient" ? PATIENT_LINKS : SECRETARY_LINKS;
 
-  // logout() only signs the user out of Firebase — it doesn't navigate
-  // anywhere on its own. Without an explicit redirect here, the app can be
-  // left showing a stale, now-unauthenticated page instead of returning to
-  // the login screen, which is what made this look "broken".
   async function handleLogout() {
     try {
       await logout();

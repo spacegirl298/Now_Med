@@ -26,7 +26,11 @@ export function useNotifications() {
   const [loading, setLoading] = useState(true);
 
   // Stable string so the effect only re-runs when the set of children changes.
-  const childKey = children.map((c) => c.id).join(",");
+  // A refused guardian can no longer read the child's notifications.
+  const childKey = children
+    .filter((c) => c.verificationStatus !== "rejected")
+    .map((c) => c.id)
+    .join(",");
 
   useEffect(() => {
     if (!currentUser) {

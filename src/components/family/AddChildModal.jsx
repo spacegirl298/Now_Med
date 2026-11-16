@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import Modal from '../Modal'
 import { useAuth } from '../../context/AuthContext'
-import { addChild, RELATIONSHIPS, CHILD_ID_TYPES } from '../../firebase/firestore'
+import { addChild, RELATIONSHIPS, CHILD_ID_TYPES } from '../../firebase/family'
 import { isValidName } from '../../utils/validators'
 import { getTodayString } from '../../utils/dateHelpers'
 import { ageOn, dobFromSaId, isValidSaIdChecksum, MAJORITY_AGE } from '../../utils/childAge'
