@@ -43,7 +43,11 @@ function targetFor(notification, userRole, ownUid) {
     ownUid &&
     notification.recipientId !== ownUid
   ) {
-    return `/patient/family/${notification.recipientId}`;
+    const childPage = `/patient/family/${notification.recipientId}`;
+    // A reminder to fill in the child's intake form opens the form itself.
+    return notification.type === "intake_reminder"
+      ? `${childPage}/intake`
+      : childPage;
   }
   return routeFor(notification, userRole);
 }

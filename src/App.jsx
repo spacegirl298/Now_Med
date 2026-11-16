@@ -19,6 +19,7 @@ import PatientMessages from "./pages/patient/PatientMessages";
 import PatientFamily from "./pages/patient/PatientFamily";
 import PatientChild from "./pages/patient/PatientChild";
 import ChildCalendar from "./pages/patient/ChildCalendar";
+import ChildIntake from "./pages/patient/ChildIntake";
 
 // Secretary pages
 import SecretaryDashboard from "./pages/secretary/SecretaryDashboard";
@@ -187,6 +188,17 @@ export default function App() {
             <ProtectedRoute allowedRole="patient">
               <RequireIntake>
                 <ChildCalendar />
+              </RequireIntake>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/patient/family/:childId/intake"
+          element={
+            <ProtectedRoute allowedRole="patient">
+              <RequireIntake>
+                <ChildIntake />
               </RequireIntake>
             </ProtectedRoute>
           }

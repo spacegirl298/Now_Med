@@ -111,7 +111,8 @@ export function useNotificationAlerts() {
     const route = (n) => {
       // A child's notification opens that child's page.
       if (userRole === 'patient' && n.recipientId && currentUser?.uid && n.recipientId !== currentUser.uid) {
-        return `/patient/family/${n.recipientId}`
+        const childPage = `/patient/family/${n.recipientId}`
+        return n.type === 'intake_reminder' ? `${childPage}/intake` : childPage
       }
       const chat = ['message', 'reminder', 'intake_reminder'].includes(n.type)
       const base = userRole === 'secretary' ? '/secretary' : '/patient'

@@ -1724,12 +1724,16 @@ export async function saveIntakeForm({
   patientIdNumber = "",
   answers,
   submittedBy = "patient",
+  captureMethod = "digital",
+  capturedBy = null,
 }) {
   const ref = await addDoc(intakeFormsCol, {
     patientId,
     patientIdNumber: patientIdNumber || "",
     answers,
     submittedBy,
+    captureMethod,
+    capturedBy,
     importedAt: null,
     submittedAt: serverTimestamp(),
   });
@@ -1759,11 +1763,17 @@ export async function sendIntakeReminder(patient) {
       "This patient doesn't have an account yet to send a reminder to.",
     );
   }
+  // A child's reminder goes to their parent (the notification lands in the
+  // parent's bell, see useNotifications) and is worded about the child.
+  const childName = patient.isChild
+    ? patient.firstName || patient.name || "your child"
+    : "";
   await createNotification({
     recipientId: patient.id,
     type: "intake_reminder",
-    message:
-      "Please complete your first-time patient intake form before your next visit.",
+    message: patient.isChild
+      ? `Please complete ${childName}'s intake form before their next visit.`
+      : "Please complete your first-time patient intake form before your next visit.",
   });
   // Also drop it in their chat with the practice, same as an appointment
   // reminder, so it's hard to miss even if they don't check the bell.
@@ -1772,7 +1782,9 @@ export async function sendIntakeReminder(patient) {
     patientName: patient.name || "",
     senderRole: "secretary",
     senderName: "Practice",
-    text: "Hi! Could you please complete your first-time patient intake form before your next visit? You can find it from your dashboard.",
+    text: patient.isChild
+      ? `Hi! Could you please complete ${childName}'s intake form before their next visit? You can find it on ${childName}'s page under Family.`
+      : "Hi! Could you please complete your first-time patient intake form before your next visit? You can find it from your dashboard.",
     kind: "reminder",
   });
 }
@@ -1788,11 +1800,20 @@ async function notifyIfIntakeIncomplete(patientId, patientName, date, time) {
     const userDoc = await getDoc(doc(db, "users", patientId));
     const data = userDoc.exists() ? userDoc.data() : null;
     if (data && data.hasCompletedIntake) return;
-    // A child profile has no user doc and no intake form to complete yet, so
-    // there is nothing for the practice to chase.
+    // A child has no user doc: their parent fills in the intake form for them
+    // (see ChildIntake). Same heads-up as for an adult if it is still missing.
     if (!userDoc.exists()) {
       const childDoc = await getDoc(doc(db, "children", patientId));
-      if (childDoc.exists()) return;
+      if (childDoc.exists()) {
+        const child = childDoc.data();
+        if (child.hasCompletedIntake) return;
+        if (await getIntakeForm(patientId)) return;
+        await notifyAllSecretaries({
+          type: "intake_incomplete",
+          message: `${patientName || child.name || "A child"} has an appointment on ${date} at ${time} but doesn't have an intake form yet.`,
+        });
+        return;
+      }
     }
     const form = await getIntakeFormForPatient(patientId, data?.idNumber);
     if (form) return; // form exists but the user doc hasn't caught up yet

@@ -7,7 +7,7 @@
 // without changes. See FAMILY_SETUP.md for the Firestore rules.
 //
 // Parent side:    subscribeToMyChildren, subscribeToChild, addChild,
-//                 setChildCharacter
+//                 setChildCharacter, markChildIntakeCompleted
 // Secretary side: subscribeToPatientsAndChildren, getAllPatientsAndChildren,
 //                 getChildByIdNumber, setChildVerification, setChildIdNumber,
 //                 handOverChild
@@ -181,7 +181,11 @@ export function childToPatient(child) {
     email: '',
     phone: '',
 
-    hasCompletedIntake: true,
+    // True only once a parent has submitted the child's intake form (see
+    // markChildIntakeCompleted). Older profiles have no flag, so they read as
+    // "not completed" until the form is filled in or staff open the record
+    // and find one.
+    hasCompletedIntake: !!child.hasCompletedIntake,
 
     verificationStatus:
       child.verificationStatus || 'pending',
@@ -304,6 +308,16 @@ export async function setChildVerification(
 export async function setChildCharacter(childId, character) {
   await updateDoc(doc(db, 'children', childId), {
     profileCharacter: character || '',
+  })
+}
+
+// Called after a parent submits their child's intake form, so staff lists can
+// tell the form is in without looking one up per child. Best-effort: the form
+// itself is the source of truth, so callers should not fail if this does.
+export async function markChildIntakeCompleted(childId) {
+  await updateDoc(doc(db, 'children', childId), {
+    hasCompletedIntake: true,
+    intakeCompletedAt: serverTimestamp(),
   })
 }
 

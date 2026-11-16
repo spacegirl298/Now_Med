@@ -10,6 +10,7 @@ import Button from '../../components/Button'
 import EmptyState from '../../components/EmptyState'
 import AddChildModal from '../../components/family/AddChildModal'
 import { useChildren } from '../../hooks/useChildren'
+import { useChildIntake } from '../../hooks/useChildIntake'
 import { subscribeToPatientAppointments } from '../../firebase/firestore'
 import { formatAge, transitionStage, ageTier } from '../../utils/childAge'
 import { formatShortDate, formatTime, getTodayString, isPastSlot } from '../../utils/dateHelpers'
@@ -48,6 +49,11 @@ function Chip({ tone, children }) {
 function ChildCard({ child, onOpen }) {
   // A refused guardian can no longer read the child's appointments.
   const next = useUpcoming(child.id, child.verificationStatus !== 'rejected')
+  const { intake, loading: intakeLoading, error: intakeError } = useChildIntake(
+    child.id,
+    child.verificationStatus !== 'rejected',
+  )
+  const intakeMissing = !intakeLoading && !intakeError && !intake && !child.hasCompletedIntake
   const stage = transitionStage(child.dateOfBirth)
   const tier = ageTier(child.dateOfBirth)
 
@@ -81,6 +87,7 @@ function ChildCard({ child, onOpen }) {
         {next?.status === 'delayed' && next.delayMinutes > 0 && (
           <Chip tone="amber">Running {next.delayMinutes} min late</Chip>
         )}
+        {intakeMissing && <Chip tone="amber">Intake form needed</Chip>}
         {child.verificationStatus === 'pending' && <Chip tone="blue">Waiting for the practice to confirm</Chip>}
         {child.verificationStatus === 'rejected' && <Chip tone="red">The practice couldn't confirm this profile</Chip>}
         {tier === 'teen' && <Chip tone="blue">Can consent to own treatment</Chip>}
@@ -150,7 +157,9 @@ export default function PatientFamily() {
         onClose={() => setAdding(false)}
         onCreated={(childId) => {
           setAdding(false)
-          navigate(`/patient/family/${childId}`)
+          // Straight into the child's intake form; "Do this later" there
+          // drops the parent on the child's page, where a banner reminds them.
+          navigate(`/patient/family/${childId}/intake`)
         }}
       />
     </PatientLayout>

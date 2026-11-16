@@ -4,8 +4,8 @@
 // feel like one product. Booking itself is a 3-step flow - pick a time,
 // confirm the summary, see the confirmation - matching the approved design.
 // Patients can see THAT a slot is taken, never who it belongs to; they can
-// only ever add/cancel their own appointments, which is enforced by
-// useAppointments scoping the Firestore query to the current patient.
+// manage their own appointments and, as guardians, appointments for their
+// children.
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../hooks/useAppointments";
+import { useChildren } from "../../hooks/useChildren";
 import PatientLayout from "./PatientLayout";
 import BackButton from "../../components/BackButton";
 import Card from "../../components/Card";
@@ -52,6 +53,7 @@ import {
   subscribeToDoctors,
   subscribeToBookedSlots,
   subscribeToBlockedSlots,
+  subscribeToPatientAppointments,
 } from "../../firebase/firestore";
 
 const EMPTY_FORM = { type: "in-person", doctorId: "" };
@@ -123,6 +125,11 @@ export default function PatientCalendar({ forChild = null }) {
   const { currentUser, userName } = useAuth();
   const { appointments, loading, error, createAppointment, cancelAppointment } =
     useAppointments(forChild?.id);
+  const {
+    children,
+    loading: childrenLoading,
+    error: childrenError,
+  } = useChildren();
   const navigate = useNavigate();
   // "Now" lives in state so render stays pure; it ticks each minute so the
   // cancellation window below is never evaluated against a stale clock.
@@ -136,12 +143,13 @@ export default function PatientCalendar({ forChild = null }) {
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState(getTodayString());
+  const [bookingPatientId, setBookingPatientId] = useState("self");
 
   const [bookedSlots, setBookedSlots] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [doctors, setDoctors] = useState([]);
 
-  // Booking flow: null | 'time' | 'confirm' | 'confirmed'
+  // Booking flow: null | 'who' | 'time' | 'confirm' | 'confirmed'
   const [bookingStep, setBookingStep] = useState(null);
   const [bookingTime, setBookingTime] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -152,6 +160,41 @@ export default function PatientCalendar({ forChild = null }) {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
+  const [childAppointments, setChildAppointments] = useState({});
+  const [childAppointmentErrors, setChildAppointmentErrors] = useState({});
+
+  useEffect(() => {
+    if (forChild) return;
+
+    const managedChildren = children.filter(
+      (child) => child.verificationStatus !== "rejected",
+    );
+    const unsubscribes = managedChildren.map((child) =>
+      subscribeToPatientAppointments(
+        child.id,
+        (list) => {
+          setChildAppointments((previous) => ({
+            ...previous,
+            [child.id]: list,
+          }));
+          setChildAppointmentErrors((previous) => {
+            if (!previous[child.id]) return previous;
+            const next = { ...previous };
+            delete next[child.id];
+            return next;
+          });
+        },
+        (err) => {
+          console.error("Could not load a child's appointments:", err);
+          setChildAppointmentErrors((previous) => ({
+            ...previous,
+            [child.id]: true,
+          }));
+        },
+      ),
+    );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe?.());
+  }, [children, forChild]);
 
   useEffect(() => {
     const unsubBooked = subscribeToBookedSlots(setBookedSlots);
@@ -169,6 +212,13 @@ export default function PatientCalendar({ forChild = null }) {
 
   // The doctor currently selected in the booking form, if any.
   const selectedDoctor = doctors.find((d) => d.id === form.doctorId) || null;
+  const bookableChildren = children.filter(
+    (child) => child.verificationStatus !== "rejected",
+  );
+  const selectedBookingChild =
+    forChild ||
+    bookableChildren.find((child) => child.id === bookingPatientId) ||
+    null;
 
   const grid = useMemo(
     () => getMonthGrid(viewYear, viewMonth),
@@ -189,9 +239,32 @@ export default function PatientCalendar({ forChild = null }) {
     [appointments, currentUser, forChild],
   );
 
-  const ownAppointmentsByDate = useMemo(() => {
+  const familyAppointments = useMemo(
+    () =>
+      forChild
+        ? []
+        : children
+            .filter((child) => child.verificationStatus !== "rejected")
+            .flatMap((child) =>
+              (childAppointments[child.id] || [])
+                .filter((appointment) => appointment.patientId === child.id)
+                .map((appointment) => ({
+                  ...appointment,
+                  childName: child.name,
+                  isChildAppointment: true,
+                })),
+            ),
+    [childAppointments, children, forChild],
+  );
+
+  const calendarAppointments = useMemo(
+    () => [...myAppointments, ...familyAppointments],
+    [familyAppointments, myAppointments],
+  );
+
+  const appointmentsByDate = useMemo(() => {
     const map = {};
-    myAppointments
+    calendarAppointments
       .filter((a) => a.status !== "cancelled")
       .forEach((a) => {
         if (!map[a.date]) map[a.date] = [];
@@ -201,9 +274,9 @@ export default function PatientCalendar({ forChild = null }) {
       list.sort((a, b) => a.time.localeCompare(b.time)),
     );
     return map;
-  }, [myAppointments]);
+  }, [calendarAppointments]);
 
-  const selectedDayAppointments = ownAppointmentsByDate[selectedDate] || [];
+  const selectedDayAppointments = appointmentsByDate[selectedDate] || [];
 
   const activeBookedSlots = useMemo(
     () => bookedSlots.filter((b) => b.status !== "cancelled"),
@@ -346,6 +419,15 @@ export default function PatientCalendar({ forChild = null }) {
     )
       return;
     setSelectedDate(dateStr);
+    if (!forChild && (bookableChildren.length > 0 || childrenLoading)) {
+      setBookingStep("who");
+      return;
+    }
+    startBookingFlow(forChild ? forChild.id : "self");
+  }
+
+  function startBookingFlow(patientId) {
+    setBookingPatientId(patientId);
     setBookingTime(null);
     // Pre-select the doctor when there's only one, so the flow isn't slowed
     // down for the common single-doctor practice; with several, the patient
@@ -356,6 +438,10 @@ export default function PatientCalendar({ forChild = null }) {
     });
     setFormError("");
     setBookingStep("time");
+  }
+
+  function selectBookingPatient(patientId) {
+    startBookingFlow(patientId);
   }
 
   // Double-clicking a day jumps straight into booking on that day, mirroring
@@ -416,8 +502,12 @@ export default function PatientCalendar({ forChild = null }) {
         form.type === "virtual" ? generateMeetingLink() : "";
       await createAppointment({
         meetingLink,
-        patientId: forChild?.id || currentUser.uid,
-        patientName: forChild?.name || userName || currentUser?.email,
+        patientId: selectedBookingChild?.id || currentUser.uid,
+        patientName:
+          selectedBookingChild?.name ||
+          selectedBookingChild?.firstName ||
+          userName ||
+          currentUser?.email,
         secretaryId: null,
         doctorId: selectedDoctor?.id || null,
         doctorName: selectedDoctor?.name || "",
@@ -433,6 +523,7 @@ export default function PatientCalendar({ forChild = null }) {
         status,
         meetingLink,
         doctorName: selectedDoctor?.name || "",
+        childName: selectedBookingChild?.name || selectedBookingChild?.firstName || "",
       });
       setBookingStep("confirmed");
     } catch (err) {
@@ -506,7 +597,6 @@ export default function PatientCalendar({ forChild = null }) {
                 ? `Book for ${forChild.firstName}`
                 : "Book an appointment"}
             </h1>
-            <p className="text-slate text-sm"></p>
           </div>
           <button
             onClick={() => openBookingFlow()}
@@ -531,6 +621,18 @@ export default function PatientCalendar({ forChild = null }) {
             {error}
           </div>
         )}
+        {(childrenError ||
+          children.some(
+            (child) =>
+              child.verificationStatus !== "rejected" &&
+              childAppointmentErrors[child.id],
+          )) &&
+          !forChild && (
+            <div className="bg-pastel-red text-red text-sm rounded-xl px-4 py-3 mb-6">
+              {childrenError ||
+                "We couldn't load appointments for one or more children. Please refresh and try again."}
+            </div>
+          )}
 
         <div className="grid md:grid-cols-[1fr_360px] gap-6">
           {/* Calendar */}
@@ -574,8 +676,14 @@ export default function PatientCalendar({ forChild = null }) {
                   blockedSlots.some(
                     (b) => b.date === cell.dateStr && b.time !== null,
                   );
-                const hasOwnAppt =
-                  (ownAppointmentsByDate[cell.dateStr] || []).length > 0;
+                const dayAppointments =
+                  appointmentsByDate[cell.dateStr] || [];
+                const hasOwnAppt = dayAppointments.some(
+                  (appointment) => !appointment.isChildAppointment,
+                );
+                const hasChildAppt = dayAppointments.some(
+                  (appointment) => appointment.isChildAppointment,
+                );
                 const isSelected = cell.dateStr === selectedDate;
                 const isPast = isPastDate(cell.dateStr);
                 return (
@@ -607,14 +715,34 @@ export default function PatientCalendar({ forChild = null }) {
                     {partiallyBlocked && (
                       <span className="w-1 h-1 rounded-full bg-amber" />
                     )}
-                    {!fullyBlocked && !partiallyBlocked && hasOwnAppt && (
+                    {hasOwnAppt && (
                       <span
                         className={`w-1 h-1 rounded-full ${isSelected ? "bg-white" : "bg-rose"}`}
                       />
                     )}
+                    {hasChildAppt && (
+                      <span className="w-1 h-1 rounded-full bg-blue" />
+                    )}
                   </button>
                 );
               })}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-xs text-slate">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-rose" />
+                {forChild
+                  ? `${forChild.firstName}'s appointment`
+                  : "Your appointment"}
+              </span>
+              {!forChild &&
+                children.some(
+                  (child) => child.verificationStatus !== "rejected",
+                ) && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue" />
+                  Child's appointment
+                </span>
+                )}
             </div>
           </Card>
 
@@ -727,6 +855,11 @@ export default function PatientCalendar({ forChild = null }) {
                                 <p className="text-xs text-slate capitalize">
                                   {a.type} consult
                                 </p>
+                                {a.isChildAppointment && (
+                                  <span className="inline-flex mt-1 rounded-full bg-pastel-blue text-blue text-xs font-medium px-2.5 py-1">
+                                    Appointment for {a.childName}
+                                  </span>
+                                )}
                                 {safeMeetingLink(a) && a.status !== "cancelled" && (
                                   <JoinLink
                                     appointment={a}
@@ -778,6 +911,44 @@ export default function PatientCalendar({ forChild = null }) {
         </div>
       </div>
 
+      {/* Choose who the appointment is for */}
+      <Modal
+        isOpen={bookingStep === "who"}
+        onClose={closeBookingFlow}
+        title="Who is this appointment for?"
+        headerVariant="dark"
+        hideFooter
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate">
+            Choose who you are booking this appointment for.
+          </p>
+          {childrenLoading && (
+            <p className="text-sm text-slate" role="status">
+              Loading family profiles...
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => selectBookingPatient("self")}
+            disabled={childrenLoading}
+            className="w-full rounded-xl border border-stone px-4 py-3 text-left font-medium text-ink hover:border-rose hover:bg-blush transition-colors disabled:opacity-50 disabled:cursor-wait disabled:hover:border-stone disabled:hover:bg-white"
+          >
+            Book for myself
+          </button>
+          {bookableChildren.map((child) => (
+            <button
+              key={child.id}
+              type="button"
+              onClick={() => selectBookingPatient(child.id)}
+              className="w-full rounded-xl border border-stone px-4 py-3 text-left font-medium text-ink hover:border-rose hover:bg-blush transition-colors"
+            >
+              Book for {child.name || child.firstName}
+            </button>
+          ))}
+        </div>
+      </Modal>
+
       {/* Step 1 - select a time slot */}
       <Modal
         isOpen={bookingStep === "time"}
@@ -787,6 +958,16 @@ export default function PatientCalendar({ forChild = null }) {
         hideFooter
       >
         <div className="flex flex-col gap-4">
+          {!forChild && (
+            <p className="text-sm text-slate bg-mist rounded-xl px-4 py-3">
+              Booking for:{" "}
+              <span className="font-semibold text-ink">
+                {selectedBookingChild?.name ||
+                  selectedBookingChild?.firstName ||
+                  "You"}
+              </span>
+            </p>
+          )}
           {doctors.length > 0 && (
             <div>
               <p className="text-sm font-semibold text-ink mb-2">
@@ -969,6 +1150,14 @@ export default function PatientCalendar({ forChild = null }) {
             </div>
             <div className="divide-y divide-sand">
               <SummaryRow
+                label="Patient"
+                value={
+                  selectedBookingChild?.name ||
+                  selectedBookingChild?.firstName ||
+                  "You"
+                }
+              />
+              <SummaryRow
                 label="Doctor"
                 value={selectedDoctor?.name || "The practice's doctor"}
               />
@@ -1059,6 +1248,11 @@ export default function PatientCalendar({ forChild = null }) {
               <p className="text-sm text-ink">
                 {confirmedBooking.doctorName || "The practice's doctor"}
               </p>
+              {confirmedBooking.childName && (
+                <p className="text-sm font-medium text-blue">
+                  Appointment for {confirmedBooking.childName}
+                </p>
+              )}
               <p className="text-sm text-slate">
                 {formatShortDate(confirmedBooking.date)}{" "}
                 {parseDate(confirmedBooking.date).getFullYear()} ·{" "}

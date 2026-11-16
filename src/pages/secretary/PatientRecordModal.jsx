@@ -5,6 +5,7 @@
 // consultation, not just viewed.
 import { useEffect, useMemo, useState } from 'react'
 import { X, Plus, Trash2, ClipboardList, Bell, MessageSquare, Check } from 'lucide-react'
+import { Timestamp } from 'firebase/firestore'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -16,6 +17,7 @@ import {
   addPatientRecord,
   getIntakeFormForPatient,
   getIntakeFormByIdNumber,
+  saveIntakeForm,
   markIntakeImported,
   sendIntakeReminder,
   subscribeToPatientChangeRequests,
@@ -23,9 +25,13 @@ import {
 } from '../../firebase/firestore'
 import { formatShortDate, formatDisplayDate, formatDate, getTodayString } from '../../utils/dateHelpers'
 import { GENDER_OPTIONS, isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
-import { intakeToProfileUpdates } from '../../utils/intakeQuestions'
+import { CHILD_FORM_TYPE, intakeToProfileUpdates } from '../../utils/intakeQuestions'
 import IntakeSummary from '../../components/IntakeSummary'
+import IntakeWizard from '../../components/IntakeWizard'
 import ChildBanner from '../../components/family/ChildBanner'
+import ChildHealthCard from '../../components/family/ChildHealthCard'
+import { formatAge } from '../../utils/childAge'
+import { markChildIntakeCompleted, RELATIONSHIPS } from '../../firebase/family'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -117,6 +123,7 @@ export default function PatientRecordModal({ patient, appointments = [], initial
   const [showConsultForm, setShowConsultForm] = useState(autoOpenAddForm)
   const [savingConsult, setSavingConsult] = useState(false)
   const [consultError, setConsultError] = useState('')
+  const [capturingPaperIntake, setCapturingPaperIntake] = useState(false)
 
   const patientKey = patient?.id || patient?.idNumber
 
@@ -215,20 +222,72 @@ export default function PatientRecordModal({ patient, appointments = [], initial
     setImportingIntake(false)
   }
 
+  async function handleCapturePaperIntake(answers) {
+    const existing = patient.id
+      ? await getIntakeFormForPatient(patient.id, patient.idNumber)
+      : await getIntakeFormByIdNumber(patient.idNumber)
+    if (existing) {
+      setIntake(existing)
+      setCapturingPaperIntake(false)
+      setActiveTab('intake')
+      return
+    }
+
+    const formId = await saveIntakeForm({
+      patientId: patient.id || null,
+      patientIdNumber: patient.idNumber || '',
+      answers,
+      submittedBy: 'secretary',
+      captureMethod: 'paper',
+      capturedBy: currentUser?.uid || null,
+    })
+    setIntake({
+      id: formId,
+      patientId: patient.id || null,
+      patientIdNumber: patient.idNumber || '',
+      answers,
+      submittedBy: 'secretary',
+      captureMethod: 'paper',
+      capturedBy: currentUser?.uid || null,
+      submittedAt: Timestamp.now(),
+      importedAt: null,
+    })
+    if (patient.isChild && patient.id) {
+      try {
+        await markChildIntakeCompleted(patient.id)
+      } catch (err) {
+        console.error('Paper intake was saved, but the child profile could not be flagged:', err)
+      }
+    }
+    setCapturingPaperIntake(false)
+    setActiveTab('intake')
+  }
+
   const today = getTodayString()
+  // The caller passes every appointment in the practice, so narrow it to this
+  // patient (by id, or by ID number for a walk-in with no account yet).
+  const patientAppointments = useMemo(
+    () =>
+      appointments.filter(
+        (a) =>
+          (patient?.id && a.patientId === patient.id) ||
+          (patient?.idNumber && a.patientIdNumber === patient.idNumber),
+      ),
+    [appointments, patient?.id, patient?.idNumber],
+  )
   const upcoming = useMemo(
     () =>
-      appointments
+      patientAppointments
         .filter((a) => a.date >= today && a.status !== 'cancelled')
         .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)),
-    [appointments, today],
+    [patientAppointments, today],
   )
   const past = useMemo(
     () =>
-      appointments
-        .filter((a) => a.date < today)
+      patientAppointments
+        .filter((a) => a.date < today && a.status !== 'cancelled')
         .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)),
-    [appointments, today],
+    [patientAppointments, today],
   )
   const nextAppointment = upcoming[0] || null
   const lastVisit = past[0] || null
@@ -251,6 +310,49 @@ export default function PatientRecordModal({ patient, appointments = [], initial
   if (!patient) return null
 
   const tabs = intake ? [...TABS, INTAKE_TAB] : TABS
+
+  if (capturingPaperIntake) {
+    const initialAnswers = {
+      preferredName: patient.name || patient.firstName || '',
+      ...(patient.isChild
+        ? {
+            guardianName: patient.guardianName || '',
+            guardianRelationship:
+              patient.guardianRelationship === 'legal_guardian'
+                ? 'Legal guardian'
+                : patient.guardianRelationship
+                  ? 'Parent'
+                  : '',
+          }
+        : {}),
+    }
+    const lockedAnswers = patient.isChild
+      ? {
+          formType: CHILD_FORM_TYPE,
+          dateOfBirth: patient.dateOfBirth || '',
+        }
+      : {}
+
+    return (
+      <div className="fixed inset-0 z-[60] overflow-y-auto bg-sand">
+        <IntakeWizard
+          initialAnswers={initialAnswers}
+          lockedAnswers={lockedAnswers}
+          intro={{
+            eyebrow: 'Paper intake form',
+            title: `Capture ${patient.name || 'patient'}'s intake`,
+            lead: 'Enter the answers from the paper form completed at the practice.',
+            body: 'Transcribe the patient’s answers accurately. Leave optional answers blank if they were not provided.',
+            startLabel: 'Enter paper form',
+            laterLabel: 'Back to patient record',
+          }}
+          consentTextOverride="I confirm that I have checked the completed paper form and it records the patient's or guardian's consent to store this information."
+          onLater={() => setCapturingPaperIntake(false)}
+          onSubmit={handleCapturePaperIntake}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/40">
@@ -302,6 +404,8 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                   lastVisit={lastVisit}
                   intake={intake}
                   loadingIntake={loadingIntake}
+                  onReviewIntake={() => setActiveTab('intake')}
+                  onCapturePaperIntake={() => setCapturingPaperIntake(true)}
                 />
               )}
 
@@ -309,7 +413,14 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                 <div className="flex flex-col gap-4">
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-xs text-slate">
-                      Submitted {intake.submittedBy === 'patient' ? 'by the patient' : 'by the practice'} on{' '}
+                      Submitted{' '}
+                      {intake.submittedBy === 'patient'
+                        ? 'by the patient'
+                        : intake.submittedBy === 'guardian'
+                          ? 'by the parent or guardian'
+                          : 'by the practice'}{' '}
+                      {intake.captureMethod === 'paper' ? 'from the paper form ' : ''}
+                      on{' '}
                       {tsToDisplay(intake.submittedAt) || '-'}.
                       {intake.importedAt ? ` Imported into the profile on ${tsToDisplay(intake.importedAt)}.` : ''}
                     </p>
@@ -452,8 +563,15 @@ function ChangeRequestsTab({ requests, resolvingRequestId, requestError, onResol
   )
 }
 
-function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit, intake, loadingIntake }) {
-  const age = calculateAge(overviewForm.dateOfBirth || profile?.dateOfBirth)
+function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit, intake, loadingIntake, onReviewIntake, onCapturePaperIntake }) {
+  // A child's date of birth lives on their profile document (children/{id}),
+  // not on a clinical profile, which is empty until staff import the intake
+  // form. Fall back to it so the overview is never blank for a child.
+  const dob = overviewForm.dateOfBirth || profile?.dateOfBirth || patient.dateOfBirth
+  const age = patient.isChild ? (dob ? formatAge(dob) : null) : calculateAge(dob)
+  const answers = intake?.answers || {}
+  const genderValue = profile?.gender || answers.gender
+  const guardianContact = [answers.guardianPhone, answers.guardianEmail].filter(Boolean).join(' · ')
   const [fieldErrors, setFieldErrors] = useState({})
   const [saving, setSaving] = useState(false)
 
@@ -491,7 +609,13 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
 
   return (
     <div className="flex flex-col gap-6">
-      <IntakeStatusCard patient={patient} intake={intake} loadingIntake={loadingIntake} />
+      <IntakeStatusCard
+        patient={patient}
+        intake={intake}
+        loadingIntake={loadingIntake}
+        onReview={onReviewIntake}
+        onCapturePaperIntake={onCapturePaperIntake}
+      />
 
       <SectionCard
         title="Personal information"
@@ -515,21 +639,44 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
         {!editingOverview ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <InfoItem label="Full name" value={patient.name} />
-            <InfoItem label="Date of birth" value={profile?.dateOfBirth ? formatDisplayDate(profile.dateOfBirth) : '-'} />
+            <InfoItem label="Date of birth" value={dob ? formatDisplayDate(dob) : '-'} />
             <InfoItem label="Age" value={age != null ? age : '-'} />
-            <InfoItem label="Gender" value={GENDER_OPTIONS.find((g) => g.value === profile?.gender)?.label || profile?.gender || '-'} />
-            <InfoItem label="ID/Passport number" value={patient.idNumber || '-'} />
-            <InfoItem label="Contact number" value={patient.phone || '-'} />
-            <InfoItem label="Email address" value={patient.email || '-'} />
-            <InfoItem label="Marital status" value={profile?.maritalStatus || '-'} />
-            <InfoItem label="Occupation" value={profile?.occupation || '-'} />
+            <InfoItem label="Gender" value={GENDER_OPTIONS.find((g) => g.value === genderValue)?.label || genderValue || '-'} />
+            <InfoItem label={patient.isChild ? 'ID / birth certificate number' : 'ID/Passport number'} value={patient.idNumber || '-'} />
+            {patient.isChild ? (
+              <>
+                <InfoItem
+                  label="Parent or guardian"
+                  value={
+                    patient.guardianName
+                      ? `${patient.guardianName}${
+                          patient.guardianRelationship
+                            ? ` (${RELATIONSHIPS.find((r) => r.value === patient.guardianRelationship)?.label || patient.guardianRelationship})`
+                            : ''
+                        }`
+                      : '-'
+                  }
+                />
+                <InfoItem label="Guardian contact" value={guardianContact || '-'} />
+                <InfoItem label="Home address" value={answers.homeAddress || '-'} />
+              </>
+            ) : (
+              <>
+                <InfoItem label="Contact number" value={patient.phone || '-'} />
+                <InfoItem label="Email address" value={patient.email || '-'} />
+                <InfoItem label="Marital status" value={profile?.maritalStatus || '-'} />
+                <InfoItem label="Occupation" value={profile?.occupation || '-'} />
+              </>
+            )}
             <InfoItem label="Emergency contact" value={profile?.emergencyContactName ? `${profile.emergencyContactName}${profile.emergencyContactPhone ? ' · ' + profile.emergencyContactPhone : ''}` : '-'} />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Date of birth">
-              <input type="date" value={overviewForm.dateOfBirth || ''} onChange={(e) => set('dateOfBirth', e.target.value)} className={inputClasses} />
-            </Field>
+            {!patient.isChild && (
+              <Field label="Date of birth">
+                <input type="date" value={overviewForm.dateOfBirth || ''} onChange={(e) => set('dateOfBirth', e.target.value)} className={inputClasses} />
+              </Field>
+            )}
             <Field label="Gender">
               <select value={overviewForm.gender || ''} onChange={(e) => set('gender', e.target.value)} className={inputClasses}>
                 <option value="">Select...</option>
@@ -538,12 +685,16 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
                 ))}
               </select>
             </Field>
-            <Field label="Marital status">
-              <input value={overviewForm.maritalStatus || ''} onChange={(e) => set('maritalStatus', e.target.value)} className={inputClasses} />
-            </Field>
-            <Field label="Occupation">
-              <input value={overviewForm.occupation || ''} onChange={(e) => set('occupation', e.target.value)} className={inputClasses} />
-            </Field>
+            {!patient.isChild && (
+              <>
+                <Field label="Marital status">
+                  <input value={overviewForm.maritalStatus || ''} onChange={(e) => set('maritalStatus', e.target.value)} className={inputClasses} />
+                </Field>
+                <Field label="Occupation">
+                  <input value={overviewForm.occupation || ''} onChange={(e) => set('occupation', e.target.value)} className={inputClasses} />
+                </Field>
+              </>
+            )}
             <Field label="Emergency contact name">
               <input value={overviewForm.emergencyContactName || ''} onChange={(e) => set('emergencyContactName', e.target.value)} className={inputClasses} />
             </Field>
@@ -625,6 +776,8 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
         )}
         <p className="text-xs text-slate mt-3">Allergies, conditions and medications are managed from their own tabs.</p>
       </SectionCard>
+
+      {patient.isChild && <ChildHealthCard answers={intake?.answers} />}
     </div>
   )
 }
@@ -634,7 +787,7 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
 // tablet in person if not - without having to dig into their record. See
 // the "Intake form" tab (only rendered once a form actually exists) for
 // the full read-only answers.
-function IntakeStatusCard({ patient, intake, loadingIntake }) {
+function IntakeStatusCard({ patient, intake, loadingIntake, onReview, onCapturePaperIntake }) {
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
@@ -658,15 +811,26 @@ function IntakeStatusCard({ patient, intake, loadingIntake }) {
     <SectionCard
       title="Intake form"
       action={
-        completed === false && patient.id && (
-          <button
-            onClick={handleSendReminder}
-            disabled={sending || sent}
-            className="text-xs font-medium text-rose hover:underline disabled:opacity-60 flex items-center gap-1"
-          >
-            <Bell size={12} />
-            {sent ? 'Reminder sent' : sending ? 'Sending...' : 'Send reminder'}
-          </button>
+        completed === false && (
+          <div className="flex items-center gap-3">
+            {patient.id && (
+              <button
+                onClick={handleSendReminder}
+                disabled={sending || sent}
+                className="text-xs font-medium text-rose hover:underline disabled:opacity-60 flex items-center gap-1"
+              >
+                <Bell size={12} />
+                {sent ? 'Reminder sent' : sending ? 'Sending...' : 'Send reminder'}
+              </button>
+            )}
+            <button
+              onClick={onCapturePaperIntake}
+              className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
+            >
+              <ClipboardList size={12} />
+              Enter paper form
+            </button>
+          </div>
         )
       }
     >
@@ -675,7 +839,18 @@ function IntakeStatusCard({ patient, intake, loadingIntake }) {
       ) : completed ? (
         <p className="text-sm text-ink flex items-center gap-2">
           <ClipboardList size={16} className="text-green shrink-0" />
-          Completed{intake?.submittedBy === 'secretary' ? ' (captured by the practice)' : ''}.
+          Completed
+          {intake?.submittedBy === 'secretary'
+            ? ' (captured by the practice)'
+            : intake?.submittedBy === 'guardian'
+              ? ' (filled in by the parent or guardian)'
+              : ''}
+          .
+          {intake && !intake.importedAt && onReview && (
+            <button onClick={onReview} className="ml-1 text-xs font-medium text-rose hover:underline">
+              Review and import into the profile
+            </button>
+          )}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -684,9 +859,11 @@ function IntakeStatusCard({ patient, intake, loadingIntake }) {
             Not completed yet.
           </p>
           <p className="text-xs text-slate">
-            {patient.id
-              ? "They still see the reminder icon in their app until it's done. If they're in front of you, it's quickest to have them fill it in now."
-              : "This patient doesn't have an account yet, so have them complete it on paper or in person at their next visit."}
+            {patient.isChild
+              ? "Their parent or guardian can complete this digitally, or you can enter the completed paper form here."
+              : patient.id
+                ? "They still see the reminder icon in their app until it's done. If they've completed the paper form in person, you can enter it here."
+                : "This patient doesn't have an account yet. Enter their completed paper form here to save it to their record."}
           </p>
           {error && <p className="text-xs text-red">{error}</p>}
         </div>

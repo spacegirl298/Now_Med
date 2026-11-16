@@ -68,6 +68,32 @@ async function seed() {
     await setDoc(doc(db, 'users/patB'), userDoc('patB'))
     await setDoc(doc(db, 'users/sec1'), userDoc('sec1', 'secretary', { email: 'sec@practice.com' }))
 
+    await setDoc(doc(db, 'children/childA'), {
+      firstName: 'Child',
+      lastName: 'A',
+      guardianIds: ['patA'],
+      turns12At: Timestamp.fromMillis(Date.now() + 365 * 24 * HOUR),
+      turns18At: Timestamp.fromMillis(Date.now() + 6 * 365 * 24 * HOUR),
+      verificationStatus: 'pending',
+      hasCompletedIntake: false,
+    })
+    await setDoc(doc(db, 'children/childB'), {
+      firstName: 'Child',
+      lastName: 'B',
+      guardianIds: ['patB'],
+      turns12At: Timestamp.fromMillis(Date.now() + 365 * 24 * HOUR),
+      turns18At: Timestamp.fromMillis(Date.now() + 6 * 365 * 24 * HOUR),
+      verificationStatus: 'pending',
+      hasCompletedIntake: false,
+    })
+    await setDoc(doc(db, 'intakeForms/childIntake'), {
+      patientId: 'childA',
+      submittedBy: 'guardian',
+    })
+    await setDoc(doc(db, 'records/childRecord'), {
+      patientId: 'childA',
+    })
+
     // patA has one appointment 4 hours out and one 2 hours out; patB has one.
     const appt = (patientId, hoursAhead) => ({
       patientId,
@@ -224,6 +250,79 @@ describe("patient A cannot reach patient B's data", () => {
   })
 })
 
+describe('guardian child appointments', () => {
+  it('a guardian can query appointments for their child', async () => {
+    const q = query(
+      collection(patient('patA'), 'appointments'),
+      where('patientId', '==', 'childA'),
+    )
+    await assertSucceeds(getDocs(q))
+  })
+
+  it('a guardian can book an appointment for their child', async () => {
+    const db = patient('patA')
+    await assertSucceeds(setDoc(doc(db, 'appointments/childAppt'), {
+      patientId: 'childA',
+      patientName: 'Child A',
+      date: '2030-01-02',
+      time: '10:00',
+      status: 'confirmed',
+    }))
+    await assertSucceeds(setDoc(doc(db, 'appointmentSlots/childApptSlot'), {
+      date: '2030-01-02',
+      time: '10:00',
+      status: 'confirmed',
+      appointmentId: 'childAppt',
+      patientId: 'childA',
+      doctorId: 'doc1',
+    }))
+  })
+
+  it('a guardian can create a confirmation notification for their child appointment', async () => {
+    const db = patient('patA')
+    await setDoc(doc(db, 'appointments/childApptForNotification'), {
+      patientId: 'childA',
+      patientName: 'Child A',
+      date: '2030-01-02',
+      time: '10:00',
+      status: 'confirmed',
+    })
+    await assertSucceeds(
+      setDoc(doc(db, 'notifications/childApptConfirmation'), {
+        recipientId: 'childA',
+        appointmentId: 'childApptForNotification',
+        type: 'confirmation',
+        message: 'Your appointment has been booked.',
+        read: false,
+      }),
+    )
+  })
+
+  it('a guardian cannot create a child notification unrelated to an appointment', async () => {
+    await assertFails(
+      setDoc(doc(patient('patA'), 'notifications/childUnrelated'), {
+        recipientId: 'childA',
+        appointmentId: null,
+        type: 'message',
+        message: 'Not an appointment confirmation.',
+        read: false,
+      }),
+    )
+  })
+
+  it("a guardian cannot create a notification for another guardian's appointment", async () => {
+    await assertFails(
+      setDoc(doc(patient('patA'), 'notifications/otherChildAppt'), {
+        recipientId: 'childB',
+        appointmentId: 'apptB',
+        type: 'confirmation',
+        message: 'Unauthorized.',
+        read: false,
+      }),
+    )
+  })
+})
+
 describe('patient cancellation window (3 hours)', () => {
   const cancel = (db, id, extra = {}) =>
     updateDoc(doc(db, `appointments/${id}`), {
@@ -304,5 +403,82 @@ describe('secretary directory', () => {
   })
   it('a verified, invited secretary can register themselves', async () => {
     await assertSucceeds(setDoc(doc(secretary(), 'secretaryDirectory/sec1'), { uid: 'sec1' }))
+  })
+})
+
+describe('guardian child intake', () => {
+  it('a guardian can query their child intake form', async () => {
+    const q = query(
+      collection(patient('patA'), 'intakeForms'),
+      where('patientId', '==', 'childA'),
+    )
+    await assertSucceeds(getDocs(q))
+  })
+
+  it('a guardian can submit an intake form for their child', async () => {
+    await assertSucceeds(
+      setDoc(doc(patient('patA'), 'intakeForms/childIntakeNew'), {
+        patientId: 'childA',
+        submittedBy: 'guardian',
+      }),
+    )
+  })
+
+  it("a guardian cannot submit an intake form for another guardian's child", async () => {
+    await assertFails(
+      setDoc(doc(patient('patA'), 'intakeForms/otherChildIntake'), {
+        patientId: 'childB',
+        submittedBy: 'guardian',
+      }),
+    )
+  })
+
+  it('a guardian can mark their child intake complete', async () => {
+    await assertSucceeds(
+      updateDoc(doc(patient('patA'), 'children/childA'), {
+        hasCompletedIntake: true,
+        intakeCompletedAt: Timestamp.now(),
+      }),
+    )
+  })
+
+  it('a pending guardian cannot read child medical records', async () => {
+    await assertFails(getDoc(doc(patient('patA'), 'records/childRecord')))
+  })
+
+  it('a guardian cannot change verification while marking intake complete', async () => {
+    await assertFails(
+      updateDoc(doc(patient('patA'), 'children/childA'), {
+        hasCompletedIntake: true,
+        intakeCompletedAt: Timestamp.now(),
+        verificationStatus: 'verified',
+      }),
+    )
+  })
+})
+
+describe('secretary paper intake forms', () => {
+  it('a secretary can save a paper intake form on a patient record', async () => {
+    await assertSucceeds(
+      setDoc(doc(secretary(), 'intakeForms/paperIntake'), {
+        patientId: 'patA',
+        patientIdNumber: 'id-patA',
+        submittedBy: 'secretary',
+        captureMethod: 'paper',
+        capturedBy: 'sec1',
+        answers: { preferredName: 'Patient A' },
+      }),
+    )
+  })
+
+  it('a patient cannot mark their own intake form as entered by a secretary', async () => {
+    await assertFails(
+      setDoc(doc(patient('patA'), 'intakeForms/fakePaperIntake'), {
+        patientId: 'patA',
+        submittedBy: 'secretary',
+        captureMethod: 'paper',
+        answers: { preferredName: 'Patient A' },
+      }),
+    )
   })
 })

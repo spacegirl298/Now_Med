@@ -98,6 +98,20 @@ service cloud.firestore {
         );
     }
 
+    function isGuardianAppointmentNotification() {
+      return isSignedIn()
+        && request.resource.data.recipientId is string
+        && isGuardianOf(request.resource.data.recipientId)
+        && request.resource.data.appointmentId is string
+        && exists(
+          /databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)
+        )
+        && get(
+          /databases/$(database)/documents/appointments/$(request.resource.data.appointmentId)
+        ).data.patientId == request.resource.data.recipientId
+        && request.resource.data.type == 'confirmation';
+    }
+
     // ---------- users ----------
 
     match /users/{userId} {
@@ -249,6 +263,15 @@ service cloud.firestore {
             .hasOnly(['profileCharacter'])
           && request.resource.data.profileCharacter is string
           && request.resource.data.profileCharacter.size() <= 3
+        )
+        // A guardian may mark the intake as submitted, but cannot alter
+        // verification, identity, or other child-profile data.
+        || (
+          isGuardianOf(childId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['hasCompletedIntake', 'intakeCompletedAt'])
+          && request.resource.data.hasCompletedIntake == true
+          && request.resource.data.intakeCompletedAt is timestamp
         );
 
       allow delete: if false;
@@ -360,6 +383,7 @@ service cloud.firestore {
           isSignedIn()
           && request.resource.data.recipientId == request.auth.uid
         )
+        || isGuardianAppointmentNotification()
         || (
           isSignedIn()
           && isSecretaryRecipient(request.resource.data.recipientId)
@@ -470,6 +494,9 @@ service cloud.firestore {
       allow read: if isSecretary()
         || isOwner(resource.data.patientId)
         || isVerifiedGuardianOf(resource.data.patientId)
+        // Parents may access the intake form they submit for a child; this
+        // does not grant access to the child's other clinical records.
+        || isGuardianOf(resource.data.patientId)
         || isUnclaimedByCallerIdNumber();
 
       allow create: if isSecretary()
@@ -477,6 +504,10 @@ service cloud.firestore {
           isSignedIn()
           && request.resource.data.patientId == request.auth.uid
           && request.resource.data.submittedBy == 'patient'
+        )
+        || (
+          isGuardianOf(request.resource.data.patientId)
+          && request.resource.data.submittedBy == 'guardian'
         );
 
       allow update: if isSecretary()

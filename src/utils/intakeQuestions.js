@@ -17,6 +17,16 @@
 //   options   for single/multi: [{ value, label }]
 //   otherKey  multi only: answer key that stores a free-text "Other"
 //   fields / noneLabel / summarize   list-type config (see the list questions)
+//   adultOnly / childOnly  hide the question on the other form (see below)
+//   child     overrides (label, help, placeholder, required, options, ...)
+//             applied when the form is the child version
+//
+// Two versions of the form share this one list. A parent filling in a form
+// for their child stores answers.formType === 'child' (plus the child's date
+// of birth, which is already known). getVisibleQuestions(answers) then drops
+// the adult-only questions, adds the child-only ones and swaps in the
+// child wording, so anything that renders the form from
+// getVisibleQuestions(answers) - the wizard, IntakeSummary - needs no changes.
 import {
   GENDER_OPTIONS,
   isValidEmail,
@@ -96,6 +106,9 @@ const isMinor = (answers) => {
   return age < 18
 }
 
+export const CHILD_FORM_TYPE = 'child'
+export const isChildForm = (answers = {}) => answers.formType === CHILD_FORM_TYPE
+
 const fmtDate = (v) => (v ? formatDisplayDate(v) : '')
 const joinParts = (parts, sep = ' · ') => parts.filter(Boolean).join(sep)
 
@@ -103,6 +116,7 @@ export const QUESTIONS = [
   // ---- About you ----
   {
     id: 'dateOfBirth',
+    adultOnly: true, // a child's date of birth is already on their profile
     section: 'About you',
     type: 'date',
     label: 'What is your date of birth?',
@@ -112,6 +126,9 @@ export const QUESTIONS = [
   },
   {
     id: 'gender',
+    child: {
+      label: 'What is your child’s gender?',
+    },
     section: 'About you',
     type: 'single',
     label: 'What is your gender?',
@@ -120,6 +137,10 @@ export const QUESTIONS = [
   },
   {
     id: 'sexAtBirth',
+    child: {
+      label: 'What sex was your child assigned at birth?',
+      help: 'This can affect diagnosis and medication safety.',
+    },
     section: 'About you',
     type: 'single',
     label: 'What sex were you assigned at birth?',
@@ -129,6 +150,11 @@ export const QUESTIONS = [
   },
   {
     id: 'preferredName',
+    child: {
+      label: 'What does your child like to be called?',
+      placeholder: 'Nickname or preferred name',
+      required: false,
+    },
     section: 'About you',
     type: 'text',
     label: 'What name should our staff use when speaking with you?',
@@ -137,6 +163,7 @@ export const QUESTIONS = [
   },
   {
     id: 'maritalStatus',
+    adultOnly: true,
     section: 'About you',
     type: 'single',
     label: 'What is your marital status?',
@@ -151,6 +178,7 @@ export const QUESTIONS = [
   },
   {
     id: 'occupation',
+    adultOnly: true,
     section: 'About you',
     type: 'text',
     label: 'What do you do for work?',
@@ -158,6 +186,9 @@ export const QUESTIONS = [
   },
   {
     id: 'homeAddress',
+    child: {
+      label: 'What is your child’s home address?',
+    },
     section: 'About you',
     type: 'textarea',
     label: 'What is your home address?',
@@ -166,6 +197,7 @@ export const QUESTIONS = [
   },
   {
     id: 'contactNumber',
+    adultOnly: true,
     section: 'About you',
     type: 'phone',
     label: 'What is the best number to reach you on?',
@@ -175,6 +207,11 @@ export const QUESTIONS = [
 
   {
     id: 'guardianName',
+    child: {
+      section: 'About you (parent or guardian)',
+      label: 'What is your full name?',
+      help: 'You are filling in this form for your child.',
+    },
     section: 'Parent or guardian',
     type: 'text',
     label: 'What is your parent or legal guardian’s full name?',
@@ -183,6 +220,10 @@ export const QUESTIONS = [
   },
   {
     id: 'guardianRelationship',
+    child: {
+      section: 'About you (parent or guardian)',
+      label: 'What is your relationship to the child?',
+    },
     section: 'Parent or guardian',
     type: 'single',
     label: 'What is their relationship to you?',
@@ -192,6 +233,10 @@ export const QUESTIONS = [
   },
   {
     id: 'guardianPhone',
+    child: {
+      section: 'About you (parent or guardian)',
+      label: 'What is the best number to reach you on?',
+    },
     section: 'Parent or guardian',
     type: 'phone',
     label: 'What is your parent or guardian’s phone number?',
@@ -201,6 +246,10 @@ export const QUESTIONS = [
   },
   {
     id: 'guardianEmail',
+    child: {
+      section: 'About you (parent or guardian)',
+      label: 'What is your email address?',
+    },
     section: 'Parent or guardian',
     type: 'text',
     label: 'What is your parent or guardian’s email address?',
@@ -213,6 +262,11 @@ export const QUESTIONS = [
   // ---- Emergency contact ----
   {
     id: 'emergencyContactName',
+    child: {
+      label: 'Who else can we contact if we cannot reach you?',
+      help: 'Their full name. Leave this out if there is nobody else.',
+      required: false,
+    },
     section: 'Emergency contact',
     type: 'text',
     label: 'Who should we contact in an emergency?',
@@ -221,6 +275,9 @@ export const QUESTIONS = [
   },
   {
     id: 'emergencyContactPhone',
+    child: {
+      required: false,
+    },
     section: 'Emergency contact',
     type: 'phone',
     label: 'What is their phone number?',
@@ -229,6 +286,11 @@ export const QUESTIONS = [
   },
   {
     id: 'emergencyContactRelationship',
+    child: {
+      label: 'How are they related to your child?',
+      placeholder: 'e.g. Grandparent, aunt, family friend',
+      required: false,
+    },
     section: 'Emergency contact',
     type: 'text',
     label: 'How are they related to you?',
@@ -239,6 +301,9 @@ export const QUESTIONS = [
   // ---- Medical aid ----
   {
     id: 'hasMedicalAid',
+    child: {
+      label: 'Is your child covered by medical aid?',
+    },
     section: 'Medical aid',
     type: 'single',
     label: 'Do you have medical aid?',
@@ -248,6 +313,9 @@ export const QUESTIONS = [
   },
   {
     id: 'medicalAidProvider',
+    child: {
+      label: 'Which medical aid covers your child?',
+    },
     section: 'Medical aid',
     type: 'text',
     label: 'Which medical aid are you with?',
@@ -257,6 +325,9 @@ export const QUESTIONS = [
   },
   {
     id: 'medicalAidNumber',
+    child: {
+      label: 'What is the main member’s number?',
+    },
     section: 'Medical aid',
     type: 'text',
     label: 'What is your member number?',
@@ -267,6 +338,9 @@ export const QUESTIONS = [
   },
   {
     id: 'medicalAidPlan',
+    child: {
+      label: 'What is the medical aid plan or option?',
+    },
     section: 'Medical aid',
     type: 'text',
     label: 'What is your medical aid plan or option?',
@@ -276,6 +350,11 @@ export const QUESTIONS = [
   },
   {
     id: 'medicalAidDependentCode',
+    child: {
+      label: 'What is your child’s dependent code?',
+      help: 'Usually 01 for the first dependent, 02 for the second, and so on.',
+      placeholder: 'e.g. 01',
+    },
     section: 'Medical aid',
     type: 'text',
     label: 'What is your dependent code?',
@@ -286,6 +365,9 @@ export const QUESTIONS = [
   },
   {
     id: 'medicalAidPrincipalName',
+    child: {
+      label: 'What is the main member’s full name?',
+    },
     section: 'Medical aid',
     type: 'text',
     label: 'If you are not the main member, what is the main member’s full name?',
@@ -293,9 +375,58 @@ export const QUESTIONS = [
     required: true,
   },
 
+  // ---- Child only: birth, development and vaccines ----
+  {
+    id: 'birthHistory',
+    section: 'Birth and development',
+    type: 'single',
+    childOnly: true,
+    label: 'Was your child born full term?',
+    help: 'Full term is 37 weeks or more.',
+    options: opts(['Full term', 'Premature', 'Not sure']),
+  },
+  {
+    id: 'birthWeight',
+    section: 'Birth and development',
+    type: 'text',
+    childOnly: true,
+    label: 'What was your child’s birth weight?',
+    help: 'It is usually on the Road to Health card. Optional.',
+    placeholder: 'e.g. 3.2 kg',
+  },
+  {
+    id: 'immunisations',
+    section: 'Birth and development',
+    type: 'single',
+    childOnly: true,
+    label: 'Are your child’s vaccinations up to date?',
+    help: 'Check the Road to Health card if you are not sure.',
+    options: opts(['Up to date', 'Behind schedule', 'Not vaccinated', 'Not sure']),
+  },
+  {
+    id: 'developmentConcerns',
+    section: 'Birth and development',
+    type: 'textarea',
+    childOnly: true,
+    label: 'Do you have any concerns about your child’s growth, development or behaviour?',
+    help: 'For example speech, walking, hearing, sleep or school progress. Optional.',
+    placeholder: 'Optional',
+  },
+  {
+    id: 'schoolOrCreche',
+    section: 'Birth and development',
+    type: 'text',
+    childOnly: true,
+    label: 'Which school or creche does your child attend?',
+    placeholder: 'Optional',
+  },
+
   // ---- Your health ----
   {
     id: 'bloodGroup',
+    child: {
+      label: 'What is your child’s blood group?',
+    },
     section: 'Your health',
     type: 'single',
     label: 'What is your blood group?',
@@ -304,6 +435,9 @@ export const QUESTIONS = [
   },
   {
     id: 'chronicConditions',
+    child: {
+      label: 'Does your child have any of these ongoing conditions?',
+    },
     section: 'Your health',
     type: 'multi',
     label: 'Do you have any of these ongoing conditions?',
@@ -313,6 +447,15 @@ export const QUESTIONS = [
   },
   {
     id: 'allergies',
+    child: {
+      label: 'Does your child have any allergies?',
+      fields: [
+        { key: 'allergen', label: 'What are they allergic to?', placeholder: 'e.g. Penicillin, peanuts, eggs', required: true },
+        { key: 'type', label: 'Type', options: ALLERGY_TYPES },
+        { key: 'severity', label: 'How severe?', options: SEVERITIES },
+        { key: 'reaction', label: 'Reaction (optional)', placeholder: 'e.g. Rash, swelling' },
+      ],
+    },
     section: 'Your health',
     type: 'list',
     label: 'Do you have any allergies?',
@@ -329,6 +472,10 @@ export const QUESTIONS = [
   },
   {
     id: 'currentMedications',
+    child: {
+      label: 'Is your child taking any medication at the moment?',
+      help: 'Include prescription, over-the-counter, chronic medication, vitamins and supplements.',
+    },
     section: 'Your health',
     type: 'list',
     label: 'Are you taking any medication at the moment?',
@@ -344,6 +491,9 @@ export const QUESTIONS = [
   },
   {
     id: 'previousSurgeries',
+    child: {
+      label: 'Has your child had any surgeries?',
+    },
     section: 'Your health',
     type: 'list',
     label: 'Have you had any surgeries?',
@@ -358,6 +508,9 @@ export const QUESTIONS = [
   },
   {
     id: 'hospitalAdmissions',
+    child: {
+      label: 'Has your child ever been admitted to hospital?',
+    },
     section: 'Your health',
     type: 'list',
     label: 'Have you ever been admitted to hospital?',
@@ -373,6 +526,10 @@ export const QUESTIONS = [
   },
   {
     id: 'familyHistory',
+    child: {
+      label: 'Does anything run in the family?',
+      help: 'Close relatives such as parents, grandparents and siblings. Select all that apply.',
+    },
     section: 'Your health',
     type: 'multi',
     label: 'Does anything run in your family?',
@@ -383,6 +540,7 @@ export const QUESTIONS = [
   // ---- Lifestyle ----
   {
     id: 'smoking',
+    adultOnly: true,
     section: 'Lifestyle',
     type: 'single',
     label: 'Do you smoke?',
@@ -390,6 +548,7 @@ export const QUESTIONS = [
   },
   {
     id: 'alcohol',
+    adultOnly: true,
     section: 'Lifestyle',
     type: 'single',
     label: 'How often do you drink alcohol?',
@@ -399,6 +558,10 @@ export const QUESTIONS = [
   // ---- Finishing up ----
   {
     id: 'reasonForJoining',
+    child: {
+      label: 'Is there anything you want the doctor to know about your child?',
+      help: 'For example, why you are booking, or a concern you have.',
+    },
     section: 'Finishing up',
     type: 'textarea',
     label: 'Is there anything you want the doctor to know?',
@@ -407,6 +570,10 @@ export const QUESTIONS = [
   },
   {
     id: 'consent',
+    child: {
+      consentText:
+        'I confirm that I am this child’s parent or legal guardian, that the information I have given is accurate to the best of my knowledge, and that I agree to the practice storing it in my child’s medical record.',
+    },
     section: 'Finishing up',
     type: 'consent',
     label: 'Confirm your answers',
@@ -417,7 +584,10 @@ export const QUESTIONS = [
 ]
 
 export function getVisibleQuestions(answers = {}) {
-  return QUESTIONS.filter((q) => !q.showIf || q.showIf(answers))
+  const child = isChildForm(answers)
+  return QUESTIONS.filter((q) => (child ? !q.adultOnly : !q.childOnly))
+    .filter((q) => !q.showIf || q.showIf(answers))
+    .map((q) => (child && q.child ? { ...q, ...q.child } : q))
 }
 
 // Turns one answer into display lines. Returns null when unanswered, so the
@@ -463,6 +633,23 @@ export function intakeToProfileUpdates(answers = {}, profile = {}) {
 
   ;['dateOfBirth', 'gender', 'bloodGroup'].forEach((f) => {
     if (!p[f] && answers[f] && answers[f] !== "I don't know") updates[f] = answers[f]
+  })
+
+  // Contact and medical-aid details. For an adult these were already copied
+  // across by the patient (PROFILE_SYNC_FIELDS) so this does nothing; for a
+  // child the parent cannot write the child's profile, so staff import them
+  // here. A child's emergency contact defaults to the parent or guardian.
+  const child = isChildForm(answers)
+  const contactName = answers.emergencyContactName || (child ? answers.guardianName : '')
+  const contactPhone = answers.emergencyContactPhone || (child ? answers.guardianPhone : '')
+  const phoneText = (v) =>
+    typeof v === 'string' ? v.trim() : v?.number ? `${v.country || ''} ${v.number}`.trim() : ''
+  if (!p.emergencyContactName && contactName) updates.emergencyContactName = contactName
+  if (!p.emergencyContactPhone && phoneText(contactPhone)) {
+    updates.emergencyContactPhone = phoneText(contactPhone)
+  }
+  ;['medicalAidProvider', 'medicalAidNumber'].forEach((f) => {
+    if (!p[f] && answers[f]) updates[f] = answers[f]
   })
 
   if (isEmptyList(p.chronicConditions) && answers.chronicConditions?.length) {

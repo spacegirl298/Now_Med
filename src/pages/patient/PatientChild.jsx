@@ -5,8 +5,8 @@
 // Access is checked here for a friendly message, but the database rules are
 // what actually enforce it (see FAMILY_SETUP.md).
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CalendarPlus, ChevronLeft, FileText, ShieldAlert } from 'lucide-react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { CalendarPlus, ChevronLeft, ClipboardList, ShieldAlert } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PatientLayout from './PatientLayout'
 import Avatar from '../../components/Avatar'
@@ -17,11 +17,11 @@ import Card from '../../components/Card'
 import EmptyState from '../../components/EmptyState'
 import JoinLink from '../../components/JoinLink'
 import ChatThread from '../../components/ChatThread'
+import ChildRecordView from '../../components/family/ChildRecordView'
 import TransitionCard from '../../components/family/TransitionCard'
 import { subscribeToChild, setChildCharacter, RELATIONSHIPS } from '../../firebase/family'
 import {
   subscribeToPatientAppointments,
-  subscribeToPatientRecords,
   subscribeToMessages,
   subscribeToConversation,
   sendMessage,
@@ -29,6 +29,7 @@ import {
   markChatNotificationsRead,
 } from '../../firebase/firestore'
 import { ageTier, formatAge, isManageable } from '../../utils/childAge'
+import { useChildIntake } from '../../hooks/useChildIntake'
 import {
   formatDisplayDate,
   formatShortDate,
@@ -40,6 +41,7 @@ import {
 // Children aged 12+ can consent to their own treatment, so by default a parent
 // does not see their clinical records until the practice has a way to flag
 // what is private. Flip to true to share records with parents of teenagers.
+// (The intake form the parent submitted themselves stays visible either way.)
 const SHOW_RECORDS_TO_PARENTS_OF_TEENS = false
 
 const TABS = [
@@ -202,30 +204,9 @@ function ChildMessages({ child }) {
 // ---------- Records ----------
 
 function ChildRecords({ child }) {
-  const [records, setRecords] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const tier = ageTier(child.dateOfBirth)
   const verified = child.verificationStatus === 'verified'
-  const allowed = verified && (tier !== 'teen' || SHOW_RECORDS_TO_PARENTS_OF_TEENS)
-
-  useEffect(() => {
-    if (!allowed) return
-    const unsub = subscribeToPatientRecords(
-      child.id,
-      (list) => {
-        // Same rule as the patient's own Records page: staff-only notes stay hidden.
-        setRecords(list.filter((r) => !r.internalOnly))
-        setLoading(false)
-      },
-      (err) => {
-        console.error('Could not load child records:', err)
-        setError("We couldn't load these records.")
-        setLoading(false)
-      },
-    )
-    return () => unsub && unsub()
-  }, [child.id, allowed])
+  const clinicalVisible = tier !== 'teen' || SHOW_RECORDS_TO_PARENTS_OF_TEENS
 
   if (!verified) {
     return (
@@ -238,38 +219,40 @@ function ChildRecords({ child }) {
       </Card>
     )
   }
-  if (!allowed) {
-    return (
-      <Card>
-        <p className="flex items-start gap-2 text-sm text-ink">
-          <ShieldAlert size={18} className="text-rose shrink-0 mt-0.5" />
-          {child.firstName} is 12 or older and can consent to their own treatment, so their medical
-          records are private by default. Ask the practice if you need information from a visit.
-        </p>
-      </Card>
-    )
-  }
-  if (loading) return <p className="text-sm text-slate text-center py-10">Loading records...</p>
-  if (error) return <p role="alert" className="text-sm text-red bg-pastel-red rounded-xl px-4 py-3">{error}</p>
-  if (records.length === 0) {
-    return <EmptyState icon={FileText} title="No records yet" message={`Records from ${child.firstName}'s visits will show up here.`} />
-  }
 
   return (
-    <ul className="flex flex-col gap-3">
-      {records.map((r) => (
-        <li key={r.id} className="bg-white rounded-2xl p-4">
-          <p className="text-sm font-medium text-ink">{r.title || 'Visit note'}</p>
-          <p className="text-xs text-slate mb-2">
-            {r.date ? formatDisplayDate(r.date) : ''}
-            {r.doctor ? ` · ${r.doctor}` : ''}
+    <div className="flex flex-col gap-4">
+      {!clinicalVisible && (
+        <Card>
+          <p className="flex items-start gap-2 text-sm text-ink">
+            <ShieldAlert size={18} className="text-rose shrink-0 mt-0.5" />
+            {child.firstName} is 12 or older and can consent to their own treatment, so their medical
+            records are private by default. Ask the practice if you need information from a visit.
           </p>
-          {r.diagnosis && <p className="text-sm text-ink"><span className="text-slate">Diagnosis: </span>{r.diagnosis}</p>}
-          {r.treatment && <p className="text-sm text-ink"><span className="text-slate">Treatment: </span>{r.treatment}</p>}
-          {r.notes && <p className="text-sm text-ink whitespace-pre-wrap break-words">{r.notes}</p>}
-        </li>
-      ))}
-    </ul>
+        </Card>
+      )}
+      <ChildRecordView child={child} clinicalVisible={clinicalVisible} />
+    </div>
+  )
+}
+
+// A nudge until the parent has filled in the child's intake form.
+function IntakeBanner({ child }) {
+  const { intake, loading, error } = useChildIntake(child.id)
+  if (loading || error || intake || child.hasCompletedIntake) return null
+
+  return (
+    <Link
+      to={`/patient/family/${child.id}/intake`}
+      className="flex items-center gap-3 bg-pastel-amber text-amber rounded-2xl px-4 py-3 mb-5 text-sm hover:opacity-90 transition-opacity"
+    >
+      <ClipboardList size={18} className="shrink-0" />
+      <span className="flex-1 min-w-0">
+        <span className="font-medium">Finish {child.firstName}'s intake form.</span>{' '}
+        It takes about 5 minutes and helps the practice get ready for their visit.
+      </span>
+      <span className="font-medium shrink-0">Start</span>
+    </Link>
   )
 }
 
@@ -365,8 +348,12 @@ export default function PatientChild() {
   const { childId } = useParams()
   const { currentUser } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [child, setChild] = useState(undefined) // undefined = loading, null = unavailable
-  const [tab, setTab] = useState('appointments')
+  // Arriving from the intake form lands on Records.
+  const [tab, setTab] = useState(() =>
+    TABS.some((t) => t.id === location.state?.tab) ? location.state.tab : 'appointments',
+  )
   const [characterDraft, setCharacterDraft] = useState(null)
 
   useEffect(() => {
@@ -430,6 +417,8 @@ export default function PatientChild() {
                 <CalendarPlus size={16} /> Book
               </Link>
             </div>
+
+            <IntakeBanner child={child} />
 
             <div role="tablist" className="flex gap-1 bg-white rounded-xl p-1 mb-5 overflow-x-auto">
               {TABS.map((t) => (
