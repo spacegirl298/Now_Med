@@ -29,6 +29,7 @@ import {
   acknowledgePatientRunningLate,
 } from "../../firebase/firestore";
 import { getAllPatientsAndChildren } from "../../firebase/family";
+import { AppointmentListSkeleton } from "../../components/Skeleton";
 
 export default function SecretaryDashboard() {
   const { currentUser, userName } = useAuth();
@@ -82,7 +83,8 @@ export default function SecretaryDashboard() {
 
   // Children whose guardian the practice has not confirmed yet.
   const pendingChildren = useMemo(
-    () => patients.filter((p) => p.isChild && p.verificationStatus === "pending"),
+    () =>
+      patients.filter((p) => p.isChild && p.verificationStatus === "pending"),
     [patients],
   );
 
@@ -161,7 +163,11 @@ export default function SecretaryDashboard() {
                   }
                   className="flex items-center gap-3 py-3 text-left hover:bg-mist rounded-lg px-2 -mx-2"
                 >
-                  <Avatar name={p.name} character={p.profileCharacter} size={36} />
+                  <Avatar
+                    name={p.name}
+                    character={p.profileCharacter}
+                    size={36}
+                  />
                   <div>
                     <p className="text-sm font-medium text-ink">{p.name}</p>
                     <p className="text-xs text-slate">
@@ -177,7 +183,9 @@ export default function SecretaryDashboard() {
         </Card>
 
         {/* Needs attention: unread chat + pending record-change requests */}
-        {(unreadMessages > 0 || pendingRequests.length > 0 || pendingChildren.length > 0) && (
+        {(unreadMessages > 0 ||
+          pendingRequests.length > 0 ||
+          pendingChildren.length > 0) && (
           <Card padded={false} className="mb-6">
             <div className="px-5 py-4 border-b border-sand">
               <h2 className="font-semibold text-ink">Needs your attention</h2>
@@ -198,15 +206,17 @@ export default function SecretaryDashboard() {
               {pendingChildren.length > 0 && (
                 <button
                   onClick={() =>
-                    navigate("/secretary/patients", { state: { filter: "pending" } })
+                    navigate("/secretary/patients", {
+                      state: { filter: "pending" },
+                    })
                   }
                   className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-mist transition-colors"
                 >
                   <ShieldCheck size={18} className="text-amber shrink-0" />
                   <p className="text-sm text-ink">
                     {pendingChildren.length} child
-                    {pendingChildren.length === 1 ? "" : "ren"} waiting for guardian
-                    confirmation
+                    {pendingChildren.length === 1 ? "" : "ren"} waiting for
+                    guardian confirmation
                   </p>
                 </button>
               )}
@@ -251,9 +261,7 @@ export default function SecretaryDashboard() {
           </div>
 
           {loading ? (
-            <p className="text-slate text-sm px-5 py-8 text-center">
-              Loading appointments...
-            </p>
+            <AppointmentListSkeleton rows={3} />
           ) : todaysAppointments.length === 0 ? (
             <EmptyState
               icon={Clock}

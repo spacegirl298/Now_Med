@@ -53,7 +53,11 @@ import {
   unconfirmAppointment,
   sendConfirmationReminder,
 } from "../../firebase/firestore";
-import { getAllPatientsAndChildren, getChildByIdNumber } from "../../firebase/family";
+import {
+  getAllPatientsAndChildren,
+  getChildByIdNumber,
+} from "../../firebase/family";
+import { AppointmentListSkeleton } from "../../components/Skeleton";
 
 // Only meaningful for today - any time slot on a future date is fine, and
 // isPastDate() already rules out past dates entirely.
@@ -766,9 +770,7 @@ export default function SecretarySchedule() {
             </button>
 
             {loading ? (
-              <p className="text-slate text-sm px-5 py-8 text-center">
-                Loading...
-              </p>
+              <AppointmentListSkeleton rows={3} showActions />
             ) : selectedDayAppointments.length === 0 ? (
               <EmptyState
                 icon={Clock}
