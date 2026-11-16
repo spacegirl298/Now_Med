@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import AuthShell, { inputClass, primaryButtonClass } from '../../components/AuthShell'
-import { useAuth } from '../../context/AuthContext'
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { isValidEmail } from "../../utils/validators";
+import AuthShell, {
+  inputClass,
+  primaryButtonClass,
+} from "../../components/AuthShell";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [email, setEmail] = useState("");
+  const [touched, setTouched] = useState({});
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   // Set once login() has succeeded and the email is verified. From this
   // point on we wait for AuthContext to finish resolving *its own* copy of
   // the user's role (see the effect below) instead of looking the role up
@@ -27,47 +32,50 @@ export default function Login() {
   // AuthContext a chance to resolve before anything rendered. Deriving
   // navigation from the same context value the guards use removes that
   // race entirely.
-  const [awaitingRole, setAwaitingRole] = useState(false)
-
-  const { login, logout, currentUser, userRole } = useAuth()
-  const navigate = useNavigate()
+  const [awaitingRole, setAwaitingRole] = useState(false);
+  const emailError =
+    touched.email && !isValidEmail(email) ? "Enter a valid email address" : "";
+  const { login, logout, currentUser, userRole } = useAuth();
+  const navigate = useNavigate();
 
   // Load remembered email on first render
   useEffect(() => {
-    const saved = localStorage.getItem('rememberedEmail')
+    const saved = localStorage.getItem("rememberedEmail");
     if (saved) {
-      setEmail(saved) // eslint-disable-line react-hooks/set-state-in-effect -- initialize the form from browser storage
-      setRememberMe(true)
+      setEmail(saved); // eslint-disable-line react-hooks/set-state-in-effect -- initialize the form from browser storage
+      setRememberMe(true);
     }
-  }, [])
+  }, []);
 
   // Once AuthContext has resolved the freshly-logged-in user's role, send
   // them to the right dashboard.
   useEffect(() => {
-    if (!awaitingRole || !currentUser || !userRole) return
-    if (userRole === 'patient') navigate('/patient/dashboard')
-    else navigate('/secretary/dashboard')
-  }, [awaitingRole, currentUser, userRole, navigate])
+    if (!awaitingRole || !currentUser || !userRole) return;
+    if (userRole === "patient") navigate("/patient/dashboard");
+    else navigate("/secretary/dashboard");
+  }, [awaitingRole, currentUser, userRole, navigate]);
 
   async function handleLogin(e) {
-    e.preventDefault()  // prevents page refresh on form submit
-    setLoading(true)
-    setError('')
+    e.preventDefault(); // prevents page refresh on form submit
+    setLoading(true);
+    setError("");
 
     try {
-      const result = await login(email, password)
+      const result = await login(email, password);
       //if user hasn't verifid their email
       if (!result.user.emailVerified) {
-        await logout()
-        setError('Please verify your email before logging in. Check your inbox for the verification link.')
-        setLoading(false)
-        return
+        await logout();
+        setError(
+          "Please verify your email before logging in. Check your inbox for the verification link.",
+        );
+        setLoading(false);
+        return;
       }
-      //remember email information - easier to login again 
+      //remember email information - easier to login again
       if (rememberMe) {
-        localStorage.setItem('rememberedEmail', email)
+        localStorage.setItem("rememberedEmail", email);
       } else {
-        localStorage.removeItem('rememberedEmail')
+        localStorage.removeItem("rememberedEmail");
       }
 
       // Don't navigate yet - AuthContext is already resolving this same
@@ -75,24 +83,29 @@ export default function Login() {
       // here once that's ready, and keeps `loading` on (see below) until
       // then so the button stays in its "logging in" state rather than
       // flashing back to idle while we wait.
-      setAwaitingRole(true)
-      return
+      setAwaitingRole(true);
+      return;
       //error handling with incorrect login information
     } catch (err) {
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-        setError('Incorrect email or password')
-      } else if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email')
-      } else if (err.code === 'auth/no-profile') {
-        setError("We couldn't load your profile. Check your connection and try again.")
-      } else if (err.code === 'auth/too-many-requests') {
-        setError('Too many attempts. Please try again later.')
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/wrong-password"
+      ) {
+        setError("Incorrect email or password");
+      } else if (err.code === "auth/user-not-found") {
+        setError("No account found with this email");
+      } else if (err.code === "auth/no-profile") {
+        setError(
+          "We couldn't load your profile. Check your connection and try again.",
+        );
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many attempts. Please try again later.");
       } else {
-        setError('Something went wrong. Please try again.')
+        setError("Something went wrong. Please try again.");
       }
     }
 
-    setLoading(false)
+    setLoading(false);
   }
   //Layout of the section
   return (
@@ -100,25 +113,37 @@ export default function Login() {
       <h1 className="text-3xl font-semibold text-ink mb-1">Welcome back</h1>
       <p className="text-slate mb-8">Log in to your Now Med account.</p>
 
-      <form onSubmit={handleLogin} autoComplete="on" className="flex flex-col gap-3">
+      <form
+        onSubmit={handleLogin}
+        autoComplete="on"
+        className="flex flex-col gap-3"
+      >
         <input
           placeholder="Email address"
           type="email"
           name="email"
           autoComplete="email"
           value={email}
-          onChange={e => setEmail(e.target.value)}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+          aria-invalid={!!emailError}
+          aria-describedby="email-error"
           className={inputClass}
         />
+        {emailError && (
+          <p id="email-error" role="alert" className="text-sm text-red-800">
+            {emailError}
+          </p>
+        )}
 
         <div className="relative">
           <input
             placeholder="Password"
-            type={showPassword ? 'text' : 'password'}
+            type={showPassword ? "text" : "password"}
             name="password"
             autoComplete="current-password"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
             className={`${inputClass} pr-16`}
           />
           <button
@@ -126,7 +151,7 @@ export default function Login() {
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-4 top-1/2 -translate-y-1/2 text-slate text-sm hover:text-ink"
           >
-            {showPassword ? 'Hide' : 'Show'}
+            {showPassword ? "Hide" : "Show"}
           </button>
         </div>
 
@@ -135,34 +160,48 @@ export default function Login() {
             <input
               type="checkbox"
               checked={rememberMe}
-              onChange={e => setRememberMe(e.target.checked)}
+              onChange={(e) => setRememberMe(e.target.checked)}
               className="accent-rose"
             />
             Remember me
           </label>
-          <Link to="/forgot-password" className="text-sm text-rose font-medium py-2">
+          <Link
+            to="/forgot-password"
+            className="text-sm text-rose font-medium py-2"
+          >
             Forgot password?
           </Link>
         </div>
 
         {error && (
-          <p role="alert" className="text-sm text-red bg-pastel-red rounded-xl px-4 py-3">
+          <p
+            role="alert"
+            className="text-sm text-red bg-pastel-red rounded-xl px-4 py-3"
+          >
             {error}
           </p>
         )}
 
-        <button type="submit" disabled={loading} className={`${primaryButtonClass} mt-1`}>
-          {loading ? 'Logging in...' : 'Log in'}
+        <button
+          type="submit"
+          disabled={loading}
+          className={`${primaryButtonClass} mt-1`}
+        >
+          {loading ? "Logging in..." : "Log in"}
         </button>
       </form>
 
       <div className="mt-8 flex items-center justify-between text-sm text-slate">
-        <Link to="/" className="hover:text-ink py-2">← Back</Link>
+        <Link to="/" className="hover:text-ink py-2">
+          ← Back
+        </Link>
         <span>
-          New to Now Med?{' '}
-          <Link to="/signup?role=patient" className="text-rose font-semibold">Create an account</Link>
+          New to Now Med?{" "}
+          <Link to="/signup?role=patient" className="text-rose font-semibold">
+            Create an account
+          </Link>
         </span>
       </div>
     </AuthShell>
-  )
+  );
 }
