@@ -1,9 +1,5 @@
-// Shown at the top of a child's record in the secretary's patient modal.
-// It is where staff:
-//   - see who the guardian is (to check the birth certificate or court order),
-//   - confirm or refuse the guardian, which controls what the parent can see,
-//   - and, once the child is 18, hand the record over to their own account.
-// The child's status is read live, so it updates the moment staff act.
+// Shows the child's name, date of birth, guardian and verification status.
+
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Heart } from 'lucide-react'
