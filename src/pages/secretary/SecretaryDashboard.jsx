@@ -1,5 +1,3 @@
-// Secretary landing screen: today's stats, today's schedule, and a live
-// patient search bar (must-have - see PRD section "Home Dashboard").
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -48,7 +46,6 @@ export default function SecretaryDashboard() {
       .catch(() => setPatients([]));
   }, []);
 
-  // Patient requests to change details they can't edit themselves.
   useEffect(() => {
     const unsub = subscribeToPendingChangeRequests(setPendingRequests, (err) =>
       console.error(err),
@@ -81,7 +78,6 @@ export default function SecretaryDashboard() {
     setAcknowledgingId(null);
   }
 
-  // Children whose guardian the practice has not confirmed yet.
   const pendingChildren = useMemo(
     () =>
       patients.filter((p) => p.isChild && p.verificationStatus === "pending"),
@@ -182,7 +178,6 @@ export default function SecretaryDashboard() {
           )}
         </Card>
 
-        {/* Needs attention: unread chat + pending record-change requests */}
         {(unreadMessages > 0 ||
           pendingRequests.length > 0 ||
           pendingChildren.length > 0) && (

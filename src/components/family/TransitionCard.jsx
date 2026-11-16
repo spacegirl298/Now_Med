@@ -1,6 +1,4 @@
-// Explains what happens when a child turns 18 and counts down to it.
-// The timeline is a real sequence (notice -> birthday -> claim), so it is
-// shown as steps; the amber state appears for the final six months.
+
 import { CalendarClock } from 'lucide-react'
 import Card from '../Card'
 import { dateAtAge, daysUntil, transitionStage, MAJORITY_AGE, NOTICE_MONTHS } from '../../utils/childAge'

@@ -1,8 +1,3 @@
-// Profile pictures live in src/assets and are picked up by file name:
-//   Patient_Pfp_01.PNG, Patient_Pfp_02.PNG, ...     -> patients (and their children)
-//   Secretary_Pfp_01.png, Secretary_Pfp_02.png, ... -> secretaries and doctors
-// The two-digit number is what gets saved to Firestore as `profileCharacter`.
-// import.meta.glob needs literal patterns, so each set has its own call.
 const patientFiles = import.meta.glob('../assets/Patient_Pfp_*.PNG', {
   eager: true,
   import: 'default',
@@ -29,7 +24,6 @@ function buildList(files, prefix) {
 export const patientCharacters = buildList(patientFiles, 'Patient')
 export const secretaryCharacters = buildList(secretaryFiles, 'Secretary')
 
-// role: 'patient' (default) or 'secretary'
 export function getCharacters(role = 'patient') {
   return role === 'secretary' ? secretaryCharacters : patientCharacters
 }

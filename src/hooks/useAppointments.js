@@ -1,5 +1,3 @@
-// Real-time appointment data, scoped by role.
-// Secretaries see every appointment; patients see only their own.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -13,8 +11,6 @@ import {
   markPatientLate,
 } from '../firebase/firestore'
 
-// `patientIdOverride` lets a parent load one of their children's appointments.
-// Every existing caller passes nothing and behaves exactly as before.
 export function useAppointments(patientIdOverride) {
   const { currentUser, userRole } = useAuth()
   const [appointments, setAppointments] = useState([])
@@ -35,8 +31,6 @@ export function useAppointments(patientIdOverride) {
 
     const subscribe = () => {
       const onData = (data) => {
-        // A good snapshot means whatever went wrong earlier has recovered, so
-        // drop the banner (it used to stay on screen forever).
         setError('')
         setAppointments(data)
         setLoading(false)
@@ -46,9 +40,6 @@ export function useAppointments(patientIdOverride) {
         console.error('Appointments subscription error:', err)
         if (cancelled) return
 
-        // A listener is dead after an error. The usual cause right after
-        // sign-in is a stale ID token (e.g. an email_verified claim from
-        // before verification), so refresh it and subscribe once more.
         if (!retried) {
           retried = true
           try {
@@ -56,14 +47,12 @@ export function useAppointments(patientIdOverride) {
             if (!cancelled) subscribe()
             return
           } catch {
-            /* fall through to the message below */
+            // Fall through to the subscription error handler.
           }
         }
 
         if (err?.code === 'permission-denied') {
           if (userRole === 'patient') {
-            // A patient who has never booked simply has nothing to show.
-            // That is a normal empty state, not something to alarm them about.
             setAppointments([])
             setError('')
           } else {

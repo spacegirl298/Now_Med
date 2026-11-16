@@ -1,11 +1,3 @@
-// Small notification centre: a bell icon with an unread-count badge and a
-// dropdown list. Deliberately built on top of the existing useNotifications
-// hook (which already subscribes to Firestore and exposes
-// markNotificationRead) rather than introducing a second notification
-// system - see useNotifications.js for the actual data source.
-//
-// `inline` places the bell in normal flow (used by the mobile top bar);
-// otherwise it floats at the top right of the screen (desktop).
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, BellRing, Video } from "lucide-react";
@@ -14,10 +6,6 @@ import { useAuth } from "../context/AuthContext";
 import { formatTimeAgo } from "../utils/dateHelpers";
 import EmptyState from "./EmptyState";
 
-// Where tapping a notification should take the patient - a message or a
-// reminder both land in the same chat thread (see kind: "reminder" in
-// ChatThread.jsx), so anything chat-shaped should open Messages instead of
-// just marking itself read and going nowhere.
 const CHAT_NOTIFICATION_TYPES = new Set([
   "message",
   "reminder",
@@ -34,8 +22,6 @@ function routeFor(notification, userRole) {
       : "/patient/dashboard";
 }
 
-// A notification addressed to one of the parent's children (a delay, a
-// cancellation, a message) opens that child's page instead of the parent's own.
 function targetFor(notification, userRole, ownUid) {
   if (
     userRole === "patient" &&
@@ -44,7 +30,6 @@ function targetFor(notification, userRole, ownUid) {
     notification.recipientId !== ownUid
   ) {
     const childPage = `/patient/family/${notification.recipientId}`;
-    // A reminder to fill in the child's intake form opens the form itself.
     return notification.type === "intake_reminder"
       ? `${childPage}/intake`
       : childPage;
@@ -52,8 +37,6 @@ function targetFor(notification, userRole, ownUid) {
   return routeFor(notification, userRole);
 }
 
-// Notification text can carry an online-meeting link. Show the sentence
-// cleanly and offer the link as its own tappable "Join" button.
 function splitMeetingLink(message) {
   const match = String(message || "").match(/https:\/\/\S+/);
   if (!match) return { text: message, link: "" };
@@ -68,7 +51,7 @@ function splitMeetingLink(message) {
 
 export default function NotificationBell({
   inline = false,
-  alerts = null, // { permission, enableSystemAlerts } from useNotificationAlerts
+  alerts = null,
 }) {
   const {
     notifications,
@@ -81,7 +64,6 @@ export default function NotificationBell({
   const wrapperRef = useRef(null);
   const navigate = useNavigate();
 
-  // Close the dropdown on an outside click, same pattern as a native <select>.
   useEffect(() => {
     function handleClickOutside(e) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
@@ -115,6 +97,7 @@ export default function NotificationBell({
       >
         <Bell
           size={20}
+          color={inline ? undefined : "var(--color-plum)"}
           className="text-plum transition-colors group-hover:text-plum"
         />
         {unreadCount > 0 && (

@@ -1,8 +1,3 @@
-// Patient landing screen: today's greeting, a snapshot of the patient's own
-// appointments and records, a delay banner if the next visit is running late,
-// and quick access into the booking calendar. Patients only ever see their
-// own data here - never other patients' appointments (see useAppointments,
-// which scopes the Firestore query by role).
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarPlus, Clock, FileText, CalendarCheck, CalendarClock, Phone, ClipboardList, ChevronDown, Sparkles } from "lucide-react";
@@ -34,7 +29,6 @@ import {
   updateDoctorRating,
 } from "../../firebase/firestore";
 
-// How long after its start time an online consult still counts as "next".
 const VIRTUAL_JOIN_GRACE_MINUTES = 15;
 
 export default function PatientDashboard() {
@@ -49,14 +43,11 @@ export default function PatientDashboard() {
   const [reviewDrafts, setReviewDrafts] = useState({});
   const [savingReviewId, setSavingReviewId] = useState(null);
   const [reviewErrors, setReviewErrors] = useState({});
-  const [ratingsByDoctor, setRatingsByDoctor] = useState({}); // doctorId -> reviews[]
-  const [expandedReviews, setExpandedReviews] = useState(null); // doctorId or null
+  const [ratingsByDoctor, setRatingsByDoctor] = useState({});
+  const [expandedReviews, setExpandedReviews] = useState(null);
 
   useEffect(() => {
     if (!currentUser) return;
-    // Live subscription (rather than a one-time fetch) so a record the
-    // secretary adds or edits appears here within moments. Staff-only
-    // entries are never shown on the patient side.
     const unsub = subscribeToPatientRecords(currentUser.uid, (list) =>
       setRecords(list.filter((r) => !r.internalOnly)),
     );
@@ -87,9 +78,6 @@ export default function PatientDashboard() {
   const today = getTodayString();
   const displayName = userName || currentUser?.email?.split("@")[0] || "there";
 
-  // "Now" lives in state so render stays pure. It only needs to be fresh enough
-  // to move an appointment from "upcoming" to "past", so a one-minute tick is
-  // plenty (and it also re-evaluates whenever the appointments data changes).
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 60 * 1000);
@@ -103,10 +91,6 @@ export default function PatientDashboard() {
         const start = a.appointmentAt?.toDate
           ? a.appointmentAt.toDate()
           : new Date(`${a.date}T${a.time}:00`);
-        // An online consult that has a join link stays "upcoming" for a
-        // short while after its start time so the patient can still join
-        // late. With no link there is nothing to join, so it leaves the
-        // list at its start time like any other appointment.
         const graceMs =
           a.type === "virtual" && safeMeetingLink(a)
             ? VIRTUAL_JOIN_GRACE_MINUTES * 60 * 1000
@@ -119,11 +103,6 @@ export default function PatientDashboard() {
   const nextAppointment = upcomingAppointments[0] || null;
   const isNextDelayed = nextAppointment?.status === "delayed";
 
-  // New vs returning patient, for the arrival-buffer recommendation in
-  // PatientETA: "new" means no prior non-cancelled appointment before this
-  // one. Derived from data we already have (useAppointments), no extra
-  // query needed. Same-day earlier visits aren't accounted for - an edge
-  // case rare enough not to be worth the extra complexity here.
   const isNewPatient = useMemo(() => {
     if (!nextAppointment) return true;
     return !appointments.some(
@@ -204,12 +183,6 @@ export default function PatientDashboard() {
     }
   };
 
-  // Nudge them if their very next visit is within 24 hours and they still
-  // haven't done their first-time intake form. There's no server-side
-  // scheduler in this app to fire this the day before on its own, so it
-  // shows every time they open the dashboard in that window instead - the
-  // floating clipboard button (IntakeFormButton) covers the rest of the
-  // time before that.
   const hoursUntilNext = nextAppointment
     ? (new Date(
         nextAppointment.appointmentAt?.toDate
@@ -270,9 +243,6 @@ export default function PatientDashboard() {
           </button>
         )}
 
-        {/* First-time patient: nothing booked yet is the normal starting
-            point, so greet them and point at the next step instead of
-            showing empty lists. */}
         {!loading && !error && appointments.length === 0 && (
           <Card className="mb-6 bg-mist border border-blush">
             <div className="flex items-start gap-3">

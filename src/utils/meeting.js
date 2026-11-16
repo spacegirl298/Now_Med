@@ -1,10 +1,3 @@
-// Online meeting links for virtual consultations.
-//
-// Each virtual appointment gets its own unguessable Jitsi Meet room
-// (https://meet.jit.si - free, runs in the browser, no account or install
-// needed for the patient or the doctor). The link is stored on the
-// appointment as `meetingLink`, shown to the patient and the secretary, and
-// included in the booking notification.
 
 const ROOM_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
@@ -28,13 +21,6 @@ export function isVirtualAppointment(appointment) {
   return appointment?.type === "virtual";
 }
 
-// Only ever treat https links as joinable, so a bad value in the database can
-// never turn into a javascript: or other scheme link.
-//
-// A virtual appointment saved without a link (older bookings, or one a
-// secretary added before links existed) still gets a working one: the room
-// name is derived from the appointment's own random ID, so the patient and
-// the secretary both see the same link without anything needing to be saved.
 export function safeMeetingLink(appointment) {
   const link = appointment?.meetingLink;
   if (typeof link === "string" && /^https:\/\//i.test(link)) return link;
@@ -48,10 +34,6 @@ export function safeMeetingLink(appointment) {
   return "";
 }
 
-// The join link is only offered close to the appointment: from
-// JOIN_OPENS_MINUTES_BEFORE ahead of the start until JOIN_CLOSES_MINUTES_AFTER
-// after it. This gates the button in the interface; it is not access control
-// (the room itself is a public Jitsi room - see the README's limitations).
 export const JOIN_OPENS_MINUTES_BEFORE = 10;
 export const JOIN_CLOSES_MINUTES_AFTER = 60;
 
@@ -64,7 +46,6 @@ function appointmentStartMs(appointment) {
   return Number.isFinite(ms) ? ms : null;
 }
 
-// -> { state: 'early' | 'open' | 'closed', opensAt: Date | null }
 export function getJoinWindow(appointment, nowMs) {
   const startMs = appointmentStartMs(appointment);
   if (startMs === null) return { state: "open", opensAt: null };

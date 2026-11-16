@@ -11,8 +11,6 @@ import AuthShell, {
 } from "../../components/AuthShell";
 
 export default function SignUp() {
-  // "Get started" on the welcome page arrives with ?role=patient and the staff
-  // link with ?role=secretary; both skip the role picker (step 1).
   const [searchParams] = useSearchParams();
   const roleParam = searchParams.get("role");
   const presetRole =
@@ -138,9 +136,6 @@ export default function SignUp() {
         setError(err.message);
       } else {
         setError("Something went wrong. Please try again.");
-        // Anything landing here is unexpected — log it so it's not a
-        // silent dead end next time (e.g. permission-denied from a rules
-        // change, a network error, etc).
         console.error("Sign up failed:", err);
       }
     }
@@ -167,8 +162,6 @@ export default function SignUp() {
     setFormData({ ...formData, idType, idNumber: "" });
   }
 
-  // One shell for all three steps: the brand half never moves, only the
-  // right half changes, so the flow reads as a single place.
   return (
     <AuthShell variant={variant} compact={step > 1}>
       {/* STEP 1 - Role selection */}
@@ -360,7 +353,6 @@ export default function SignUp() {
         </form>
       )}
 
-      {/* STEP 3 - Email verification with countdown */}
       {step === 3 && (
         <div>
           <StepBar step={3} />

@@ -1,6 +1,4 @@
-// Date & time helpers shared across the app.
-// Dates are stored/passed around as 'YYYY-MM-DD' strings.
-// Times are stored/passed around as 24hr 'HH:MM' strings.
+
 
 const DAY_NAMES = [
   "Sunday",
@@ -26,12 +24,12 @@ const MONTH_NAMES = [
   "December",
 ];
 
-// 'YYYY-MM-DD' for today, in local time (avoids UTC off-by-one issues)
+
 export function getTodayString() {
   return formatDate(new Date());
 }
 
-// Date object -> 'YYYY-MM-DD'
+// Date formatting
 export function formatDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -39,25 +37,21 @@ export function formatDate(date) {
   return `${y}-${m}-${d}`;
 }
 
-// 'YYYY-MM-DD' -> Date object (local midnight, not UTC)
 export function parseDate(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
 
-// 'YYYY-MM-DD' -> 'Monday, 30 March 2026'
 export function formatDisplayDate(dateStr) {
   const date = parseDate(dateStr);
   return `${DAY_NAMES[date.getDay()]}, ${date.getDate()} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-// 'YYYY-MM-DD' -> 'Mon, 30 March'
 export function formatShortDate(dateStr) {
   const date = parseDate(dateStr);
   return `${DAY_NAMES[date.getDay()].slice(0, 3)}, ${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
 }
 
-// 'HH:MM' (24hr) -> '10:30 AM'
 export function formatTime(timeStr) {
   if (!timeStr) return "";
   const [h, m] = timeStr.split(":").map(Number);
@@ -66,7 +60,6 @@ export function formatTime(timeStr) {
   return `${displayHour}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-// Add minutes to a 'HH:MM' time string, returns new 'HH:MM' (wraps within a day)
 export function addMinutesToTime(timeStr, minutesToAdd) {
   const [h, m] = timeStr.split(":").map(Number);
   let totalMinutes = h * 60 + m + Number(minutesToAdd);
@@ -80,14 +73,10 @@ export function isToday(dateStr) {
   return dateStr === getTodayString();
 }
 
-// True if the given 'YYYY-MM-DD' date is strictly before today (local time).
-// Used to block new bookings on past dates while still allowing that day's
-// existing appointments to be viewed.
 export function isPastDate(dateStr) {
   return dateStr < getTodayString();
 }
 
-// True if the given date+time is already in the past
 export function isPastSlot(dateStr, timeStr) {
   const slot = parseDate(dateStr);
   const [h, m] = timeStr.split(":").map(Number);
@@ -95,7 +84,6 @@ export function isPastSlot(dateStr, timeStr) {
   return slot.getTime() < Date.now();
 }
 
-// Generate time slots between start and end (24hr strings) at a given interval in minutes
 export function generateTimeSlots(
   start = "08:00",
   end = "17:00",
@@ -110,11 +98,8 @@ export function generateTimeSlots(
   return slots;
 }
 
-// Build a 6-week (42-day) calendar grid for a given month, starting on Monday.
-// Each cell is { dateStr, inMonth } so days from adjacent months can be dimmed.
 export function getMonthGrid(year, month) {
   const firstOfMonth = new Date(year, month, 1);
-  // getDay(): 0 = Sunday ... 6 = Saturday. We want Monday-first grids.
   const firstWeekday = (firstOfMonth.getDay() + 6) % 7;
   const gridStart = new Date(year, month, 1 - firstWeekday);
 
@@ -135,8 +120,6 @@ export function getMonthLabel(year, month) {
   return `${MONTH_NAMES[month]} ${year}`;
 }
 
-// Turns a Firestore Timestamp (or anything with a .seconds field) into a
-// short relative label for the notification bell, e.g. "5m ago", "2h ago".
 export function formatTimeAgo(timestamp) {
   if (!timestamp?.seconds) return "";
   const diffMs = Date.now() - timestamp.seconds * 1000;
@@ -156,13 +139,6 @@ export function greetingForNow() {
   return "Good evening";
 }
 
-// True once an appointment's start time (appointmentAt, or date+time as a
-// fallback for older records) is more than `bufferMinutes` in the past.
-// Used to decide when a completed appointment is eligible for a doctor
-// review — there's no explicit "completed" status in this app (an
-// attended appointment just stays "booked"/"confirmed"), so "the
-// appointment time has passed by a few minutes" is the signal instead.
-// Cancelled appointments are excluded by the caller, not here.
 export function minutesSinceAppointment(appointment) {
   if (!appointment) return -Infinity;
   const start = appointment.appointmentAt?.toDate
@@ -172,24 +148,14 @@ export function minutesSinceAppointment(appointment) {
   return (Date.now() - start.getTime()) / 60000;
 }
 
-// How long after a visit starts before the patient is asked to review it.
-// One constant so the prompt, the calendar and the docs can't drift apart.
 export const REVIEW_PROMPT_DELAY_MINUTES = 15;
 
 export function isReviewEligible(
   appointment,
   bufferMinutes = REVIEW_PROMPT_DELAY_MINUTES,
 ) {
-  // The patient should be able to review a visit shortly after their
-  // appointment time, without waiting for a separate dashboard reminder.
-  // A 15-minute grace keeps the prompt useful after the session finishes,
-  // while still being timely enough to capture fresh feedback.
   if (!appointment || appointment.status === "cancelled") return false;
 
-  // Older appointments may not have doctorId/doctorName populated yet,
-  // especially if they were created before that metadata was added.
-  // They are still legitimate review candidates as long as the visit time
-  // has passed and the record has a usable date/time.
   if (!appointment.date || !appointment.time) {
     return minutesSinceAppointment(appointment) >= bufferMinutes;
   }

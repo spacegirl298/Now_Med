@@ -1,6 +1,3 @@
-// Patient <-> practice chat. One conversation per patient; any secretary can
-// read and reply. Reminders the secretary sends from the schedule also land
-// here (marked as reminders) as well as in the notification bell.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -42,7 +39,6 @@ export default function PatientMessages() {
     }
   }, [currentUser])
 
-  // Anything that arrives while this page is open counts as read.
   const unread = conversation?.unreadForPatient || 0
   useEffect(() => {
     if (currentUser && unread > 0) {
@@ -50,10 +46,6 @@ export default function PatientMessages() {
     }
   }, [currentUser, unread])
 
-  // Clears the bell notification for any message/reminder that brought the
-  // patient here in the first place - just resetting unreadForPatient above
-  // clears the Messages nav badge, but the bell dropdown reads a separate
-  // `notifications` collection and won't clear on its own otherwise.
   useEffect(() => {
     if (currentUser) {
       markChatNotificationsRead(currentUser.uid).catch(console.error)

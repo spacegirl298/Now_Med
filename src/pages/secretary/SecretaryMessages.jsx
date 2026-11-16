@@ -1,7 +1,3 @@
-// Secretary inbox: every patient conversation, plus search to start a new
-// one with any registered patient. Reminders sent from the schedule show up
-// in the same thread. Walk-in patients without an account have no chat (there
-// is nobody to receive it) - contact them by phone instead.
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, FileText, MessageSquare, Search } from 'lucide-react'
@@ -27,7 +23,6 @@ export default function SecretaryMessages() {
   const [conversations, setConversations] = useState([])
   const [patients, setPatients] = useState([])
   const [search, setSearch] = useState('')
-  // Deep-linked from a patient's record ("Message" button).
   const [activeId, setActiveId] = useState(location.state?.patientId || null)
   const [messages, setMessages] = useState([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -76,11 +71,6 @@ export default function SecretaryMessages() {
 
   const listItems = useMemo(() => {
     const term = search.trim().toLowerCase()
-    // Conversations already arrive sorted by most recent activity
-    // (subscribeToAllConversations); bubble the ones with unread patient
-    // messages to the very top of that so a secretary juggling a busy
-    // inbox sees what actually needs a reply first, without losing the
-    // recency order within each group.
     const items = conversations
       .map((c) => ({
         id: c.id,
@@ -116,7 +106,7 @@ export default function SecretaryMessages() {
       senderRole: 'secretary',
       senderName: userName || 'Practice',
       text,
-      notify: true, // also shows in the patient's notification bell
+      notify: true,
     })
   }
 

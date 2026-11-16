@@ -1,6 +1,3 @@
-// Reusable star rating - read-only display (e.g. "4.3 (12 reviews)" next to
-// a doctor's name) or interactive input (the review form). Kept as one
-// component so both always render identically.
 import { Star } from "lucide-react";
 
 export default function StarRating({

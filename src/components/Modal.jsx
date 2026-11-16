@@ -1,12 +1,6 @@
 import { useEffect } from "react";
 import { X, ChevronLeft } from "lucide-react";
 
-// Generic confirmation / form modal. Confirming and cancelling always use
-// visually distinct buttons so a destructive action is never ambiguous.
-//
-// headerVariant / onBack / hideClose are optional and default to the
-// original light-header look everywhere they aren't passed, so existing
-// call sites (SecretarySchedule, etc.) render exactly as before.
 export default function Modal({
   isOpen,
   onClose,
@@ -18,12 +12,10 @@ export default function Modal({
   cancelLabel = "Cancel",
   hideFooter = false,
   confirmDisabled = false,
-  headerVariant = "light", // 'light' (default) | 'dark'
-  onBack = null, // if set, shows a back chevron instead of the close X
-  hideClose = false, // hide the header icon entirely (back or close)
+  headerVariant = "light",
+  onBack = null,
+  hideClose = false,
 }) {
-  // Stop the page behind the modal from scrolling (matters on phones, where
-  // the sheet covers most of the screen), and let Escape close it.
   useEffect(() => {
     if (!isOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -48,8 +40,6 @@ export default function Modal({
   const isDark = headerVariant === "dark";
 
   return (
-    // Bottom sheet on phones (thumb-reachable, full width), centred dialog
-    // from the sm breakpoint up.
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-ink/40">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-lg max-h-[92dvh] sm:max-h-[90dvh] flex flex-col">
         <div

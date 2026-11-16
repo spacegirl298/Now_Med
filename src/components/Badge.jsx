@@ -1,5 +1,3 @@
-// Semantic status badge. Kept deliberately separate from the brand (rose) palette
-// so appointment status is never confused with a decorative or branding colour.
 const STATUS_STYLES = {
   booked: 'bg-pastel-blue text-blue',
   confirmed: 'bg-pastel-green text-green',

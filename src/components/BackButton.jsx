@@ -1,5 +1,3 @@
-// Small "go back" control used at the top of sub-pages so users aren't
-// dependent on the sidebar/browser back button alone.
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 

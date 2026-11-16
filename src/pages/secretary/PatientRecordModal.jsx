@@ -1,8 +1,3 @@
-// Full clinical record for one patient, opened from the "View full record"
-// button on the quick overview popup (see PatientList.jsx). Tabbed so a long
-// history doesn't turn into one giant scroll. Every section here is editable
-// by the secretary - clinical data entered from paper forms or after a
-// consultation, not just viewed.
 import { useEffect, useMemo, useState } from "react";
 import {
   X,
@@ -61,9 +56,6 @@ const TABS = [
   { id: "consultations", label: "Consultations" },
   { id: "requests", label: "Change requests" },
 ];
-// Only shown once we know there's actually an intake form to review - see
-// how `tabs` is built below. Mirrors the "Intake form" tab on the
-// patient's own PatientRecords.jsx page.
 const INTAKE_TAB = { id: "intake", label: "Intake form" };
 
 const CHRONIC_CONDITIONS = [
@@ -90,9 +82,6 @@ const SEVERITY_BADGE = {
   Severe: "bg-pastel-red text-red",
 };
 
-// Same conversion PatientRecords.jsx uses for its own "submitted on" line,
-// kept local here since this file doesn't otherwise need a Firestore
-// Timestamp -> display-date helper.
 function tsToDisplay(ts) {
   const d = ts?.toDate ? ts.toDate() : null;
   return d ? formatShortDate(formatDate(d)) : "";
@@ -241,11 +230,6 @@ export default function PatientRecordModal({
     setProfile((prev) => ({ id, ...(prev || {}), ...updates }));
   }
 
-  // What the intake answers would add to the verified profile right now -
-  // computed live so the "Import into profile" button can tell the
-  // secretary up front whether there's actually anything new (intake
-  // answers never overwrite a field the practice already filled in - see
-  // intakeToProfileUpdates in utils/intakeQuestions.js).
   const pendingImportUpdates = useMemo(
     () => (intake ? intakeToProfileUpdates(intake.answers, profile || {}) : {}),
     [intake, profile],
@@ -260,9 +244,6 @@ export default function PatientRecordModal({
         await persistProfile(pendingImportUpdates);
       }
       await markIntakeImported(intake.id, currentUser?.uid || null);
-      // Optimistic local update rather than a refetch, same pattern as
-      // persistProfile above - importedAt just needs to look like a
-      // Firestore Timestamp for tsToDisplay() to render it.
       setIntake((prev) =>
         prev
           ? {
@@ -326,8 +307,6 @@ export default function PatientRecordModal({
   }
 
   const today = getTodayString();
-  // The caller passes every appointment in the practice, so narrow it to this
-  // patient (by id, or by ID number for a walk-in with no account yet).
   const patientId = patient?.id;
   const patientIdNumber = patient?.idNumber;
 
@@ -716,9 +695,6 @@ function OverviewTab({
   onReviewIntake,
   onCapturePaperIntake,
 }) {
-  // A child's date of birth lives on their profile document (children/{id}),
-  // not on a clinical profile, which is empty until staff import the intake
-  // form. Fall back to it so the overview is never blank for a child.
   const dob =
     overviewForm.dateOfBirth || profile?.dateOfBirth || patient.dateOfBirth;
   const age = patient.isChild
@@ -1053,11 +1029,6 @@ function OverviewTab({
   );
 }
 
-// "Has this patient done their first-time intake form?" at a glance, so
-// the secretary knows to hand them a paper form / sit them down with the
-// tablet in person if not - without having to dig into their record. See
-// the "Intake form" tab (only rendered once a form actually exists) for
-// the full read-only answers.
 function IntakeStatusCard({
   patient,
   intake,

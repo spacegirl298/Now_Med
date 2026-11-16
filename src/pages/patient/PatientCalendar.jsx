@@ -1,11 +1,3 @@
-// Patient's view of the doctor's calendar (PRD: Booking - must-have).
-// Mirrors the secretary's Schedule screen (same shell, same calendar grid,
-// same day-detail panel pattern, double-click-to-book) so the two dashboards
-// feel like one product. Booking itself is a 3-step flow - pick a time,
-// confirm the summary, see the confirmation - matching the approved design.
-// Patients can see THAT a slot is taken, never who it belongs to; they can
-// manage their own appointments and, as guardians, appointments for their
-// children.
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -58,12 +50,8 @@ import {
 
 const EMPTY_FORM = { type: "in-person", doctorId: "" };
 
-// A booking made 3+ days out needs the practice to call and confirm it with
-// the patient before it's locked in; anything sooner is confirmed instantly.
 const CONFIRMATION_WINDOW_DAYS = 3;
 
-// Only meaningful for today - any time slot on a future date is fine, and
-// isPastDate() already rules out past dates entirely.
 function isPastTimeSlot(dateStr, timeStr) {
   if (!isToday(dateStr)) return false;
   const [h, m] = timeStr.split(":").map(Number);
@@ -83,8 +71,6 @@ function computeBookingStatus(dateStr) {
     : "confirmed";
 }
 
-// 'Monday, 30 March' - used in the modal header, deliberately without the
-// year to match the design (the year still shows in the booking summary).
 function formatModalHeaderDate(dateStr) {
   const d = parseDate(dateStr);
   return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
@@ -118,9 +104,6 @@ function downloadAppointmentICS(booking, doctorName) {
   URL.revokeObjectURL(url);
 }
 
-// `forChild` (a validated child profile, passed by ChildCalendar) makes this
-// the child's calendar: their appointments are shown and new bookings are made
-// for them. With no prop it behaves exactly as before.
 export default function PatientCalendar({ forChild = null }) {
   const { currentUser, userName } = useAuth();
   const { appointments, loading, error, createAppointment, cancelAppointment } =
@@ -131,8 +114,6 @@ export default function PatientCalendar({ forChild = null }) {
     error: childrenError,
   } = useChildren();
   const navigate = useNavigate();
-  // "Now" lives in state so render stays pure; it ticks each minute so the
-  // cancellation window below is never evaluated against a stale clock.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60 * 1000);
@@ -149,7 +130,6 @@ export default function PatientCalendar({ forChild = null }) {
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [doctors, setDoctors] = useState([]);
 
-  // Booking flow: null | 'who' | 'time' | 'confirm' | 'confirmed'
   const [bookingStep, setBookingStep] = useState(null);
   const [bookingTime, setBookingTime] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -210,7 +190,6 @@ export default function PatientCalendar({ forChild = null }) {
     return () => unsub && unsub();
   }, []);
 
-  // The doctor currently selected in the booking form, if any.
   const selectedDoctor = doctors.find((d) => d.id === form.doctorId) || null;
   const bookableChildren = children.filter(
     (child) => child.verificationStatus !== "rejected",
@@ -225,12 +204,6 @@ export default function PatientCalendar({ forChild = null }) {
     [viewYear, viewMonth],
   );
 
-  // Belt-and-suspenders: useAppointments already scopes the Firestore query
-  // to this patient's uid (subscribeToPatientAppointments), but we filter
-  // again here so this screen can never render another patient's booking -
-  // even if that hook's scoping were ever changed or misconfigured. This is
-  // a client-side guard only; the Firestore security rules are what
-  // actually enforce this at the database level and should mirror it.
   const myAppointments = useMemo(
     () =>
       appointments.filter(
@@ -296,9 +269,6 @@ export default function PatientCalendar({ forChild = null }) {
       (!selectedDoctor || b.doctorId === selectedDoctor.id || !b.doctorId),
   );
 
-  // Titled hour-range blocks (e.g. "Lunch break" 12:00-13:00) for the
-  // selected day - read-only here, patients just see why those times are
-  // unavailable. Blocking a few hours never blocks the rest of the day.
   const blockedHourGroupsForSelectedDay = useMemo(() => {
     const groups = {};
     blockedSlots
@@ -341,10 +311,6 @@ export default function PatientCalendar({ forChild = null }) {
           .filter(
             (b) =>
               b.date === selectedDate &&
-              // Each doctor has their own diary: a slot is only "taken"
-              // when THIS doctor is booked at that time. (Practice-wide
-              // blocks such as public holidays are handled separately in
-              // blockedSlots and still apply to every doctor.)
               (!selectedDoctor || b.doctorId === selectedDoctor.id),
           )
           .map((b) => b.time),
@@ -385,11 +351,8 @@ export default function PatientCalendar({ forChild = null }) {
 
   const selectedDateIsPast = isPastDate(selectedDate);
 
-  // With several doctors, times only make sense once one is chosen.
   const needsDoctorFirst = doctors.length > 0 && !selectedDoctor;
 
-  // True once every slot today has already gone by, so booking today is no
-  // longer possible even though the date itself isn't "past" yet.
   const noSlotsLeftToday =
     isToday(selectedDate) &&
     pastTimesForSelectedDay.size >= allTimeSlotsForPastCheck.length;
@@ -429,9 +392,6 @@ export default function PatientCalendar({ forChild = null }) {
   function startBookingFlow(patientId) {
     setBookingPatientId(patientId);
     setBookingTime(null);
-    // Pre-select the doctor when there's only one, so the flow isn't slowed
-    // down for the common single-doctor practice; with several, the patient
-    // picks explicitly.
     setForm({
       ...EMPTY_FORM,
       doctorId: doctors.length === 1 ? doctors[0].id : "",
@@ -444,8 +404,6 @@ export default function PatientCalendar({ forChild = null }) {
     startBookingFlow(patientId);
   }
 
-  // Double-clicking a day jumps straight into booking on that day, mirroring
-  // the secretary's Schedule screen.
   function handleDayDoubleClick(dateStr) {
     openBookingFlow(dateStr);
   }
@@ -477,7 +435,6 @@ export default function PatientCalendar({ forChild = null }) {
   }
 
   async function handleConfirmBooking() {
-    // Guard against a double-booking race: re-check the slot is still open
     if (
       isDayBlocked ||
       takenTimesForSelectedDay.has(bookingTime) ||
@@ -746,7 +703,6 @@ export default function PatientCalendar({ forChild = null }) {
             </div>
           </Card>
 
-          {/* Day detail panel - same pattern as the secretary's Schedule screen */}
           <Card padded={false} className="h-fit">
             <div className="px-5 py-4 border-b border-sand flex items-center justify-between">
               <div>
@@ -911,7 +867,6 @@ export default function PatientCalendar({ forChild = null }) {
         </div>
       </div>
 
-      {/* Choose who the appointment is for */}
       <Modal
         isOpen={bookingStep === "who"}
         onClose={closeBookingFlow}
@@ -949,7 +904,6 @@ export default function PatientCalendar({ forChild = null }) {
         </div>
       </Modal>
 
-      {/* Step 1 - select a time slot */}
       <Modal
         isOpen={bookingStep === "time"}
         onClose={closeBookingFlow}
@@ -980,7 +934,6 @@ export default function PatientCalendar({ forChild = null }) {
                     type="button"
                     onClick={() => {
                       setForm({ ...form, doctorId: doc.id });
-                      // A time chosen for one doctor may be taken for another.
                       setBookingTime(null);
                       setFormError("");
                     }}

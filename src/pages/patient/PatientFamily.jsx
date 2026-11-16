@@ -1,6 +1,3 @@
-// Parent's family overview: one card per child with their next appointment and
-// any live delay, plus the "Add a child" flow. Opening a card goes to
-// /patient/family/:childId.
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Users, Clock, ShieldAlert } from 'lucide-react'
@@ -47,7 +44,6 @@ function Chip({ tone, children }) {
 }
 
 function ChildCard({ child, onOpen }) {
-  // A refused guardian can no longer read the child's appointments.
   const next = useUpcoming(child.id, child.verificationStatus !== 'rejected')
   const { intake, loading: intakeLoading, error: intakeError } = useChildIntake(
     child.id,
@@ -157,8 +153,6 @@ export default function PatientFamily() {
         onClose={() => setAdding(false)}
         onCreated={(childId) => {
           setAdding(false)
-          // Straight into the child's intake form; "Do this later" there
-          // drops the parent on the child's page, where a banner reminds them.
           navigate(`/patient/family/${childId}/intake`)
         }}
       />

@@ -1,4 +1,3 @@
-// Contextual message + action shown instead of a dead-end blank screen.
 export default function EmptyState({ icon: Icon, title, message, actionLabel, onAction }) {
   return (
     <div className="flex flex-col items-center justify-center text-center py-16 px-6">

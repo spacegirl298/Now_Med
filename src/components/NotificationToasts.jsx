@@ -1,5 +1,3 @@
-// In-app banners for brand-new notifications (see useNotificationAlerts).
-// Sits at the top of the screen, below the phone's status bar, above content.
 import { useNavigate } from 'react-router-dom'
 import { Bell, X } from 'lucide-react'
 

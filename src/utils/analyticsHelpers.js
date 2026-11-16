@@ -1,5 +1,4 @@
-// Pure functions that turn raw appointments + reviews into the numbers shown
-// on the analytics page. No Firebase or React in here, so it is easy to test.
+
 import { DELAY_REASONS } from "./validators";
 
 export const REASON_LABELS = {
@@ -9,11 +8,10 @@ export const REASON_LABELS = {
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// ---------- Dates ----------
+// Dates
 
 export function monthKeyOf(date = new Date()) {
-  // Local time on purpose: toISOString() is UTC, which shows the wrong month
-  // for the first hours of a new month in South Africa (UTC+2).
+
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
@@ -49,8 +47,6 @@ export const parseYmd = (str) => {
 const addDays = (d, n) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
-// Ready-made date ranges for the picker. All are in local time and, apart
-// from "Last month", run up to today (what has actually happened so far).
 export function rangePresets(today = new Date()) {
   const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const end = toYmd(t);
@@ -72,7 +68,7 @@ export function rangePresets(today = new Date()) {
   };
 }
 
-// "November 2026" for a whole calendar month, otherwise "3 Nov – 14 Nov 2026".
+
 export function formatRange(start, end) {
   const s = parseYmd(start);
   const e = parseYmd(end);
@@ -95,7 +91,7 @@ export function formatRange(start, end) {
     : `${fmt(s, true)} – ${fmt(e, true)}`;
 }
 
-// ---------- Chart buckets: day / week / month depending on range length ----------
+
 
 function granularityFor(start, end) {
   const days = Math.round((parseYmd(end) - parseYmd(start)) / 86400000) + 1;
@@ -108,7 +104,7 @@ function bucketKeyFor(gran, dateStr) {
   if (gran === "day") return dateStr;
   if (gran === "month") return dateStr.slice(0, 7);
   const d = parseYmd(dateStr);
-  return toYmd(addDays(d, -((d.getDay() + 6) % 7))); // Monday of that week
+  return toYmd(addDays(d, -((d.getDay() + 6) % 7)));
 }
 
 function buildBuckets(start, end) {
@@ -140,17 +136,16 @@ function buildBuckets(start, end) {
   return { gran, buckets, index };
 }
 
-// ---------- Normalising one appointment ----------
+
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 export function isCancelled(a) {
-  return a.status === "cancelled";
+  return !!a && a.status === "cancelled";
 }
 
-// "delayed" overwrites booked/confirmed in `status`, so look at the saved
-// previous status (and confirmedAt) to still count it as confirmed.
 export function wasConfirmed(a) {
+  if (!a) return false;
   return (
     a.status === "confirmed" ||
     a.status === "completed" ||
@@ -159,9 +154,8 @@ export function wasConfirmed(a) {
   );
 }
 
-// The doctor/practice delay for one appointment (latest value), plus how many
-// times it was revised. Older records without history/reason still work.
 export function delayOf(a) {
+  if (!a) return null;
   const minutes = num(a.delayMinutes);
   if (minutes <= 0) return null;
   const history = Array.isArray(a.delayHistory) ? a.delayHistory : [];
@@ -174,11 +168,13 @@ export function delayOf(a) {
 }
 
 export function patientLateOf(a) {
+  if (!a) return null;
   const minutes = num(a.patientLateMinutes);
   return minutes > 0 ? minutes : null;
 }
 
 export function clientKeyOf(a) {
+  if (!a) return "name:unknown";
   return (
     a.patientId ||
     (a.patientIdNumber ? `id:${a.patientIdNumber}` : "") ||
@@ -191,11 +187,12 @@ const avg = (list) =>
 const pct = (part, whole) => (whole ? (part / whole) * 100 : 0);
 export const round1 = (n) => Math.round(n * 10) / 10;
 
-// ---------- Per-doctor summary for a set of appointments ----------
 
 function summarise(appts, reviews, firstSeenByClient, range) {
-  const active = appts.filter((a) => !isCancelled(a));
-  const cancelled = appts.length - active.length;
+  const safeAppts = (appts || []).filter(Boolean);
+  const safeReviews = (reviews || []).filter(Boolean);
+  const active = safeAppts.filter((a) => !isCancelled(a));
+  const cancelled = safeAppts.length - active.length;
   const delays = active.map(delayOf).filter(Boolean);
   const lates = active.map(patientLateOf).filter(Boolean);
 
@@ -215,12 +212,12 @@ function summarise(appts, reviews, firstSeenByClient, range) {
     if (first >= range.start && first <= range.end) newClients += 1;
   }
 
-  const rated = reviews.filter((r) => num(r.rating) > 0);
+  const rated = safeReviews.filter((r) => num(r.rating) > 0);
 
   return {
     booked: active.length,
     cancelled,
-    cancellationRate: pct(cancelled, appts.length),
+    cancellationRate: pct(cancelled, safeAppts.length),
     confirmed: active.filter(wasConfirmed).length,
     confirmationRate: pct(active.filter(wasConfirmed).length, active.length),
     completed: active.filter((a) => a.status === "completed").length,
@@ -244,8 +241,7 @@ function summarise(appts, reviews, firstSeenByClient, range) {
   };
 }
 
-// ---------- Everything the page needs for one date range ----------
-// `range` is { start, end } as "YYYY-MM-DD", both days included.
+
 
 export function buildReport({
   appointments,
@@ -254,29 +250,31 @@ export function buildReport({
   range,
   doctorId = "all",
 }) {
+  const safeAppointments = (appointments || []).filter(Boolean);
+  const safeReviews = (reviews || []).filter(Boolean);
+  const safeDoctors = (doctors || []).filter(Boolean);
   const doctorName = (id, fallback) =>
-    doctors.find((d) => d.id === id)?.name || fallback || "Unassigned";
+    safeDoctors.find((d) => d.id === id)?.name || fallback || "Unassigned";
   const inRange = (dateStr) =>
     !!dateStr && dateStr >= range.start && dateStr <= range.end;
 
-  // First day each client ever appeared, across all time (for "new clients").
   const firstSeenByClient = new Map();
-  for (const a of appointments) {
+  for (const a of safeAppointments) {
     if (isCancelled(a) || !a.date) continue;
     const key = clientKeyOf(a);
     const prev = firstSeenByClient.get(key);
     if (!prev || a.date < prev) firstSeenByClient.set(key, a.date);
   }
 
-  const apptById = new Map(appointments.map((a) => [a.id, a]));
-  const visibleReviews = reviews.filter((r) => !r.hidden);
+  const apptById = new Map(safeAppointments.map((a) => [a.id, a]));
+  const visibleReviews = safeReviews.filter((r) => !r.hidden);
   const reviewDate = (r) => {
     const appt = apptById.get(r.appointmentId);
     if (appt?.date) return appt.date;
     return r.createdAt?.toDate ? toYmd(r.createdAt.toDate()) : "";
   };
 
-  const inPeriod = appointments.filter((a) => inRange(a.date));
+  const inPeriod = safeAppointments.filter((a) => inRange(a.date));
   const scoped =
     doctorId === "all"
       ? inPeriod
@@ -286,8 +284,7 @@ export function buildReport({
       inRange(reviewDate(r)) && (doctorId === "all" || r.doctorId === doctorId),
   );
 
-  // One row per doctor who had appointments in the range (always all doctors,
-  // so the comparison cards don't change when a single doctor is selected).
+
   const doctorIds = [...new Set(inPeriod.map((a) => a.doctorId || "none"))];
   const perDoctor = doctorIds
     .map((id) => {
@@ -308,7 +305,6 @@ export function buildReport({
 
   const overall = summarise(scoped, reviewsIn, firstSeenByClient, range);
 
-  // Per day / week / month: on time, delayed, cancelled, and average delay.
   const { gran, buckets, index } = buildBuckets(range.start, range.end);
   for (const a of scoped) {
     const bucket = buckets[index.get(bucketKeyFor(gran, a.date))];
@@ -334,7 +330,7 @@ export function buildReport({
     };
   });
 
-  // Average delay by weekday (Mon..Sun order).
+  // Average delay
   const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
   const perWeekday = weekdayOrder.map((dow) => {
     const appts = scoped.filter(
@@ -349,7 +345,6 @@ export function buildReport({
     };
   });
 
-  // Reasons list (sorted) for the chart.
   const reasons = Object.entries(overall.reasonCounts)
     .map(([value, count]) => ({
       value,
@@ -359,7 +354,6 @@ export function buildReport({
     }))
     .sort((a, b) => b.count - a.count);
 
-  // Appointment-level rows for the table and the CSV export.
   const rows = scoped
     .slice()
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
@@ -394,10 +388,8 @@ export function buildReport({
   };
 }
 
-// ---------- CSV ----------
+// CSV
 
-// Prefix cells that start with = + - @ so Excel/Sheets can't run them as a
-// formula (patient names and notes are free text).
 function csvCell(value) {
   let s = value == null ? "" : String(value);
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
@@ -421,6 +413,5 @@ export function rowsToCsv(rows) {
   for (const r of rows) {
     lines.push(headers.map(([k]) => csvCell(r[k])).join(","));
   }
-  // BOM so Excel opens UTF-8 names correctly.
   return "\ufeff" + lines.join("\r\n");
 }

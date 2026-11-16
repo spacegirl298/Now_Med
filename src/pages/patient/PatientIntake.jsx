@@ -1,19 +1,3 @@
-// First-Time Patient Intake Form (PRD: must-have).
-//
-// The question-by-question wizard itself lives in components/IntakeWizard.jsx
-// (shared with the parent-completes-for-a-child flow in ChildIntake.jsx).
-// This page is the adult's own version: it decides where the answers go.
-//   1. On first login AuthContext checks whether an intake form already
-//      exists for this patient (by uid or ID number). If not, RequireIntake
-//      (App.jsx) sends them here.
-//   2. "Do this later" is available on every screen. It marks the prompt as
-//      seen (deferIntake) and drops them on the dashboard, where a floating
-//      form button (IntakeFormButton) brings them back until it's finished.
-//   3. On submit the full answers are saved to `intakeForms` (visible to the
-//      secretary on the patient's record) and the six non-clinical fields
-//      patients are allowed to write are also copied onto their profile.
-//      Clinical answers are NOT written to patientProfiles - patients can't
-//      edit those; a secretary reviews and imports them.
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -30,7 +14,6 @@ export default function PatientIntake() {
     useAuth()
   const navigate = useNavigate()
 
-  // Already done (e.g. deep-linked back here) - nothing to fill in.
   if (intakeCompleted) return <Navigate to="/patient/dashboard" replace />
 
   async function handleLater() {
@@ -39,10 +22,6 @@ export default function PatientIntake() {
   }
 
   async function handleSubmit(clean) {
-    // Patient rules allow a query for the authenticated patient's UID, but
-    // may not allow an ID-number query across the whole intakeForms
-    // collection. Any pre-registration form is linked during authentication,
-    // so the UID lookup is the correct double-submit guard here.
     const existing = await getIntakeForm(currentUser.uid)
     if (!existing) {
       await saveIntakeForm({
@@ -53,9 +32,6 @@ export default function PatientIntake() {
       })
     }
 
-    // Copy the non-clinical fields patients may write onto their profile.
-    // Only non-empty answers, so we never blank out something a secretary
-    // already entered for a walk-in. A failure here must not lose the form.
     const profileFields = {}
     PROFILE_SYNC_FIELDS.forEach((k) => {
       if (clean[k]) profileFields[k] = clean[k]

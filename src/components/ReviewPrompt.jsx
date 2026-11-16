@@ -1,12 +1,3 @@
-// Dashboard card prompting a review for a completed, unreviewed
-// appointment. Surfaces the OLDEST eligible unreviewed appointment first
-// (rather than the most recent) so a backlog gets worked through in order
-// instead of only ever nagging about the latest visit.
-//
-// "Close" only hides this render - there's no persisted dismissal. Since
-// eligibility is recomputed from real data every time, it reappears next
-// visit if still unreviewed. That's deliberate (see the brief: "close or
-// come back to it later").
 import { useEffect, useMemo, useState } from "react";
 import { Star, X } from "lucide-react";
 import Card from "./Card";
@@ -28,13 +19,9 @@ export default function ReviewPrompt({
   patientId,
   bufferMinutes = REVIEW_PROMPT_DELAY_MINUTES,
 }) {
-  // Remembers how many pending reviews there were when the card was closed, so it
-  // re-opens by itself if that number changes (new visit to review).
   const [closedForCount, setClosedForCount] = useState(null);
   const [pendingReviews, setPendingReviews] = useState([]);
   const [checking, setChecking] = useState(true);
-  // undefined = nothing chosen yet (first pending review opens by default),
-  // null = the patient collapsed everything.
   const [expandedId, setExpandedId] = useState(undefined);
   const [drafts, setDrafts] = useState({});
   const [submittingById, setSubmittingById] = useState({});
@@ -42,14 +29,6 @@ export default function ReviewPrompt({
   const [resolvedDoctorNames, setResolvedDoctorNames] = useState({});
   const [errors, setErrors] = useState({});
 
-  // Candidate pool: eligible appointments, oldest first. We check them one
-  // at a time because getDoctorRatingByAppointment is a single getDoc and we
-  // want to surface every unreviewed visit, not just the first one.
-  //
-  // `tick` is bumped by the timer below at the exact moment the next visit
-  // becomes reviewable, so the prompt appears on time without the patient
-  // having to refresh (eligibility depends on the clock, which useMemo
-  // can't see on its own).
   const [tick, setTick] = useState(0);
   const eligiblePool = useMemo(() => {
     return appointments
@@ -70,7 +49,6 @@ export default function ReviewPrompt({
       if (wait > 0 && wait < soonest) soonest = wait;
     }
     if (!Number.isFinite(soonest)) return;
-    // setTimeout caps at ~24.8 days; anything further out just re-checks then.
     const id = setTimeout(
       () => setTick((t) => t + 1),
       Math.min(soonest + 500, 2147483000),
@@ -78,8 +56,6 @@ export default function ReviewPrompt({
     return () => clearTimeout(id);
   }, [appointments, bufferMinutes, tick]);
 
-  // Derived values (no effect needed). When there is nothing eligible the
-  // stored list can be stale, so mask it rather than resetting it in an effect.
   const visiblePending = eligiblePool.length > 0 ? pendingReviews : [];
   const isChecking = eligiblePool.length > 0 && checking;
   const openId =

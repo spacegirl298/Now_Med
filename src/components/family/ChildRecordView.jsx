@@ -1,15 +1,3 @@
-// A child's medical record, read-only, for their parent or guardian
-// (PatientChild > Records). It mirrors the adult's own PatientRecords page -
-// overview, history, allergies, medications, visit history, intake form - but
-// reads the CHILD's profile, records and intake form by the child's id.
-//
-// Everything here is entered and verified by the practice. Two privacy rules
-// are carried over from the adult page:
-//   - records marked internalOnly by staff never reach this screen;
-//   - the caller decides `clinicalVisible`. For a child of 12 or older the
-//     clinical record is private by default (Children's Act), so only the
-//     intake form the parent submitted themselves is shown.
-import { useEffect, useMemo, useState } from 'react'
 import { FileText, HeartPulse, Pill, ShieldAlert, Stethoscope } from 'lucide-react'
 import Card from '../Card'
 import EmptyState from '../EmptyState'
@@ -99,7 +87,6 @@ export default function ChildRecordView({ child, clinicalVisible = true }) {
     )
     const unsubRecords = subscribeToPatientRecords(
       child.id,
-      // Staff-only entries are dropped here, before they reach component state.
       (list) => {
         setRecords(list.filter((r) => !r.internalOnly))
         setLoadingRecords(false)
@@ -115,7 +102,6 @@ export default function ChildRecordView({ child, clinicalVisible = true }) {
     }
   }, [child.id, clinicalVisible])
 
-  // The form is immutable once submitted, so one fetch is enough.
   useEffect(() => {
     let cancelled = false
     getIntakeForm(child.id)

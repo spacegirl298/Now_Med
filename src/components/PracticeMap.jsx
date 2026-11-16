@@ -1,7 +1,3 @@
-// Small embedded map for a practice location, shown wherever we already
-// have doctor.lat/lng (see PatientETA - same coordinates set by the
-// secretary's address geocode). Reuses loadGoogleMaps() from utils/googleMaps
-// so no second script tag gets injected.
 import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "../utils/googleMaps";
 
@@ -9,6 +5,7 @@ export default function PracticeMap({ lat, lng, label }) {
   const mapRef = useRef(null);
   const [error, setError] = useState("");
 
+  // Load map
   useEffect(() => {
     if (lat == null || lng == null) return;
     let cancelled = false;
@@ -41,7 +38,6 @@ export default function PracticeMap({ lat, lng, label }) {
       })
       .catch((err) => {
         if (!cancelled) {
-          // Technical detail (e.g. missing API key) stays in the console.
           console.error("Map failed to load:", err);
           setError("The map isn't available right now - use the directions link below.");
         }
@@ -53,6 +49,7 @@ export default function PracticeMap({ lat, lng, label }) {
     };
   }, [lat, lng, label]);
 
+  // Render map
   if (lat == null || lng == null) return null;
   if (error) return <p className="text-xs text-slate">{error}</p>;
 

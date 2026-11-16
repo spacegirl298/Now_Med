@@ -10,7 +10,7 @@ export default function EmailVerification() {
   const [canResend, setCanResend] = useState(false);
   const [message, setMessage] = useState("");
 
-  // Start countdown on load
+  // Countdown
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown((prev) => {
@@ -35,7 +35,6 @@ export default function EmailVerification() {
       setCanResend(false);
       setCountdown(60);
 
-      // Restart the countdown
       const timer = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {

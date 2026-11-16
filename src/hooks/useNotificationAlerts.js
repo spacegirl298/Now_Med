@@ -1,17 +1,3 @@
-// Phone-style alerts for new notifications, driven by the same real-time
-// Firestore subscription as the bell (useNotifications), so they arrive the
-// moment the practice does something - no refresh.
-//
-// What it does when a NEW unread notification lands while NowMed is open
-// (foreground or backgrounded on the phone):
-//   - shows an in-app toast (always works),
-//   - raises a system notification through the service worker if the person
-//     has allowed it (shows in the phone's notification shade, tap to open),
-//   - vibrates briefly and updates the home-screen app badge where supported.
-//
-// What it cannot do: reach a phone where the app/tab has been fully closed.
-// That needs server-sent web push (Firebase Cloud Messaging + a Cloud
-// Function on the paid Blaze plan), which is out of scope for this build.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNotifications } from './useNotifications'
 import { useAuth } from '../context/AuthContext'
@@ -31,7 +17,7 @@ export function useNotificationAlerts() {
   const [permission, setPermission] = useState(() =>
     supported() ? Notification.permission : 'unsupported',
   )
-  const seenIds = useRef(null) // null until the first snapshot has been recorded
+  const seenIds = useRef(null)
   const dismissedIds = useRef(new Set())
   const registrationRef = useRef(null)
 
@@ -51,7 +37,6 @@ export function useNotificationAlerts() {
     }
   }, [currentUserId])
 
-  // Register the service worker once (needed for system notifications).
   useEffect(() => {
     if (!supported()) return
     navigator.serviceWorker
@@ -62,14 +47,13 @@ export function useNotificationAlerts() {
       .catch((err) => console.warn('Service worker unavailable:', err))
   }, [])
 
-  // Home-screen badge with the unread count (Android Chrome / installed PWA).
   useEffect(() => {
     if (typeof navigator === 'undefined') return
     try {
       if (unreadCount > 0 && navigator.setAppBadge) navigator.setAppBadge(unreadCount)
       else if (navigator.clearAppBadge) navigator.clearAppBadge()
     } catch {
-      /* badge API not available */
+      // Badge support is optional.
     }
   }, [unreadCount])
 
@@ -93,12 +77,9 @@ export function useNotificationAlerts() {
     }
   }, [currentUserId, markNotificationRead])
 
-  // Spot notifications that are new since the last snapshot.
   useEffect(() => {
     const currentIds = new Set(notifications.map((n) => n.id))
     if (seenIds.current === null) {
-      // First snapshot = what was already there before this session started.
-      // Don't replay old notifications as alerts.
       seenIds.current = currentIds
       return
     }
@@ -109,7 +90,6 @@ export function useNotificationAlerts() {
     if (fresh.length === 0) return
 
     const route = (n) => {
-      // A child's notification opens that child's page.
       if (userRole === 'patient' && n.recipientId && currentUser?.uid && n.recipientId !== currentUser.uid) {
         const childPage = `/patient/family/${n.recipientId}`
         return n.type === 'intake_reminder' ? `${childPage}/intake` : childPage
@@ -127,7 +107,7 @@ export function useNotificationAlerts() {
       try {
         if (navigator.vibrate) navigator.vibrate([120, 60, 120])
       } catch {
-        /* vibration not available */
+        // Vibration is optional.
       }
 
       if (supported() && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
@@ -144,14 +124,13 @@ export function useNotificationAlerts() {
           try {
             new Notification('NowMed', options)
           } catch {
-            /* some mobile browsers only allow the service-worker route */
+            // The browser may block system notifications.
           }
         }
       }
     })
   }, [notifications, userRole, currentUser?.uid, dismissToast])
 
-  // Must be called from a tap (browsers require a user gesture).
   const enableSystemAlerts = useCallback(async () => {
     if (!supported()) return 'unsupported'
     const result = await Notification.requestPermission()

@@ -1,4 +1,3 @@
-// Desktop navigation. 
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Calendar,

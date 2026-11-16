@@ -1,4 +1,3 @@
-// Searchable patient directory for the secretary portal.
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { Search } from "lucide-react";
@@ -20,7 +19,7 @@ export default function PatientList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [selectedTab, setSelectedTab] = useState("overview");
-  // 'all' | 'children' | 'pending' (children whose guardian is awaiting confirmation)
+
   const [filter, setFilter] = useState(location.state?.filter || "all");
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function PatientList() {
     });
   }, [location.state, patients]);
 
-  // Arriving from the dashboard's "children waiting for confirmation" shortcut.
   useEffect(() => {
     if (location.state?.filter) setFilter(location.state.filter); // eslint-disable-line react-hooks/set-state-in-effect -- apply the requested filter on navigation
   }, [location.state]);

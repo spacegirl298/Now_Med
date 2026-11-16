@@ -1,7 +1,3 @@
-// Birth, vaccination and development answers from a child's intake form.
-// These have no field on the clinical profile (they are child-only), so this
-// card is how they reach a record: on the parent's Records tab and on the
-// secretary's child overview. Renders nothing for a form that has none.
 const wrap = 'bg-mist rounded-xl p-4'
 
 export default function ChildHealthCard({ answers }) {

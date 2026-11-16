@@ -1,11 +1,3 @@
-// Shared frame for every sign-in / sign-up screen: brand on the left half,
-// the task on the right half. Because every auth page renders inside the same
-// shell, moving between Log in -> Sign up -> Verify keeps the left panel
-// fixed and only the right half changes, so the flow reads as one place
-// instead of a stack of separate pages.
-//
-// On desktop (lg+) the shell is exactly one screen tall - no page scroll.
-// On phones the brand collapses into a slim band above the form.
 import { Link } from 'react-router-dom'
 
 const DISPLAY = { fontFamily: "'Bricolage Grotesque', 'DM Sans', sans-serif" }
@@ -30,9 +22,6 @@ export default function AuthShell({ variant = 'default', compact = false, childr
 
   return (
     <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-mist flex flex-col lg:flex-row">
-      {/* Brand half. On phones it is a header: the wordmark and the big
-          "now now / now." line, with the form sliding up over its lower edge.
-          `compact` drops the big line on long forms so they stay on screen. */}
       <aside
         className={`relative bg-plum text-white lg:w-1/2 lg:flex lg:flex-col lg:justify-between lg:p-14 px-6 lg:pt-14 overflow-hidden ${
           compact ? 'pb-12' : 'pb-16'
@@ -59,7 +48,6 @@ export default function AuthShell({ variant = 'default', compact = false, childr
           </p>
         )}
 
-        {/* Desktop: the brand line, bigger, with the supporting copy */}
         <div className="hidden lg:block relative z-10">
           <p
             className="font-extrabold leading-[0.85] tracking-tight select-none"
@@ -84,7 +72,6 @@ export default function AuthShell({ variant = 'default', compact = false, childr
         />
       </aside>
 
-      {/* Task half. On phones it is a sheet that overlaps the brand header. */}
       <main className="relative z-10 -mt-7 lg:mt-0 rounded-t-[2rem] lg:rounded-none bg-mist flex-1 lg:w-1/2 flex items-start lg:items-center justify-center px-6 pt-9 pb-[max(2rem,env(safe-area-inset-bottom))] lg:py-6 lg:overflow-y-auto">
         <div className="w-full max-w-md lg:max-w-lg">{children}</div>
       </main>
@@ -92,7 +79,6 @@ export default function AuthShell({ variant = 'default', compact = false, childr
   )
 }
 
-// Small building blocks so every auth screen has identical inputs and buttons.
 export const inputClass =
   'w-full bg-white border border-stone/70 rounded-xl px-4 py-3 text-ink placeholder:text-slate/60 focus:border-rose focus:outline-none focus:ring-2 focus:ring-rose/20'
 

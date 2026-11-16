@@ -1,7 +1,3 @@
-// Secretary's own profile, plus doctor profile management (should-have).
-// The practice can have several doctors — each one is its own document in
-// the `doctors` collection (see firestore.js) rather than a single shared
-// profile, so patients can pick between them when booking.
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Stethoscope, Trash2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
@@ -38,7 +34,7 @@ const EMPTY_DOCTOR = {
   lat: null,
   lng: null,
   profileCharacter: "",
-  _geocodedFrom: "", // local-only, never sent to Firestore - see handleSaveDoctor
+  _geocodedFrom: "",
 };
 
 export default function SecretaryProfile() {
@@ -48,32 +44,28 @@ export default function SecretaryProfile() {
   const [phone, setPhone] = useState("");
   const [profileCharacter, setProfileCharacter] = useState("");
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
-  const [signupInfo, setSignupInfo] = useState(null); // idNumber/idType
+  const [signupInfo, setSignupInfo] = useState(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState("");
 
   const [doctors, setDoctors] = useState([]);
   const [doctorModalOpen, setDoctorModalOpen] = useState(false);
   const [doctorCharacterPickerOpen, setDoctorCharacterPickerOpen] = useState(false);
-  const [editingDoctorId, setEditingDoctorId] = useState(null); // null = adding
+  const [editingDoctorId, setEditingDoctorId] = useState(null);
   const [doctorForm, setDoctorForm] = useState(EMPTY_DOCTOR);
   const [savingDoctor, setSavingDoctor] = useState(false);
   const [doctorFormError, setDoctorFormError] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState(null); // doctor being confirmed for deletion
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   const [reviews, setReviews] = useState([]);
-  const [reviewActionId, setReviewActionId] = useState(null); // id currently being hidden/deleted
+  const [reviewActionId, setReviewActionId] = useState(null);
   const [reviewDeleteTarget, setReviewDeleteTarget] = useState(null);
-  const [expandedDoctorReviews, setExpandedDoctorReviews] = useState(null); // doctorId currently expanded, or null
+  const [expandedDoctorReviews, setExpandedDoctorReviews] = useState(null);
 
   useEffect(() => {
     if (!currentUser) return;
 
-    // currentUser.displayName is only set from this point forward for newly
-    // registered accounts - userName (from the Firestore user doc, via
-    // AuthContext) is the reliable source for everyone, including accounts
-    // created before that fix.
     setName(currentUser.displayName || userName || ""); // eslint-disable-line react-hooks/set-state-in-effect -- syncing local form state from the auth user
 
     getUserById(currentUser.uid).then((data) => {
@@ -177,10 +169,6 @@ export default function SecretaryProfile() {
     setSavingDoctor(true);
 
     let formToSave = doctorForm;
-    // Only re-geocode when there's an address AND it's not already the one
-    // these coordinates came from - editing an existing doctor without
-    // touching the address shouldn't cost an API call or risk overwriting
-    // good coordinates with a slightly different geocoder result.
     if (
       doctorForm.address.trim() &&
       doctorForm.address.trim() !== doctorForm._geocodedFrom

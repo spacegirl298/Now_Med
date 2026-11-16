@@ -1,4 +1,3 @@
-// Manages who is logged in and what role they have
 import { createContext, useContext, useEffect, useState } from 'react'
 import { 
   createUserWithEmailAndPassword,
@@ -28,23 +27,14 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-// The provider wraps your whole app
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
   const [userName, setUserName] = useState(null)
   const [userIdNumber, setUserIdNumber] = useState('')
-  // Intake state (patients only). Both are undefined until the user doc has
-  // loaded, so callers can tell "still loading" from "not done yet".
-  //   intakeCompleted - a full intake form exists for this patient
-  //   intakeDeferred  - they chose "Do this later" on the first-login prompt.
-  //                     They are not prompted again, but the floating intake
-  //                     button stays visible until the form is completed.
   const [intakeCompleted, setIntakeCompleted] = useState(undefined)
   const [intakeDeferred, setIntakeDeferred] = useState(undefined)
   const [loading, setLoading] = useState(true)
-  // The branded splash plays in full once per browser tab session, then only
-  // shows for as long as auth genuinely takes to resolve.
   const [splashDone, setSplashDone] = useState(() => {
     try {
       return sessionStorage.getItem('nowmedSplashSeen') === '1'
@@ -59,7 +49,7 @@ export function AuthProvider({ children }) {
       try {
         sessionStorage.setItem('nowmedSplashSeen', '1')
       } catch {
-        /* storage unavailable - splash will simply replay next load */
+        // Storage is optional.
       }
       setSplashDone(true)
     }, 3800)
@@ -68,18 +58,9 @@ export function AuthProvider({ children }) {
 
   // Register a new user
   async function register(email, password, idNumber, idType, role, name) {
-    // Create the Firebase Auth account first - the duplicate-ID check below
-    // reads the `users` collection, and Firestore rules require the caller
-    // to be authenticated to do that. Checking before sign-up would fail
-    // with a permission error for every registration, not just duplicates.
     const result = await createUserWithEmailAndPassword(auth, email, password)
 
     try {
-      // Secretary accounts need an invite (staffInvites/{lowercased email},
-      // added by the practice owner in the Firebase console). Checked before
-      // anything else is written so a rejected sign-up leaves nothing behind.
-      // The Firestore rules enforce the same check independently; this only
-      // gives the person a clear error message.
       if (role === 'secretary') {
         const invite = await getDoc(doc(db, 'staffInvites', email.trim().toLowerCase()))
         if (!invite.exists()) {
@@ -91,55 +72,28 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // Two different people should never be able to register with the same
-      // ID/passport number. The one deliberate exception: a secretary who
-      // already has a staff account is allowed to register a *patient*
-      // account under that same ID number — that's the same real person
-      // adding a second role, not a duplicate identity. This is enforced
-      // by reserveIdNumberIndexSlot against idNumberIndex/{idNumber},
-      // which mirrors the firestore.rules logic for that collection.
-      // (A direct query against `users` won't work here — a brand-new
-      // registrant has no user doc yet, so isSecretary()/isOwner() in the
-      // rules can't be satisfied and the query is denied.)
-      //
-      // Run this alongside updateProfile below rather than after it - the
-      // two writes don't depend on each other, and waiting for them one at
-      // a time was most of what made "Continue" feel slow on sign-up.
       await Promise.all([
         reserveIdNumberIndexSlot(idNumber, result.user.uid, role),
-        // So displayName is available anywhere we read it straight off the
-        // Auth user (e.g. profile pages), not just from the Firestore user doc
         updateProfile(result.user, { displayName: name }),
       ])
     } catch (err) {
-      // Roll back the auth account we just created so we don't leave an
-      // orphaned login with no matching Firestore user doc.
       await result.user.delete().catch(() => {})
       throw err
     }
 
-    //sending Verification email 
     sendEmailVerification(result.user)
-    // This saves their information to Firestore
     await setDoc(doc(db, 'users', result.user.uid), {
       uid: result.user.uid,
       name,
       email,
       role,
       idNumber,
-      idType, // 'sa_id' or 'passport'
+      idType,
       hasCompletedIntake: false,
       intakeDeferred: false,
       createdAt: new Date()
     })
 
-    // If a secretary already booked appointments or added records for this
-    // person by ID number (e.g. a phone-in booking), attach that history to
-    // the new account now so it shows up immediately. Deliberately not
-    // awaited: it only affects historical data the patient will see once
-    // it lands, not the account itself, so there's no reason to hold up
-    // sign-up (email verification, step 3, etc.) on it. Errors are still
-    // caught and logged rather than left as an unhandled rejection.
     if (role === 'patient') {
       linkPatientDataByIdNumber(result.user.uid, idNumber, name).catch((error) => {
         console.error('Could not link existing bookings/records by ID number:', error)
@@ -152,13 +106,9 @@ export function AuthProvider({ children }) {
   // Log in
   async function login(email, password) {
     const result = await signInWithEmailAndPassword(auth, email, password)
-    // Unverified accounts are bounced by the Login page, so there is nothing
-    // to load for them yet.
     if (result.user.emailVerified) {
       const found = await loadProfile(result.user)
       if (!found) {
-        // Signed in but no readable profile: don't leave a half-logged-in
-        // session that the login screen would wait on forever.
         await signOut(auth).catch(() => {})
         const err = new Error('Could not load profile')
         err.code = 'auth/no-profile'
@@ -178,7 +128,6 @@ export function AuthProvider({ children }) {
     return sendPasswordResetEmail(auth, email)
   }
 
-  // Called by PatientIntake.jsx after the form has been saved.
   async function completeIntake() {
     if (!currentUser) return
     await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -189,10 +138,6 @@ export function AuthProvider({ children }) {
     setIntakeDeferred(false)
   }
 
-  // "Do this later" on the intake prompt. Stops the automatic redirect
-  // (so the prompt really is only shown once) without pretending the form
-  // was filled in. State is set even if the write fails so this session
-  // isn't stuck in a redirect loop.
   async function deferIntake() {
     setIntakeDeferred(true)
     if (!currentUser) return
@@ -203,10 +148,6 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // First-login check: is there already an intake form for this patient,
-  // either under their uid or attached to their ID/passport number (e.g. the
-  // practice captured one before they registered)? If so they never see the
-  // prompt.
   async function resolveIntakeCompleted(uid, data) {
     try {
       const existing = await getIntakeFormForPatient(uid, data.idNumber)
@@ -224,20 +165,9 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // Resolves everything the app needs to know about a signed-in user (role,
-  // name, intake state) from their Firestore user doc. Shared by the auth
-  // listener AND login()/register(): onAuthStateChanged does not fire again
-  // when the already-signed-in user logs in a second time (exactly what
-  // happens after sign-up -> "Go to Login"), and it can run before sign-up has
-  // finished writing the user doc. Calling this directly removes both races.
-  // Resolves to true when the user doc was found and read.
   async function loadProfile(user) {
     let found = false
     try {
-      // Staff access is decided by Firestore rules from the ID token's
-      // email_verified claim. A token minted before the email was verified
-      // keeps the old claim until it is refreshed, which made every secretary
-      // query fail with permission-denied. Refresh once up front.
       await user.getIdToken(true).catch(() => {})
 
       const userDoc = await getDoc(doc(db, 'users', user.uid))
@@ -246,19 +176,11 @@ export function AuthProvider({ children }) {
         setUserRole(data.role)
         setUserName(data.name)
         setUserIdNumber(data.idNumber || '')
-        // Secretaries list themselves (uid only) in secretaryDirectory so a
-        // patient's action can notify every secretary without being able to
-        // read the users collection. Needs a verified email, which login
-        // already requires. Idempotent, fire-and-forget.
         if (data.role === 'secretary' && user.emailVerified) {
           setDoc(doc(db, 'secretaryDirectory', user.uid), { uid: user.uid }).catch((e) =>
             console.error('Could not register in the secretary directory:', e),
           )
         }
-        // Older accounts created before this field existed won't have it -
-        // treat missing as "already done" so nobody who registered before
-        // this feature shipped gets an unexpected intake prompt. Staff never
-        // do intake.
         let completed =
           data.role === 'patient' ? (data.hasCompletedIntake ?? true) : true
         if (data.role === 'patient' && completed === false) {
@@ -269,8 +191,6 @@ export function AuthProvider({ children }) {
         found = true
       }
     } catch (error) {
-      // If Firestore read fails, still set the user
-      // so they aren't stuck on a blank page
       console.error('Error fetching user role:', error)
     }
     setCurrentUser(user)
@@ -293,7 +213,6 @@ export function AuthProvider({ children }) {
     })
 
     return unsubscribe
-    // loadProfile only uses state setters and imported helpers
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -304,9 +223,6 @@ export function AuthProvider({ children }) {
     userIdNumber,
     intakeCompleted,
     intakeDeferred,
-    // Kept under its old name so App.jsx's RequireIntake works unchanged: it
-    // redirects to the intake page only while this is === false, i.e. only
-    // for a patient who has neither completed nor deferred the form.
     hasCompletedIntake:
       intakeCompleted === undefined ? undefined : intakeCompleted || !!intakeDeferred,
     register,

@@ -1,7 +1,3 @@
-// Small dependency-free charts for the analytics page. SVG/HTML only, so they
-// print cleanly to PDF and follow the app's colour tokens.
-// Every chart takes plain arrays and shows an empty message when there is
-// nothing to plot.
 
 const COLORS = {
   onTime: "var(--color-green)",
@@ -43,8 +39,6 @@ export function Legend({ items }) {
   );
 }
 
-// Appointments per day / week / month (the caller decides), stacked:
-// on time / delayed / cancelled. Each item: { label, title, onTime, delayed, cancelled }.
 export function PeriodStackChart({ data, unit = "day" }) {
   const total = data.reduce((s, d) => s + d.onTime + d.delayed + d.cancelled, 0);
   if (!total) return <Empty />;
@@ -60,7 +54,7 @@ export function PeriodStackChart({ data, unit = "day" }) {
   const step = innerW / data.length;
   const barW = Math.max(step * 0.66, 3);
   const ticks = [0, max / 2, max];
-  const every = Math.max(1, Math.ceil(data.length / 12)); // thin the x labels
+  const every = Math.max(1, Math.ceil(data.length / 12)); 
 
   return (
     <>
@@ -132,7 +126,7 @@ export function PeriodStackChart({ data, unit = "day" }) {
   );
 }
 
-// Horizontal bars with a label, value text and optional sub-text.
+// Horizontal bars
 export function HBarChart({ items, color = COLORS.bar, empty }) {
   if (!items.length) return <Empty>{empty}</Empty>;
   const max = Math.max(...items.map((i) => i.value), 1);
@@ -157,7 +151,7 @@ export function HBarChart({ items, color = COLORS.bar, empty }) {
   );
 }
 
-// Vertical columns, e.g. average delay per weekday.
+// Vertical bars
 export function ColumnChart({ items, unit = "", empty }) {
   if (!items.some((i) => i.value > 0)) return <Empty>{empty}</Empty>;
   const W = 420;
@@ -209,7 +203,7 @@ export function ColumnChart({ items, unit = "", empty }) {
   );
 }
 
-// Line chart for the 6-month trend.
+// Line chart for the 6-month trend
 export function LineChart({ points, unit = "", empty }) {
   if (!points.some((p) => p.value > 0)) return <Empty>{empty}</Empty>;
   const W = 420;
@@ -221,7 +215,7 @@ export function LineChart({ points, unit = "", empty }) {
   const x = (i) => pad.l + (points.length === 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
   const y = (v) => pad.t + innerH - (v / max) * innerH;
   const path = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.value)}`).join(" ");
-  const every = Math.max(1, Math.ceil(points.length / 8)); // thin the x labels
+  const every = Math.max(1, Math.ceil(points.length / 8));
   const showValues = points.length <= 12;
   const showDots = points.length <= 40;
 

@@ -1,12 +1,3 @@
-// Patient's own ETA to the practice for a specific upcoming appointment -
-// NOT a doctor's location/travel (the doctor is already at the practice).
-// Sits on the "next appointment" card in PatientDashboard.
-//
-// Arrival buffer policy: new patients (no prior completed visit) are asked
-// to arrive 15 minutes early (paperwork/intake); returning patients, 5
-// minutes. isNewPatient is passed in - computed by the caller from the
-// patient's own appointment history, since that's already loaded there via
-// useAppointments and needs no extra query.
 import { useState } from "react";
 import {
   Navigation,
@@ -31,7 +22,7 @@ function formatClockTime(date) {
 
 export default function PatientETA({ appointment, doctor, isNewPatient }) {
   const { currentUser, userName } = useAuth();
-  const [state, setState] = useState("idle"); // idle | locating | loading | done | error
+  const [state, setState] = useState("idle");
   const [eta, setEta] = useState(null);
   const [error, setError] = useState("");
   const [reporting, setReporting] = useState(false);
@@ -51,14 +42,8 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
 
   const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${doctor.lat},${doctor.lng}`;
 
-  // Once we have a driving duration, work out whether leaving right now
-  // gets them there inside the recommended buffer, still on time for the
-  // appointment itself, or actually late.
   let assessment = null;
   if (eta) {
-    // Anchored to the moment the route was fetched. The old version used the
-    // current time on every render, so the displayed arrival time kept
-    // drifting later each time the component re-rendered.
     const estimatedArrival = new Date(
       eta.fetchedAt.getTime() + eta.durationMinutes * 60000,
     );
@@ -116,7 +101,6 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
           setEta({ ...result, fetchedAt: new Date() });
           setState("done");
         } catch (err) {
-          // Never show developer text (e.g. a missing API key) to patients.
           console.error("ETA lookup failed:", err);
           setError(
             "We couldn't work out your travel time right now. You can still open directions below.",
@@ -150,9 +134,6 @@ export default function PatientETA({ appointment, doctor, isNewPatient }) {
       return;
     }
 
-    // Best-effort: the flag above is what actually drives the secretary's
-    // UI, so a chat message failing shouldn't undo "reported" or block the
-    // patient from seeing the flag went through.
     try {
       const minutesLate = assessment?.minutesLate;
       await sendMessage({

@@ -1,6 +1,3 @@
-// Live unread-message count for the nav badge.
-//   patient   -> unread replies from the practice in their own chat
-//   secretary -> total unread patient messages across every conversation
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { subscribeToConversation, subscribeToAllConversations } from '../firebase/firestore'

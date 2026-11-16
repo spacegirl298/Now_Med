@@ -1,16 +1,3 @@
-// Family (child profile) data layer.
-//
-// A child is stored in `children/{childId}`. The childId is then used as the
-// `patientId` everywhere the rest of the app already keys patient data by id
-// (appointments, conversations/{patientId}, records, patientProfiles,
-// intakeForms, notifications), so those existing functions work for a child
-// without changes. See FAMILY_SETUP.md for the Firestore rules.
-//
-// Parent side:    subscribeToMyChildren, subscribeToChild, addChild,
-//                 setChildCharacter, markChildIntakeCompleted
-// Secretary side: subscribeToPatientsAndChildren, getAllPatientsAndChildren,
-//                 getChildByIdNumber, setChildVerification, setChildIdNumber,
-//                 handOverChild
 
 import {
   collection,
@@ -55,9 +42,6 @@ export const CHILD_ID_TYPES = [
 // Parent side
 // ---------------------------------------------------------------------------
 
-// Live list of the children this guardian manages, oldest first.
-// The turns18At filter helps Firestore prove that the query only returns
-// children the guardian is still allowed to read.
 export function subscribeToMyChildren(guardianUid, onData, onError) {
   if (!guardianUid) return () => {}
 
@@ -82,7 +66,6 @@ export function subscribeToMyChildren(guardianUid, onData, onError) {
   )
 }
 
-// One child, live. Calls back with null if it doesn't exist (or isn't readable).
 export function subscribeToChild(childId, onData, onError) {
   if (!childId) return () => {}
 
@@ -94,8 +77,6 @@ export function subscribeToChild(childId, onData, onError) {
   )
 }
 
-// Creates a child profile managed by `guardian` ({ uid, name }). Returns the
-// new child's id.
 export async function addChild({
   guardian,
   firstName,
@@ -155,8 +136,6 @@ export async function addChild({
 const byName = (a, b) =>
   (a.name || '').localeCompare(b.name || '')
 
-// Shapes a child like a registered patient, so existing secretary screens
-// can work with children without knowing about them.
 export function childToPatient(child) {
   const guardian =
     child.guardians?.[child.primaryGuardianId] || {}
@@ -175,16 +154,11 @@ export function childToPatient(child) {
     idNumber: child.idNumber || '',
     idType: child.idType || '',
 
-    // Profile character chosen by the guardian (e.g. '03'); '' = initials.
     profileCharacter: child.profileCharacter || '',
 
     email: '',
     phone: '',
 
-    // True only once a parent has submitted the child's intake form (see
-    // markChildIntakeCompleted). Older profiles have no flag, so they read as
-    // "not completed" until the form is filled in or staff open the record
-    // and find one.
     hasCompletedIntake: !!child.hasCompletedIntake,
 
     verificationStatus:
@@ -198,7 +172,6 @@ export function childToPatient(child) {
   }
 }
 
-// Registered patients and children together, as one sorted list.
 export function subscribeToPatientsAndChildren(callback, onError) {
   let users = []
   let kids = []
@@ -260,7 +233,6 @@ export async function getAllPatientsAndChildren() {
   return [...users, ...kids].sort(byName)
 }
 
-// Used by the booking form's new-patient path.
 export async function getChildByIdNumber(idNumber) {
   const id = (idNumber || '').trim()
 
@@ -288,7 +260,6 @@ export async function getChildByIdNumber(idNumber) {
   }
 }
 
-// status: 'verified' | 'rejected' | 'pending'
 export async function setChildVerification(
   childId,
   status,
@@ -304,16 +275,12 @@ export async function setChildVerification(
   )
 }
 
-// A guardian picks the child's profile character (see CharacterPicker).
 export async function setChildCharacter(childId, character) {
   await updateDoc(doc(db, 'children', childId), {
     profileCharacter: character || '',
   })
 }
 
-// Called after a parent submits their child's intake form, so staff lists can
-// tell the form is in without looking one up per child. Best-effort: the form
-// itself is the source of truth, so callers should not fail if this does.
 export async function markChildIntakeCompleted(childId) {
   await updateDoc(doc(db, 'children', childId), {
     hasCompletedIntake: true,
@@ -321,7 +288,6 @@ export async function markChildIntakeCompleted(childId) {
   })
 }
 
-// Staff can add an ID number before hand-over.
 export async function setChildIdNumber(
   childId,
   idType,
@@ -342,8 +308,6 @@ function coded(code, message) {
   return err
 }
 
-// Runs a list of batch operations in chunks under Firestore's
-// 500-writes-per-batch limit.
 async function commitInChunks(ops, size = 400) {
   for (let i = 0; i < ops.length; i += size) {
     const batch = writeBatch(db)
@@ -356,7 +320,6 @@ async function commitInChunks(ops, size = 400) {
   }
 }
 
-// Hands a child's whole record over to their own adult account.
 export async function handOverChild(child, staffUid) {
   if (!child?.id) {
     throw coded('invalid', 'No child selected.')
@@ -378,7 +341,6 @@ export async function handOverChild(child, staffUid) {
     )
   }
 
-  // Find the patient's own account by ID number.
   const accountSnap = await getDocs(
     query(
       collection(db, 'users'),
@@ -506,8 +468,6 @@ export async function handOverChild(child, staffUid) {
 
   await commitInChunks(ops)
 
-  // Copy chat history first. Delete the old conversation only after
-  // the copy has succeeded.
   const oldConvRef = doc(
     db,
     'conversations',
@@ -602,9 +562,6 @@ export async function handOverChild(child, staffUid) {
     await commitInChunks(cleanup)
   }
 
-  // Carry the child's profile character over to their own account, unless
-  // they have already picked one. Best-effort: by this point the records have
-  // moved, so a failure here must not make the hand-over look like it failed.
   let characterCopied = false
   if (child.profileCharacter && !adult.profileCharacter) {
     try {
@@ -617,7 +574,6 @@ export async function handOverChild(child, staffUid) {
     }
   }
 
-  // Mark the child profile as handed over.
   await updateDoc(
     doc(db, 'children', child.id),
     {

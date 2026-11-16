@@ -1,5 +1,3 @@
-// Patient's own profile: editable name/phone, plus read-only signup info
-// captured at registration.
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { updateUserProfile, getUserById } from '../../firebase/firestore'
@@ -16,8 +14,8 @@ export default function PatientProfile() {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [character, setCharacter] = useState('') // id of the chosen profile character, e.g. '01'
-  const [signupInfo, setSignupInfo] = useState(null) // idNumber/idType
+  const [character, setCharacter] = useState('')
+  const [signupInfo, setSignupInfo] = useState(null)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
   const [pictureMessage, setPictureMessage] = useState('')
@@ -25,10 +23,6 @@ export default function PatientProfile() {
   useEffect(() => {
     if (!currentUser) return
 
-    // currentUser.displayName is only set from this point forward for newly
-    // registered accounts - userName (from the Firestore user doc, via
-    // AuthContext) is the reliable source for everyone, including accounts
-    // created before that fix.
     setName(currentUser.displayName || userName || '') // eslint-disable-line react-hooks/set-state-in-effect -- syncing local form state from the auth user
 
     getUserById(currentUser.uid).then(data => {
@@ -43,8 +37,6 @@ export default function PatientProfile() {
     })
   }, [currentUser, userName])
 
-  // Saves as soon as a picture is picked, so it doesn't depend on the
-  // "Save profile" button (which also validates name/phone).
   async function handlePickCharacter(id) {
     const previous = character
     setCharacter(id)

@@ -2,11 +2,7 @@
 // Security rules tests for the secretary side of the family feature:
 // listing and confirming children, booking and messaging for them, refusing a
 // guardian, and the hand-over to an adult account at 18.
-//
-//   npm run test:rules
-//
-// Own project id, so it can run in parallel with the other rules test files.
-// The writes copy what src/firebase/family.js sends (handOverChild etc).
+
 import { readFileSync } from 'node:fs'
 import {
   initializeTestEnvironment,
@@ -32,7 +28,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const YEAR = 365 * DAY
-const ID = '0101015009087' // the adult's ID number (rules never validate it)
+const ID = '0101015009087'
 let testEnv
 
 const at = (ms) => Timestamp.fromMillis(Date.now() + ms)
@@ -72,7 +68,7 @@ async function seed() {
     await setDoc(doc(db, 'secretaryDirectory/sec1'), { uid: 'sec1' })
 
     // The young adult's own account (patient), and a staff member who shares
-    // an ID number with a patient account (allowed by the sign-up rules).
+    // an ID number with a patient account
     await setDoc(doc(db, 'users/adult1'), {
       uid: 'adult1', name: 'Alex Adult', email: 'adult1@test.com', role: 'patient', idNumber: ID, idType: 'sa_id',
     })
@@ -135,7 +131,7 @@ beforeEach(async () => {
   await seed()
 })
 
-// ---------------------------------------------------------------------------
+
 describe('the secretary can see and confirm children', () => {
   it('lists every child (the patient directory query)', async () => {
     await assertSucceeds(getDocs(collection(secretary(), 'children')))
@@ -203,8 +199,7 @@ describe('a guardian the practice refuses', () => {
   it('can still read the child profile, so the app can explain what happened', async () => {
     await assertSucceeds(getDoc(doc(db(), 'children/kidRejected')))
   })
-  // Expected to FAIL until the isGuardianOf patch is applied (see FAMILY_SETUP.md):
-  // today a refused guardian keeps access to everything except clinical records.
+
   it('loses access to appointments', async () => {
     await assertFails(getDoc(doc(db(), 'appointments/apptRejected')))
     await assertFails(getDocs(query(collection(db(), 'appointments'), where('patientId', '==', 'kidRejected'))))

@@ -1,8 +1,3 @@
-// Has this child's intake form been submitted? One lookup per child.
-//   intake   the form, or null when there isn't one (or it couldn't be read)
-//   loading  still checking
-//   error    the lookup failed, so "no form" can't be trusted. Callers should
-//            not nag the parent to fill it in when this is true.
 import { useEffect, useState } from 'react'
 import { getIntakeForm } from '../firebase/firestore'
 

@@ -1,7 +1,3 @@
-// /patient/family/:childId/calendar
-// Loads and checks the child, then shows the existing booking calendar with
-// that child as the patient. The calendar itself is unchanged for everyone
-// else: it only switches behaviour when it is handed a `forChild`.
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ShieldAlert } from 'lucide-react'
@@ -16,7 +12,7 @@ export default function ChildCalendar() {
   const { childId } = useParams()
   const { currentUser } = useAuth()
   const navigate = useNavigate()
-  const [child, setChild] = useState(undefined) // undefined = loading, null = unavailable
+  const [child, setChild] = useState(undefined)
 
   useEffect(() => {
     const unsub = subscribeToChild(childId, setChild, (err) => {

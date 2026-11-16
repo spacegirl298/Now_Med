@@ -1,4 +1,3 @@
-// Shared validation helpers.
 
 export function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
@@ -13,7 +12,7 @@ export function isValidName(name) {
 }
 
 export function isValidPhone(phone) {
-  if (!phone) return true; // optional field
+  if (!phone) return true;
   return /^[0-9+\s()-]{7,15}$/.test(phone);
 }
 
@@ -24,18 +23,11 @@ export function isValidInternationalPhone(phone) {
   return digits.length >= 7 && digits.length <= 15;
 }
 
-// Digits only (with optional spaces/dashes, since some schemes print numbers
-// like "1234 5678" or "1234-5678"). Used for fields like medical aid number
-// that should be numeric but aren't phone numbers, so don't need +()  etc.
 export function isValidMedicalAidNumber(value) {
-  if (!value) return true; // optional field
+  if (!value) return true;
   return /^[0-9\s-]{4,20}$/.test(value);
 }
 
-// Generic "digits only" check for any free-text box that should only ever
-// contain numbers. Empty is treated as valid so it composes with
-// "optional field" patterns elsewhere - pair with isNotEmpty if a field is
-// also required.
 export function isNumeric(value) {
   if (value === "" || value === null || value === undefined) return true;
   return /^[0-9]+$/.test(String(value));
@@ -45,9 +37,6 @@ export function isNotEmpty(value) {
   return String(value || "").trim().length > 0;
 }
 
-// Options for the gender dropdown, shown on the secretary's patient overview
-// edit form (PatientRecordModal.jsx). Kept as { value, label } so the value
-// stored in Firestore is a stable slug even if the label copy changes later.
 export const GENDER_OPTIONS = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
@@ -55,12 +44,8 @@ export const GENDER_OPTIONS = [
   { value: "prefer-not-to-say", label: "Prefer not to say" },
 ];
 
-// Delay durations offered when a secretary marks an appointment as running late
 export const DELAY_OPTIONS = [10, 20, 30, 45];
 
-// Why the doctor/practice ran late. `value` is what gets stored on the
-// appointment (delayReason) and used by the analytics page; `label` is what
-// staff see. Add new reasons at the end so older records keep their meaning.
 export const DELAY_REASONS = [
   { value: "previous_overran", label: "Previous consultation ran over" },
   { value: "emergency", label: "Emergency / urgent case" },
@@ -72,10 +57,6 @@ export const DELAY_REASONS = [
 
 export const APPOINTMENT_TYPES = ["in-person", "virtual"];
 
-// 'booked' = on the calendar but the patient hasn't confirmed yet.
-// 'confirmed' = the practice confirmed attendance with the patient.
-// 'scheduled' is kept only so older records saved before this change still
-// render with a sensible badge - new appointments should use 'booked'.
 export const APPOINTMENT_STATUSES = [
   "booked",
   "confirmed",
@@ -85,7 +66,6 @@ export const APPOINTMENT_STATUSES = [
   "no-show",
 ];
 
-// How a secretary confirmed an appointment with a patient.
 export const CONFIRMATION_METHODS = [
   { value: "whatsapp", label: "WhatsApp" },
   { value: "call", label: "Phone call" },

@@ -1,24 +1,5 @@
-// Google Maps JavaScript API loader + helpers (Location & ETA groundwork).
-//
-// Two different approaches are used here, deliberately:
-//
-// - geocodeAddress() uses the classic <script src="maps/api/js?key=...">
-//   Maps JavaScript API bundle and its Geocoder class. The Geocoding API's
-//   own REST "Web Service" endpoint doesn't send CORS headers - a browser
-//   fetch() to it fails outright, it's meant to be called from a server -
-//   so the JS bundle is the actual supported browser-only path for it.
-//
-// - getDrivingETA() calls the newer Routes API's computeRouteMatrix REST
-//   endpoint directly with fetch(). Unlike the legacy Distance Matrix API
-//   it replaces, Routes API is built to support both server and browser
-//   clients - it does send CORS headers, and Google's own API-key
-//   "HTTP referrer (website)" restriction exists specifically to secure
-//   calls like this one. So no Maps JS bundle / DistanceMatrixService
-//   detour needed for it, and "Distance Matrix API (Legacy)" doesn't need
-//   to be enabled on the project at all - just Routes API.
-//
-// loadGoogleMaps() is memoised so the script tag is only ever injected
-// once, no matter how many components call it.
+// Google Maps loader
+
 let loadPromise = null;
 
 export function loadGoogleMaps() {
@@ -49,7 +30,7 @@ export function loadGoogleMaps() {
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=${callbackName}&loading=async`;
     script.async = true;
     script.onerror = () => {
-      loadPromise = null; // let a later call retry instead of staying broken forever
+      loadPromise = null;
       reject(new Error("Google Maps failed to load."));
     };
     document.head.appendChild(script);
@@ -58,10 +39,6 @@ export function loadGoogleMaps() {
   return loadPromise;
 }
 
-// Turns a free-text practice address into { lat, lng }, so the secretary
-// can type an address once (SecretaryProfile's doctor form) instead of
-// needing to know coordinates. Called on doctor save, not on every page
-// load - the result is stored on the doctor doc, not re-geocoded live.
 export async function geocodeAddress(address) {
   const maps = await loadGoogleMaps();
   const geocoder = new maps.Geocoder();
@@ -88,8 +65,6 @@ export async function geocodeAddress(address) {
   });
 }
 
-// Human-readable formatters - Routes API returns raw seconds/meters, not
-// the pre-formatted "text" fields the legacy Distance Matrix API used to.
 function formatDurationText(totalMinutes) {
   if (totalMinutes < 60) return `${totalMinutes} min`;
   const hrs = Math.floor(totalMinutes / 60);
@@ -102,10 +77,6 @@ function formatDistanceText(meters) {
   return km < 1 ? `${meters} m` : `${km.toFixed(1)} km`;
 }
 
-// Driving time + distance from the patient's current position to the
-// practice, via the Routes API's computeRouteMatrix method. Returns
-// durationMinutes as a plain number (for "leave by" math) alongside
-// human-readable text we format ourselves.
 export async function getDrivingETA({
   originLat,
   originLng,
@@ -126,8 +97,6 @@ export async function getDrivingETA({
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
-        // Only ask for the fields we actually use - Routes API bills/limits
-        // partly by response size, and "*" is discouraged outside debugging.
         "X-Goog-FieldMask":
           "originIndex,destinationIndex,duration,distanceMeters,condition",
       },
@@ -158,9 +127,6 @@ export async function getDrivingETA({
     throw new Error(`Routes API request failed (${response.status}).`);
   }
 
-  // With exactly one origin and one destination this is a one-element
-  // array (still an array - computeRouteMatrix's REST response is always
-  // a list of elements, one per origin/destination pair).
   const elements = await response.json();
   const element = Array.isArray(elements) ? elements[0] : null;
 
@@ -172,7 +138,6 @@ export async function getDrivingETA({
     );
   }
 
-  // duration comes back as a protobuf Duration string like "823s".
   const durationMinutes = Math.round(parseInt(element.duration, 10) / 60);
 
   return {
