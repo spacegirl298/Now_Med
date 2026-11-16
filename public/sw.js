@@ -16,3 +16,26 @@ self.addEventListener('notificationclick', (event) => {
     }),
   )
 })
+
+// PUSH: show a notification when the server sends one and the app is not on screen.
+self.addEventListener('push', (event) => {
+  let payload
+  try {
+    payload = event.data ? event.data.json() : {}
+  } catch {
+    payload = {}
+  }
+  const d = payload.data || payload
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      if (clients.some((c) => c.visibilityState === 'visible')) return
+      return self.registration.showNotification(d.title || 'NowMed', {
+        body: d.body || '',
+        icon: '/favicon.svg',
+        badge: '/favicon.svg',
+        tag: d.tag,
+        data: { url: d.url || '/' },
+      })
+    }),
+  )
+})

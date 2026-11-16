@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNotifications } from './useNotifications'
 import { useAuth } from '../context/AuthContext'
+import { registerPushToken } from '../firebase/push' // PUSH
 
 const supported = () =>
   typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator
@@ -46,6 +47,14 @@ export function useNotificationAlerts() {
       })
       .catch((err) => console.warn('Service worker unavailable:', err))
   }, [])
+
+  // PUSH: once alerts are allowed, register this browser for background pushes.
+  useEffect(() => {
+    if (permission !== 'granted' || !currentUserId || !supported()) return
+    navigator.serviceWorker.ready
+      .then((reg) => registerPushToken(currentUserId, reg))
+      .catch((err) => console.warn('Push registration failed:', err))
+  }, [permission, currentUserId])
 
   useEffect(() => {
     if (typeof navigator === 'undefined') return

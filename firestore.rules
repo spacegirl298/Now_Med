@@ -380,6 +380,11 @@ function isVerifiedGuardianOf(childId) {
 
     // ---------- notifications ----------
 
+    // PUSH: each user can read and write only their own push tokens.
+    match /pushTokens/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
     match /notifications/{notificationId} {
 
       allow read: if isSecretary()
