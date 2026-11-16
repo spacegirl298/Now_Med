@@ -24,14 +24,32 @@ function stripUrls(text) {
 }
 
 export function useNotificationAlerts() {
-  const { notifications, unreadCount } = useNotifications()
+  const { notifications, unreadCount, markNotificationRead } = useNotifications()
   const { userRole, currentUser } = useAuth()
+  const currentUserId = currentUser?.uid
   const [toasts, setToasts] = useState([])
   const [permission, setPermission] = useState(() =>
     supported() ? Notification.permission : 'unsupported',
   )
   const seenIds = useRef(null) // null until the first snapshot has been recorded
+  const dismissedIds = useRef(new Set())
   const registrationRef = useRef(null)
+
+  useEffect(() => {
+    dismissedIds.current = new Set()
+    if (!currentUserId) return
+
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(`nowmedDismissedNotifications:${currentUserId}`) || '[]',
+      )
+      if (Array.isArray(saved)) {
+        dismissedIds.current = new Set(saved.filter((id) => typeof id === 'string'))
+      }
+    } catch (err) {
+      console.warn('Could not load dismissed notifications:', err)
+    }
+  }, [currentUserId])
 
   // Register the service worker once (needed for system notifications).
   useEffect(() => {
@@ -55,9 +73,25 @@ export function useNotificationAlerts() {
     }
   }, [unreadCount])
 
-  const dismissToast = useCallback((id) => {
+  const dismissToast = useCallback((id, markRead = false) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
-  }, [])
+    if (markRead) {
+      dismissedIds.current.add(id)
+      if (currentUserId) {
+        try {
+          localStorage.setItem(
+            `nowmedDismissedNotifications:${currentUserId}`,
+            JSON.stringify([...dismissedIds.current]),
+          )
+        } catch (err) {
+          console.warn('Could not save dismissed notification:', err)
+        }
+      }
+      markNotificationRead(id).catch((err) => {
+        console.error('Could not mark dismissed notification as read:', err)
+      })
+    }
+  }, [currentUserId, markNotificationRead])
 
   // Spot notifications that are new since the last snapshot.
   useEffect(() => {
@@ -68,7 +102,9 @@ export function useNotificationAlerts() {
       seenIds.current = currentIds
       return
     }
-    const fresh = notifications.filter((n) => !seenIds.current.has(n.id) && !n.read)
+    const fresh = notifications.filter(
+      (n) => !seenIds.current.has(n.id) && !n.read && !dismissedIds.current.has(n.id),
+    )
     seenIds.current = currentIds
     if (fresh.length === 0) return
 

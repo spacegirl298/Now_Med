@@ -20,7 +20,7 @@ export default function NotificationToasts({ toasts, onDismiss }) {
           <button
             type="button"
             onClick={() => {
-              onDismiss(t.id)
+              onDismiss(t.id, true)
               navigate(t.url)
             }}
             className="flex items-start gap-3 flex-1 min-w-0 text-left"
@@ -30,7 +30,7 @@ export default function NotificationToasts({ toasts, onDismiss }) {
           </button>
           <button
             type="button"
-            onClick={() => onDismiss(t.id)}
+            onClick={() => onDismiss(t.id, true)}
             aria-label="Dismiss notification"
             className="shrink-0 -m-2 w-10 h-10 flex items-center justify-center text-blush hover:text-white"
           >
