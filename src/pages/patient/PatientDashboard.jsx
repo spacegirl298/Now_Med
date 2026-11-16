@@ -585,6 +585,7 @@ export default function PatientDashboard() {
                         <Avatar
                           name={doctor.name || "Doctor"}
                           character={doctor.profileCharacter}
+                          role="secretary"
                           size={40}
                         />
                         <div className="min-w-0">

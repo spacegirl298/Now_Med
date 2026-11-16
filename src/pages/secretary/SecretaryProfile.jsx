@@ -244,7 +244,7 @@ export default function SecretaryProfile() {
                 title="Change profile character"
                 className="rounded-full focus:outline-none focus:ring-2 focus:ring-rose focus:ring-offset-2"
               >
-                <Avatar name={name || currentUser?.email} character={profileCharacter} size={56} />
+                <Avatar name={name || currentUser?.email} character={profileCharacter} role="secretary" size={56} />
               </button>
               <span className="text-[11px] text-slate">Click to change</span>
             </div>
@@ -310,6 +310,7 @@ export default function SecretaryProfile() {
           hideFooter
         >
           <CharacterPicker
+            role="secretary"
             value={profileCharacter}
             onChange={(character) => {
               setProfileCharacter(character);
@@ -359,7 +360,7 @@ export default function SecretaryProfile() {
                     className="border border-sand rounded-xl p-4"
                   >
                     <div className="flex items-start gap-3">
-                      <Avatar name={doc.name || "Doctor"} character={doc.profileCharacter} size={44} />
+                      <Avatar name={doc.name || "Doctor"} character={doc.profileCharacter} role="secretary" size={44} />
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-ink truncate">
                           {doc.name || "Unnamed doctor"}
@@ -518,7 +519,7 @@ export default function SecretaryProfile() {
               title="Change doctor character"
               className="rounded-full focus:outline-none focus:ring-2 focus:ring-rose focus:ring-offset-2"
             >
-              <Avatar name={doctorForm.name || "Doctor"} character={doctorForm.profileCharacter} size={72} />
+              <Avatar name={doctorForm.name || "Doctor"} character={doctorForm.profileCharacter} role="secretary" size={72} />
             </button>
             <span className="text-[11px] text-slate">Click to change</span>
           </div>
@@ -627,6 +628,7 @@ export default function SecretaryProfile() {
         hideFooter
       >
         <CharacterPicker
+          role="secretary"
           value={doctorForm.profileCharacter}
           onChange={(character) => {
             setDoctorForm({ ...doctorForm, profileCharacter: character });

@@ -6,7 +6,8 @@
 // intakeForms, notifications), so those existing functions work for a child
 // without changes. See FAMILY_SETUP.md for the Firestore rules.
 //
-// Parent side:    subscribeToMyChildren, subscribeToChild, addChild
+// Parent side:    subscribeToMyChildren, subscribeToChild, addChild,
+//                 setChildCharacter
 // Secretary side: subscribeToPatientsAndChildren, getAllPatientsAndChildren,
 //                 getChildByIdNumber, setChildVerification, setChildIdNumber,
 //                 handOverChild
@@ -174,6 +175,9 @@ export function childToPatient(child) {
     idNumber: child.idNumber || '',
     idType: child.idType || '',
 
+    // Profile character chosen by the guardian (e.g. '03'); '' = initials.
+    profileCharacter: child.profileCharacter || '',
+
     email: '',
     phone: '',
 
@@ -294,6 +298,13 @@ export async function setChildVerification(
       reviewedAt: serverTimestamp(),
     },
   )
+}
+
+// A guardian picks the child's profile character (see CharacterPicker).
+export async function setChildCharacter(childId, character) {
+  await updateDoc(doc(db, 'children', childId), {
+    profileCharacter: character || '',
+  })
 }
 
 // Staff can add an ID number before hand-over.
@@ -577,6 +588,21 @@ export async function handOverChild(child, staffUid) {
     await commitInChunks(cleanup)
   }
 
+  // Carry the child's profile character over to their own account, unless
+  // they have already picked one. Best-effort: by this point the records have
+  // moved, so a failure here must not make the hand-over look like it failed.
+  let characterCopied = false
+  if (child.profileCharacter && !adult.profileCharacter) {
+    try {
+      await updateDoc(doc(db, 'users', adult.id), {
+        profileCharacter: child.profileCharacter,
+      })
+      characterCopied = true
+    } catch (err) {
+      console.error('Could not copy profile character to adult account:', err)
+    }
+  }
+
   // Mark the child profile as handed over.
   await updateDoc(
     doc(db, 'children', child.id),
@@ -591,6 +617,7 @@ export async function handOverChild(child, staffUid) {
   return {
     adultId: adult.id,
     adultName: adult.name || '',
+    characterCopied,
     moved,
   }
 }

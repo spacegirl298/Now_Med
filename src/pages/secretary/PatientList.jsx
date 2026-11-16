@@ -130,7 +130,7 @@ export default function PatientList() {
                 }}
                 className="w-full flex items-center gap-3 bg-white rounded-xl p-4 text-left hover:bg-mist transition-colors"
               >
-                <Avatar name={patient.name} size={42} />
+                <Avatar name={patient.name} character={patient.profileCharacter} size={42} />
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-ink truncate">
                     {patient.name || 'Unnamed patient'}

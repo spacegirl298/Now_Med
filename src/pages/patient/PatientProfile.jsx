@@ -7,6 +7,7 @@ import PatientLayout from './PatientLayout'
 import BackButton from '../../components/BackButton'
 import Card from '../../components/Card'
 import Avatar from '../../components/Avatar'
+import CharacterPicker from '../../components/CharacterPicker'
 import Button from '../../components/Button'
 import { isValidName, isValidPhone } from '../../utils/validators'
 
@@ -15,9 +16,11 @@ export default function PatientProfile() {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [character, setCharacter] = useState('') // id of the chosen profile character, e.g. '01'
   const [signupInfo, setSignupInfo] = useState(null) // idNumber/idType
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
+  const [pictureMessage, setPictureMessage] = useState('')
 
   useEffect(() => {
     if (!currentUser) return
@@ -31,6 +34,7 @@ export default function PatientProfile() {
     getUserById(currentUser.uid).then(data => {
       if (!data) return
       setPhone(data.phone || '')
+      setCharacter(data.profileCharacter || '')
       setSignupInfo({
         idNumber: data.idNumber || '',
         idType: data.idType || '',
@@ -38,6 +42,22 @@ export default function PatientProfile() {
       })
     })
   }, [currentUser, userName])
+
+  // Saves as soon as a picture is picked, so it doesn't depend on the
+  // "Save profile" button (which also validates name/phone).
+  async function handlePickCharacter(id) {
+    const previous = character
+    setCharacter(id)
+    setPictureMessage('')
+    try {
+      await updateUserProfile(currentUser.uid, { profileCharacter: id })
+      setPictureMessage('Profile picture updated.')
+    } catch (err) {
+      console.error('Could not save profile picture:', err)
+      setCharacter(previous)
+      setPictureMessage(`Could not save your picture (${err.code || err.message}).`)
+    }
+  }
 
   async function handleSaveProfile() {
     setProfileMessage('')
@@ -62,7 +82,7 @@ export default function PatientProfile() {
 
         <Card>
           <div className="flex items-center gap-4 mb-5">
-            <Avatar name={name || currentUser?.email} size={56} />
+            <Avatar name={name || currentUser?.email} character={character} size={56} />
             <div className="min-w-0">
               <p className="font-medium text-ink break-words">{name || 'Patient'}</p>
               <p className="text-sm text-slate break-all">{currentUser?.email}</p>
@@ -86,6 +106,11 @@ export default function PatientProfile() {
           )}
 
           <div className="flex flex-col gap-4">
+            <div>
+              <p className="text-xs text-slate mb-2">Profile picture</p>
+              <CharacterPicker value={character} onChange={handlePickCharacter} />
+              {pictureMessage && <p className="text-sm text-slate mt-2">{pictureMessage}</p>}
+            </div>
             <div>
               <label className="text-xs text-slate mb-1 block">Full name</label>
               <input

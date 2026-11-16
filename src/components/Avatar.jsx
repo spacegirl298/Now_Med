@@ -1,7 +1,9 @@
 import { getCharacterUrl } from './characterAssets'
 
-// Shows a profile photo if one exists, otherwise falls back to initials on a rose circle.
-export default function Avatar({ name = '', photoUrl = null, character = '', size = 40 }) {
+// Shows a profile photo if one exists, otherwise the chosen character, otherwise
+// initials on a rose circle. role picks the character set: 'patient' (default)
+// or 'secretary' (use it for secretaries and doctors).
+export default function Avatar({ name = '', photoUrl = null, character = '', role = 'patient', size = 40 }) {
   const initials = name
     .trim()
     .split(/\s+/)
@@ -11,7 +13,7 @@ export default function Avatar({ name = '', photoUrl = null, character = '', siz
 
   const style = { width: size, height: size, fontSize: size * 0.4 }
 
-  const characterUrl = getCharacterUrl(character)
+  const characterUrl = getCharacterUrl(character, role)
 
   if (photoUrl || characterUrl) {
     return (
@@ -19,7 +21,7 @@ export default function Avatar({ name = '', photoUrl = null, character = '', siz
         src={photoUrl || characterUrl}
         alt={name}
         style={style}
-        className="rounded-full object-cover"
+        className="rounded-full object-cover shrink-0"
       />
     )
   }

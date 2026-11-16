@@ -10,13 +10,15 @@ import { CalendarPlus, ChevronLeft, FileText, ShieldAlert } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import PatientLayout from './PatientLayout'
 import Avatar from '../../components/Avatar'
+import Button from '../../components/Button'
+import CharacterPicker from '../../components/CharacterPicker'
 import Badge from '../../components/Badge'
 import Card from '../../components/Card'
 import EmptyState from '../../components/EmptyState'
 import JoinLink from '../../components/JoinLink'
 import ChatThread from '../../components/ChatThread'
 import TransitionCard from '../../components/family/TransitionCard'
-import { subscribeToChild, RELATIONSHIPS } from '../../firebase/family'
+import { subscribeToChild, setChildCharacter, RELATIONSHIPS } from '../../firebase/family'
 import {
   subscribeToPatientAppointments,
   subscribeToPatientRecords,
@@ -273,7 +275,41 @@ function ChildRecords({ child }) {
 
 // ---------- About ----------
 
-function ChildAbout({ child }) {
+function ChildCharacterCard({ child, character, onCharacterChange }) {
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function handleSave() {
+    setMessage('')
+    setSaving(true)
+    try {
+      await setChildCharacter(child.id, character)
+      setMessage('Profile picture updated.')
+    } catch (err) {
+      console.error('Could not save child character:', err)
+      setMessage(`Could not save the picture (${err.code || err.message}).`)
+    }
+    setSaving(false)
+  }
+
+  return (
+    <Card>
+      <h3 className="text-sm font-semibold text-ink mb-3">Profile picture</h3>
+     
+      <CharacterPicker value={character} onChange={onCharacterChange} />
+      {message && <p className="text-sm text-slate mt-3">{message}</p>}
+      <Button
+        className="mt-4"
+        onClick={handleSave}
+        disabled={saving || character === (child.profileCharacter || '')}
+      >
+        {saving ? 'Saving...' : 'Save picture'}
+      </Button>
+    </Card>
+  )
+}
+
+function ChildAbout({ child, character, onCharacterChange }) {
   const { currentUser } = useAuth()
   const myRelationship = child.guardians?.[currentUser?.uid]?.relationship
   const relationshipLabel = RELATIONSHIPS.find((r) => r.value === myRelationship)?.label || '-'
@@ -292,6 +328,12 @@ function ChildAbout({ child }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <ChildCharacterCard
+        child={child}
+        character={character}
+        onCharacterChange={onCharacterChange}
+      />
+
       <Card>
         <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-sm">
           {facts.map(([label, value]) => (
@@ -325,6 +367,7 @@ export default function PatientChild() {
   const navigate = useNavigate()
   const [child, setChild] = useState(undefined) // undefined = loading, null = unavailable
   const [tab, setTab] = useState('appointments')
+  const [characterDraft, setCharacterDraft] = useState(null)
 
   useEffect(() => {
     const unsub = subscribeToChild(
@@ -339,6 +382,11 @@ export default function PatientChild() {
   }, [childId])
 
   const allowed = child && child.guardianIds?.includes(currentUser?.uid) && isManageable(child)
+  const profileCharacter = child
+    ? characterDraft?.childId === child.id
+      ? characterDraft.value
+      : child.profileCharacter || ''
+    : ''
 
   return (
     <PatientLayout>
@@ -369,7 +417,7 @@ export default function PatientChild() {
           <>
             <div className="flex items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-3 min-w-0">
-                <Avatar name={child.name} size={56} />
+                <Avatar name={child.name} character={profileCharacter} size={56} />
                 <div className="min-w-0">
                   <h1 className="text-2xl font-semibold text-ink truncate">{child.name}</h1>
                   <p className="text-sm text-slate">{formatAge(child.dateOfBirth)} old</p>
@@ -402,7 +450,13 @@ export default function PatientChild() {
             {tab === 'appointments' && <ChildAppointments child={child} />}
             {tab === 'messages' && <ChildMessages child={child} />}
             {tab === 'records' && <ChildRecords child={child} />}
-            {tab === 'about' && <ChildAbout child={child} />}
+            {tab === 'about' && (
+              <ChildAbout
+                child={child}
+                character={profileCharacter}
+                onCharacterChange={(value) => setCharacterDraft({ childId: child.id, value })}
+              />
+            )}
           </>
         )}
       </div>

@@ -1,7 +1,18 @@
-import { characters } from './characterAssets'
+import { getCharacters } from './characterAssets'
 
-export default function CharacterPicker({ value, onChange }) {
-  if (characters.length === 0) return null
+// role picks the image set: 'patient' (Patient_Pfp_*) or 'secretary' (Secretary_Pfp_*).
+export default function CharacterPicker({ value, onChange, role = 'patient' }) {
+  const characters = getCharacters(role)
+  // Don't fail silently: tell whoever is building the app which files are expected.
+  if (characters.length === 0) {
+    const prefix = role === 'secretary' ? 'Secretary' : 'Patient'
+    const extension = role === 'secretary' ? 'png' : 'PNG'
+    return (
+      <p className="text-sm text-slate">
+        No pictures found. Add images named {prefix}_Pfp_01.{extension}, {prefix}_Pfp_02.{extension}, ... to src/assets.
+      </p>
+    )
+  }
 
   return (
     <fieldset>

@@ -161,7 +161,7 @@ export default function SecretaryDashboard() {
                   }
                   className="flex items-center gap-3 py-3 text-left hover:bg-mist rounded-lg px-2 -mx-2"
                 >
-                  <Avatar name={p.name} size={36} />
+                  <Avatar name={p.name} character={p.profileCharacter} size={36} />
                   <div>
                     <p className="text-sm font-medium text-ink">{p.name}</p>
                     <p className="text-xs text-slate">
