@@ -3,11 +3,19 @@
 // history doesn't turn into one giant scroll. Every section here is editable
 // by the secretary - clinical data entered from paper forms or after a
 // consultation, not just viewed.
-import { useEffect, useMemo, useState } from 'react'
-import { X, Plus, Trash2, ClipboardList, Bell, MessageSquare, Check } from 'lucide-react'
-import { Timestamp } from 'firebase/firestore'
-import { useAuth } from '../../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from "react";
+import {
+  X,
+  Plus,
+  Trash2,
+  ClipboardList,
+  Bell,
+  MessageSquare,
+  Check,
+} from "lucide-react";
+import { Timestamp } from "firebase/firestore";
+import { useAuth } from "../../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 import {
   getPatientProfile,
   getPatientProfileByIdNumber,
@@ -22,63 +30,94 @@ import {
   sendIntakeReminder,
   subscribeToPatientChangeRequests,
   resolveChangeRequest,
-} from '../../firebase/firestore'
-import { formatShortDate, formatDisplayDate, formatDate, getTodayString } from '../../utils/dateHelpers'
-import { GENDER_OPTIONS, isValidPhone, isValidMedicalAidNumber } from '../../utils/validators'
-import { CHILD_FORM_TYPE, intakeToProfileUpdates } from '../../utils/intakeQuestions'
-import IntakeSummary from '../../components/IntakeSummary'
-import IntakeWizard from '../../components/IntakeWizard'
-import ChildBanner from '../../components/family/ChildBanner'
-import ChildHealthCard from '../../components/family/ChildHealthCard'
-import { formatAge } from '../../utils/childAge'
-import { markChildIntakeCompleted, RELATIONSHIPS } from '../../firebase/family'
+} from "../../firebase/firestore";
+import {
+  formatShortDate,
+  formatDisplayDate,
+  formatDate,
+  getTodayString,
+} from "../../utils/dateHelpers";
+import {
+  GENDER_OPTIONS,
+  isValidPhone,
+  isValidMedicalAidNumber,
+} from "../../utils/validators";
+import {
+  CHILD_FORM_TYPE,
+  intakeToProfileUpdates,
+} from "../../utils/intakeQuestions";
+import IntakeSummary from "../../components/IntakeSummary";
+import IntakeWizard from "../../components/IntakeWizard";
+import ChildBanner from "../../components/family/ChildBanner";
+import ChildHealthCard from "../../components/family/ChildHealthCard";
+import { formatAge } from "../../utils/childAge";
+import { markChildIntakeCompleted, RELATIONSHIPS } from "../../firebase/family";
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'history', label: 'Medical History' },
-  { id: 'allergies', label: 'Allergies' },
-  { id: 'medications', label: 'Medications' },
-  { id: 'consultations', label: 'Consultations' },
-  { id: 'requests', label: 'Change requests' },
-]
+  { id: "overview", label: "Overview" },
+  { id: "history", label: "Medical History" },
+  { id: "allergies", label: "Allergies" },
+  { id: "medications", label: "Medications" },
+  { id: "consultations", label: "Consultations" },
+  { id: "requests", label: "Change requests" },
+];
 // Only shown once we know there's actually an intake form to review - see
 // how `tabs` is built below. Mirrors the "Intake form" tab on the
 // patient's own PatientRecords.jsx page.
-const INTAKE_TAB = { id: 'intake', label: 'Intake form' }
+const INTAKE_TAB = { id: "intake", label: "Intake form" };
 
-const CHRONIC_CONDITIONS = ['Diabetes', 'Hypertension', 'Asthma', 'Heart Disease', 'Epilepsy', 'Mental Health Conditions']
-const FAMILY_HISTORY_OPTIONS = ['Diabetes', 'Cancer', 'Stroke', 'Heart Disease', 'High Blood Pressure', 'Mental Illness']
-const ALLERGY_TYPES = ['Medication', 'Food', 'Environmental']
-const SEVERITIES = ['Mild', 'Moderate', 'Severe']
-const SEVERITY_BADGE = { Mild: 'bg-pastel-blue text-blue', Moderate: 'bg-pastel-amber text-amber', Severe: 'bg-pastel-red text-red' }
+const CHRONIC_CONDITIONS = [
+  "Diabetes",
+  "Hypertension",
+  "Asthma",
+  "Heart Disease",
+  "Epilepsy",
+  "Mental Health Conditions",
+];
+const FAMILY_HISTORY_OPTIONS = [
+  "Diabetes",
+  "Cancer",
+  "Stroke",
+  "Heart Disease",
+  "High Blood Pressure",
+  "Mental Illness",
+];
+const ALLERGY_TYPES = ["Medication", "Food", "Environmental"];
+const SEVERITIES = ["Mild", "Moderate", "Severe"];
+const SEVERITY_BADGE = {
+  Mild: "bg-pastel-blue text-blue",
+  Moderate: "bg-pastel-amber text-amber",
+  Severe: "bg-pastel-red text-red",
+};
 
 // Same conversion PatientRecords.jsx uses for its own "submitted on" line,
 // kept local here since this file doesn't otherwise need a Firestore
 // Timestamp -> display-date helper.
 function tsToDisplay(ts) {
-  const d = ts?.toDate ? ts.toDate() : null
-  return d ? formatShortDate(formatDate(d)) : ''
+  const d = ts?.toDate ? ts.toDate() : null;
+  return d ? formatShortDate(formatDate(d)) : "";
 }
 
 function calculateAge(dob) {
-  if (!dob) return null
-  const birth = new Date(dob)
-  if (isNaN(birth.getTime())) return null
-  const diffMs = Date.now() - birth.getTime()
-  const age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365.25))
-  return age >= 0 ? age : null
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return null;
+  const diffMs = Date.now() - birth.getTime();
+  const age = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365.25));
+  return age >= 0 ? age : null;
 }
 
 function calculateBmi(heightCm, weightKg) {
-  const h = parseFloat(heightCm)
-  const w = parseFloat(weightKg)
-  if (!h || !w) return ''
-  const m = h / 100
-  return (w / (m * m)).toFixed(1)
+  const h = parseFloat(heightCm);
+  const w = parseFloat(weightKg);
+  if (!h || !w) return "";
+  const m = h / 100;
+  return (w / (m * m)).toFixed(1);
 }
 
-const inputClasses = 'w-full border border-stone rounded-lg px-3 py-2 text-base md:text-sm text-ink bg-white focus:border-rose focus:outline-none'
-const labelClasses = 'text-xs text-slate mb-1 block'
+const inputClasses =
+  "w-full border border-stone rounded-lg px-3 py-2 text-base md:text-sm text-ink bg-white focus:border-rose focus:outline-none";
+const labelClasses = "text-xs text-slate mb-1 block";
 
 function Field({ label, children }) {
   return (
@@ -86,7 +125,7 @@ function Field({ label, children }) {
       <label className={labelClasses}>{label}</label>
       {children}
     </div>
-  )
+  );
 }
 
 function SectionCard({ title, action, children }) {
@@ -98,96 +137,108 @@ function SectionCard({ title, action, children }) {
       </div>
       {children}
     </div>
-  )
+  );
 }
 
-export default function PatientRecordModal({ patient, appointments = [], initialTab = 'overview', autoOpenAddForm = false, onClose }) {
-  const { currentUser } = useAuth()
-  const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState(initialTab)
+export default function PatientRecordModal({
+  patient,
+  appointments = [],
+  initialTab = "overview",
+  autoOpenAddForm = false,
+  onClose,
+}) {
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState(initialTab);
 
-  const [profile, setProfile] = useState(null)
-  const [loadingProfile, setLoadingProfile] = useState(true)
-  const [records, setRecords] = useState([])
-  const [loadingRecords, setLoadingRecords] = useState(true)
-  const [intake, setIntake] = useState(null)
-  const [loadingIntake, setLoadingIntake] = useState(true)
-  const [importingIntake, setImportingIntake] = useState(false)
-  const [importError, setImportError] = useState('')
-  const [requests, setRequests] = useState([])
-  const [resolvingRequestId, setResolvingRequestId] = useState(null)
-  const [requestError, setRequestError] = useState('')
+  const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [records, setRecords] = useState([]);
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  const [intake, setIntake] = useState(null);
+  const [loadingIntake, setLoadingIntake] = useState(true);
+  const [importingIntake, setImportingIntake] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [requests, setRequests] = useState([]);
+  const [resolvingRequestId, setResolvingRequestId] = useState(null);
+  const [requestError, setRequestError] = useState("");
 
-  const [editingOverview, setEditingOverview] = useState(false)
-  const [overviewForm, setOverviewForm] = useState({})
-  const [showConsultForm, setShowConsultForm] = useState(autoOpenAddForm)
-  const [savingConsult, setSavingConsult] = useState(false)
-  const [consultError, setConsultError] = useState('')
-  const [capturingPaperIntake, setCapturingPaperIntake] = useState(false)
+  const [editingOverview, setEditingOverview] = useState(false);
+  const [overviewForm, setOverviewForm] = useState({});
+  const [showConsultForm, setShowConsultForm] = useState(autoOpenAddForm);
+  const [savingConsult, setSavingConsult] = useState(false);
+  const [consultError, setConsultError] = useState("");
+  const [capturingPaperIntake, setCapturingPaperIntake] = useState(false);
 
-  const patientKey = patient?.id || patient?.idNumber
+  const patientKey = patient?.id || patient?.idNumber;
 
   useEffect(() => {
-    if (!patient) return
-    setLoadingProfile(true) // eslint-disable-line react-hooks/set-state-in-effect -- reset async loading state for the selected patient
-    const profilePromise = patient.id ? getPatientProfile(patient.id) : getPatientProfileByIdNumber(patient.idNumber)
+    if (!patient) return;
+    setLoadingProfile(true); // eslint-disable-line react-hooks/set-state-in-effect -- reset async loading state for the selected patient
+    const profilePromise = patient.id
+      ? getPatientProfile(patient.id)
+      : getPatientProfileByIdNumber(patient.idNumber);
     profilePromise
       .then((p) => {
-        setProfile(p)
-        setOverviewForm(p || {})
+        setProfile(p);
+        setOverviewForm(p || {});
       })
       .catch(() => setProfile(null))
-      .finally(() => setLoadingProfile(false))
+      .finally(() => setLoadingProfile(false));
 
-    setLoadingRecords(true)
-    const recordsPromise = patient.id ? getPatientRecords(patient.id) : getRecordsByIdNumber(patient.idNumber)
+    setLoadingRecords(true);
+    const recordsPromise = patient.id
+      ? getPatientRecords(patient.id)
+      : getRecordsByIdNumber(patient.idNumber);
     recordsPromise
       .then(setRecords)
       .catch(() => setRecords([]))
-      .finally(() => setLoadingRecords(false))
+      .finally(() => setLoadingRecords(false));
 
-    setLoadingIntake(true)
+    setLoadingIntake(true);
     const intakePromise = patient.id
       ? getIntakeFormForPatient(patient.id, patient.idNumber)
-      : getIntakeFormByIdNumber(patient.idNumber)
+      : getIntakeFormByIdNumber(patient.idNumber);
     intakePromise
       .then(setIntake)
       .catch(() => setIntake(null))
-      .finally(() => setLoadingIntake(false))
+      .finally(() => setLoadingIntake(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientKey])
+  }, [patientKey]);
 
   useEffect(() => {
     if (!patient?.id) {
-      return
+      return;
     }
-    return subscribeToPatientChangeRequests(patient.id, setRequests, (err) => console.error(err))
-  }, [patientKey, patient?.id])
+    return subscribeToPatientChangeRequests(patient.id, setRequests, (err) =>
+      console.error(err),
+    );
+  }, [patientKey, patient?.id]);
 
   async function handleResolveRequest(request, status) {
-    setResolvingRequestId(request.id)
-    setRequestError('')
+    setResolvingRequestId(request.id);
+    setRequestError("");
     try {
       await resolveChangeRequest({
         request,
         status,
         resolvedBy: currentUser?.uid || null,
-      })
+      });
     } catch (err) {
-      console.error(err)
-      setRequestError('Could not update this request. Please try again.')
+      console.error(err);
+      setRequestError("Could not update this request. Please try again.");
     }
-    setResolvingRequestId(null)
+    setResolvingRequestId(null);
   }
 
   async function persistProfile(updates) {
     const id = await savePatientProfile({
       profileId: profile?.id || null,
       patientId: patient.id || null,
-      patientIdNumber: patient.idNumber || '',
+      patientIdNumber: patient.idNumber || "",
       ...updates,
-    })
-    setProfile((prev) => ({ id, ...(prev || {}), ...updates }))
+    });
+    setProfile((prev) => ({ id, ...(prev || {}), ...updates }));
   }
 
   // What the intake answers would add to the verified profile right now -
@@ -198,140 +249,162 @@ export default function PatientRecordModal({ patient, appointments = [], initial
   const pendingImportUpdates = useMemo(
     () => (intake ? intakeToProfileUpdates(intake.answers, profile || {}) : {}),
     [intake, profile],
-  )
+  );
 
   async function handleImportIntake() {
-    if (!intake) return
-    setImportingIntake(true)
-    setImportError('')
+    if (!intake) return;
+    setImportingIntake(true);
+    setImportError("");
     try {
       if (Object.keys(pendingImportUpdates).length > 0) {
-        await persistProfile(pendingImportUpdates)
+        await persistProfile(pendingImportUpdates);
       }
-      await markIntakeImported(intake.id, currentUser?.uid || null)
+      await markIntakeImported(intake.id, currentUser?.uid || null);
       // Optimistic local update rather than a refetch, same pattern as
       // persistProfile above - importedAt just needs to look like a
       // Firestore Timestamp for tsToDisplay() to render it.
       setIntake((prev) =>
-        prev ? { ...prev, importedAt: { toDate: () => new Date() }, importedBy: currentUser?.uid || null } : prev,
-      )
+        prev
+          ? {
+              ...prev,
+              importedAt: { toDate: () => new Date() },
+              importedBy: currentUser?.uid || null,
+            }
+          : prev,
+      );
     } catch (err) {
-      console.error(err)
-      setImportError('Could not import this into the profile. Please try again.')
+      console.error(err);
+      setImportError(
+        "Could not import this into the profile. Please try again.",
+      );
     }
-    setImportingIntake(false)
+    setImportingIntake(false);
   }
 
   async function handleCapturePaperIntake(answers) {
     const existing = patient.id
       ? await getIntakeFormForPatient(patient.id, patient.idNumber)
-      : await getIntakeFormByIdNumber(patient.idNumber)
+      : await getIntakeFormByIdNumber(patient.idNumber);
     if (existing) {
-      setIntake(existing)
-      setCapturingPaperIntake(false)
-      setActiveTab('intake')
-      return
+      setIntake(existing);
+      setCapturingPaperIntake(false);
+      setActiveTab("intake");
+      return;
     }
 
     const formId = await saveIntakeForm({
       patientId: patient.id || null,
-      patientIdNumber: patient.idNumber || '',
+      patientIdNumber: patient.idNumber || "",
       answers,
-      submittedBy: 'secretary',
-      captureMethod: 'paper',
+      submittedBy: "secretary",
+      captureMethod: "paper",
       capturedBy: currentUser?.uid || null,
-    })
+    });
     setIntake({
       id: formId,
       patientId: patient.id || null,
-      patientIdNumber: patient.idNumber || '',
+      patientIdNumber: patient.idNumber || "",
       answers,
-      submittedBy: 'secretary',
-      captureMethod: 'paper',
+      submittedBy: "secretary",
+      captureMethod: "paper",
       capturedBy: currentUser?.uid || null,
       submittedAt: Timestamp.now(),
       importedAt: null,
-    })
+    });
     if (patient.isChild && patient.id) {
       try {
-        await markChildIntakeCompleted(patient.id)
+        await markChildIntakeCompleted(patient.id);
       } catch (err) {
-        console.error('Paper intake was saved, but the child profile could not be flagged:', err)
+        console.error(
+          "Paper intake was saved, but the child profile could not be flagged:",
+          err,
+        );
       }
     }
-    setCapturingPaperIntake(false)
-    setActiveTab('intake')
+    setCapturingPaperIntake(false);
+    setActiveTab("intake");
   }
 
-  const today = getTodayString()
+  const today = getTodayString();
   // The caller passes every appointment in the practice, so narrow it to this
   // patient (by id, or by ID number for a walk-in with no account yet).
+  const patientId = patient?.id;
+  const patientIdNumber = patient?.idNumber;
+
   const patientAppointments = useMemo(
     () =>
       appointments.filter(
         (a) =>
-          (patient?.id && a.patientId === patient.id) ||
-          (patient?.idNumber && a.patientIdNumber === patient.idNumber),
+          (patientId && a.patientId === patientId) ||
+          (patientIdNumber && a.patientIdNumber === patientIdNumber),
       ),
-    [appointments, patient?.id, patient?.idNumber],
-  )
+    [appointments, patientId, patientIdNumber],
+  );
   const upcoming = useMemo(
     () =>
       patientAppointments
-        .filter((a) => a.date >= today && a.status !== 'cancelled')
+        .filter((a) => a.date >= today && a.status !== "cancelled")
         .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)),
     [patientAppointments, today],
-  )
+  );
   const past = useMemo(
     () =>
       patientAppointments
-        .filter((a) => a.date < today && a.status !== 'cancelled')
+        .filter((a) => a.date < today && a.status !== "cancelled")
         .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)),
     [patientAppointments, today],
-  )
-  const nextAppointment = upcoming[0] || null
-  const lastVisit = past[0] || null
+  );
+  const nextAppointment = upcoming[0] || null;
+  const lastVisit = past[0] || null;
 
   function toggleTag(field, value) {
-    const current = profile?.[field] || []
-    const next = current.includes(value) ? current.filter((c) => c !== value) : [...current, value]
-    persistProfile({ [field]: next })
+    const current = profile?.[field] || [];
+    const next = current.includes(value)
+      ? current.filter((c) => c !== value)
+      : [...current, value];
+    persistProfile({ [field]: next });
   }
 
   const consultations = useMemo(
-    () => records.filter((r) => r.type === 'consultation').sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    () =>
+      records
+        .filter((r) => r.type === "consultation")
+        .sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     [records],
-  )
+  );
   const quickNotes = useMemo(
-    () => records.filter((r) => r.type !== 'consultation').sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    () =>
+      records
+        .filter((r) => r.type !== "consultation")
+        .sort((a, b) => (b.date || "").localeCompare(a.date || "")),
     [records],
-  )
+  );
 
-  if (!patient) return null
+  if (!patient) return null;
 
-  const tabs = intake ? [...TABS, INTAKE_TAB] : TABS
+  const tabs = intake ? [...TABS, INTAKE_TAB] : TABS;
 
   if (capturingPaperIntake) {
     const initialAnswers = {
-      preferredName: patient.name || patient.firstName || '',
+      preferredName: patient.name || patient.firstName || "",
       ...(patient.isChild
         ? {
-            guardianName: patient.guardianName || '',
+            guardianName: patient.guardianName || "",
             guardianRelationship:
-              patient.guardianRelationship === 'legal_guardian'
-                ? 'Legal guardian'
+              patient.guardianRelationship === "legal_guardian"
+                ? "Legal guardian"
                 : patient.guardianRelationship
-                  ? 'Parent'
-                  : '',
+                  ? "Parent"
+                  : "",
           }
         : {}),
-    }
+    };
     const lockedAnswers = patient.isChild
       ? {
           formType: CHILD_FORM_TYPE,
-          dateOfBirth: patient.dateOfBirth || '',
+          dateOfBirth: patient.dateOfBirth || "",
         }
-      : {}
+      : {};
 
     return (
       <div className="fixed inset-0 z-[60] overflow-y-auto bg-sand">
@@ -339,19 +412,19 @@ export default function PatientRecordModal({ patient, appointments = [], initial
           initialAnswers={initialAnswers}
           lockedAnswers={lockedAnswers}
           intro={{
-            eyebrow: 'Paper intake form',
-            title: `Capture ${patient.name || 'patient'}'s intake`,
-            lead: 'Enter the answers from the paper form completed at the practice.',
-            body: 'Transcribe the patient’s answers accurately. Leave optional answers blank if they were not provided.',
-            startLabel: 'Enter paper form',
-            laterLabel: 'Back to patient record',
+            eyebrow: "Paper intake form",
+            title: `Capture ${patient.name || "patient"}'s intake`,
+            lead: "Enter the answers from the paper form completed at the practice.",
+            body: "Transcribe the patient’s answers accurately. Leave optional answers blank if they were not provided.",
+            startLabel: "Enter paper form",
+            laterLabel: "Back to patient record",
           }}
           consentTextOverride="I confirm that I have checked the completed paper form and it records the patient's or guardian's consent to store this information."
           onLater={() => setCapturingPaperIntake(false)}
           onSubmit={handleCapturePaperIntake}
         />
       </div>
-    )
+    );
   }
 
   return (
@@ -359,10 +432,18 @@ export default function PatientRecordModal({ patient, appointments = [], initial
       <div className="bg-white rounded-2xl w-full max-w-4xl shadow-lg max-h-[90vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-sand shrink-0">
           <div>
-            <h2 className="text-lg font-semibold text-ink">{patient.name || 'Unnamed patient'}</h2>
-            <p className="text-xs text-slate">{patient.isChild ? 'Child record' : 'Full patient record'}</p>
+            <h2 className="text-lg font-semibold text-ink">
+              {patient.name || "Unnamed patient"}
+            </h2>
+            <p className="text-xs text-slate">
+              {patient.isChild ? "Child record" : "Full patient record"}
+            </p>
           </div>
-          <button onClick={onClose} className="text-slate hover:text-ink" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="text-slate hover:text-ink"
+            aria-label="Close"
+          >
             <X size={20} />
           </button>
         </div>
@@ -375,7 +456,9 @@ export default function PatientRecordModal({ patient, appointments = [], initial
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                activeTab === tab.id ? 'bg-rose text-white' : 'bg-mist text-slate hover:bg-sand'
+                activeTab === tab.id
+                  ? "bg-rose text-white"
+                  : "bg-mist text-slate hover:bg-sand"
               }`}
             >
               {tab.label}
@@ -385,10 +468,12 @@ export default function PatientRecordModal({ patient, appointments = [], initial
 
         <div className="px-6 py-5 overflow-y-auto grow">
           {loadingProfile ? (
-            <p className="text-sm text-slate text-center py-10">Loading record...</p>
+            <p className="text-sm text-slate text-center py-10">
+              Loading record...
+            </p>
           ) : (
             <>
-              {activeTab === 'overview' && (
+              {activeTab === "overview" && (
                 <OverviewTab
                   patient={patient}
                   profile={profile}
@@ -397,32 +482,35 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                   overviewForm={overviewForm}
                   setOverviewForm={setOverviewForm}
                   onSave={async () => {
-                    await persistProfile(overviewForm)
-                    setEditingOverview(false)
+                    await persistProfile(overviewForm);
+                    setEditingOverview(false);
                   }}
                   nextAppointment={nextAppointment}
                   lastVisit={lastVisit}
                   intake={intake}
                   loadingIntake={loadingIntake}
-                  onReviewIntake={() => setActiveTab('intake')}
+                  onReviewIntake={() => setActiveTab("intake")}
                   onCapturePaperIntake={() => setCapturingPaperIntake(true)}
                 />
               )}
 
-              {activeTab === 'intake' && intake && (
+              {activeTab === "intake" && intake && (
                 <div className="flex flex-col gap-4">
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-xs text-slate">
-                      Submitted{' '}
-                      {intake.submittedBy === 'patient'
-                        ? 'by the patient'
-                        : intake.submittedBy === 'guardian'
-                          ? 'by the parent or guardian'
-                          : 'by the practice'}{' '}
-                      {intake.captureMethod === 'paper' ? 'from the paper form ' : ''}
-                      on{' '}
-                      {tsToDisplay(intake.submittedAt) || '-'}.
-                      {intake.importedAt ? ` Imported into the profile on ${tsToDisplay(intake.importedAt)}.` : ''}
+                      Submitted{" "}
+                      {intake.submittedBy === "patient"
+                        ? "by the patient"
+                        : intake.submittedBy === "guardian"
+                          ? "by the parent or guardian"
+                          : "by the practice"}{" "}
+                      {intake.captureMethod === "paper"
+                        ? "from the paper form "
+                        : ""}
+                      on {tsToDisplay(intake.submittedAt) || "-"}.
+                      {intake.importedAt
+                        ? ` Imported into the profile on ${tsToDisplay(intake.importedAt)}.`
+                        : ""}
                     </p>
                     {!intake.importedAt && (
                       <button
@@ -430,30 +518,43 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                         disabled={importingIntake}
                         className="shrink-0 text-xs font-medium text-rose hover:underline disabled:opacity-60"
                       >
-                        {importingIntake ? 'Importing...' : 'Import into profile'}
+                        {importingIntake
+                          ? "Importing..."
+                          : "Import into profile"}
                       </button>
                     )}
                   </div>
-                  {importError && <p className="text-xs text-red">{importError}</p>}
-                  {!intake.importedAt && Object.keys(pendingImportUpdates).length === 0 && (
-                    <p className="text-xs text-slate">
-                      Nothing new here — it already matches what's on this patient's profile. You can still mark it
-                      as reviewed.
-                    </p>
+                  {importError && (
+                    <p className="text-xs text-red">{importError}</p>
                   )}
+                  {!intake.importedAt &&
+                    Object.keys(pendingImportUpdates).length === 0 && (
+                      <p className="text-xs text-slate">
+                        Nothing new here — it already matches what's on this
+                        patient's profile. You can still mark it as reviewed.
+                      </p>
+                    )}
                   <IntakeSummary answers={intake.answers} />
                 </div>
               )}
 
-              {activeTab === 'history' && (
-                <MedicalHistoryTab profile={profile} onToggleTag={toggleTag} onPersist={persistProfile} />
+              {activeTab === "history" && (
+                <MedicalHistoryTab
+                  profile={profile}
+                  onToggleTag={toggleTag}
+                  onPersist={persistProfile}
+                />
               )}
 
-              {activeTab === 'allergies' && <AllergiesTab profile={profile} onPersist={persistProfile} />}
+              {activeTab === "allergies" && (
+                <AllergiesTab profile={profile} onPersist={persistProfile} />
+              )}
 
-              {activeTab === 'medications' && <MedicationsTab profile={profile} onPersist={persistProfile} />}
+              {activeTab === "medications" && (
+                <MedicationsTab profile={profile} onPersist={persistProfile} />
+              )}
 
-              {activeTab === 'consultations' && (
+              {activeTab === "consultations" && (
                 <ConsultationsTab
                   patient={patient}
                   currentUser={currentUser}
@@ -470,15 +571,17 @@ export default function PatientRecordModal({ patient, appointments = [], initial
                 />
               )}
 
-              {activeTab === 'requests' && (
+              {activeTab === "requests" && (
                 <ChangeRequestsTab
                   requests={requests}
                   resolvingRequestId={resolvingRequestId}
                   requestError={requestError}
                   onResolve={handleResolveRequest}
                   onMessage={() => {
-                    onClose()
-                    navigate('/secretary/messages', { state: { patientId: patient.id } })
+                    onClose();
+                    navigate("/secretary/messages", {
+                      state: { patientId: patient.id },
+                    });
                   }}
                 />
               )}
@@ -487,18 +590,29 @@ export default function PatientRecordModal({ patient, appointments = [], initial
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 // ---------------- Overview ----------------
 
-function ChangeRequestsTab({ requests, resolvingRequestId, requestError, onResolve, onMessage }) {
+function ChangeRequestsTab({
+  requests,
+  resolvingRequestId,
+  requestError,
+  onResolve,
+  onMessage,
+}) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-ink">Requests from this patient</h3>
-          <p className="text-xs text-slate mt-1">Message the patient for clarification, or resolve a request after updating the record.</p>
+          <h3 className="text-sm font-semibold text-ink">
+            Requests from this patient
+          </h3>
+          <p className="text-xs text-slate mt-1">
+            Message the patient for clarification, or resolve a request after
+            updating the record.
+          </p>
         </div>
         <button
           onClick={onMessage}
@@ -511,42 +625,66 @@ function ChangeRequestsTab({ requests, resolvingRequestId, requestError, onResol
       {requestError && <p className="text-xs text-red">{requestError}</p>}
 
       {requests.length === 0 ? (
-        <p className="text-sm text-slate text-center py-8">This patient has not requested any record changes.</p>
+        <p className="text-sm text-slate text-center py-8">
+          This patient has not requested any record changes.
+        </p>
       ) : (
         <div className="flex flex-col gap-3">
           {requests.map((request) => {
-            const pending = request.status === 'pending'
-            const resolving = resolvingRequestId === request.id
+            const pending = request.status === "pending";
+            const resolving = resolvingRequestId === request.id;
             return (
-              <div key={request.id} className="border border-stone rounded-xl p-4">
+              <div
+                key={request.id}
+                className="border border-stone rounded-xl p-4"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-ink">{request.section || 'Details'}</p>
-                    <p className="text-sm text-slate mt-1">{request.requestedChange}</p>
+                    <p className="text-sm font-medium text-ink">
+                      {request.section || "Details"}
+                    </p>
+                    <p className="text-sm text-slate mt-1">
+                      {request.requestedChange}
+                    </p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
-                    pending ? 'bg-pastel-amber text-amber' : request.status === 'completed' ? 'bg-sand text-green' : 'bg-pastel-red text-red'
-                  }`}>
-                    {pending ? 'Pending' : request.status === 'completed' ? 'Updated' : 'Declined'}
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${
+                      pending
+                        ? "bg-pastel-amber text-amber"
+                        : request.status === "completed"
+                          ? "bg-sand text-green"
+                          : "bg-pastel-red text-red"
+                    }`}
+                  >
+                    {pending
+                      ? "Pending"
+                      : request.status === "completed"
+                        ? "Updated"
+                        : "Declined"}
                   </span>
                 </div>
                 {request.currentValue && (
-                  <p className="text-xs text-slate mt-3">Current value: {request.currentValue}</p>
+                  <p className="text-xs text-slate mt-3">
+                    Current value: {request.currentValue}
+                  </p>
                 )}
                 {request.resolutionNote && (
-                  <p className="text-xs text-slate mt-2">Note: {request.resolutionNote}</p>
+                  <p className="text-xs text-slate mt-2">
+                    Note: {request.resolutionNote}
+                  </p>
                 )}
                 {pending && (
                   <div className="flex flex-wrap gap-3 mt-4">
                     <button
-                      onClick={() => onResolve(request, 'completed')}
+                      onClick={() => onResolve(request, "completed")}
                       disabled={resolving}
                       className="flex items-center gap-1.5 text-xs font-medium text-green hover:underline disabled:opacity-60"
                     >
-                      <Check size={14} /> {resolving ? 'Saving...' : 'Mark as updated'}
+                      <Check size={14} />{" "}
+                      {resolving ? "Saving..." : "Mark as updated"}
                     </button>
                     <button
-                      onClick={() => onResolve(request, 'declined')}
+                      onClick={() => onResolve(request, "declined")}
                       disabled={resolving}
                       className="text-xs font-medium text-red hover:underline disabled:opacity-60"
                     >
@@ -555,56 +693,77 @@ function ChangeRequestsTab({ requests, resolvingRequestId, requestError, onResol
                   </div>
                 )}
               </div>
-            )
+            );
           })}
         </div>
       )}
     </div>
-  )
+  );
 }
 
-function OverviewTab({ patient, profile, editingOverview, setEditingOverview, overviewForm, setOverviewForm, onSave, nextAppointment, lastVisit, intake, loadingIntake, onReviewIntake, onCapturePaperIntake }) {
+function OverviewTab({
+  patient,
+  profile,
+  editingOverview,
+  setEditingOverview,
+  overviewForm,
+  setOverviewForm,
+  onSave,
+  nextAppointment,
+  lastVisit,
+  intake,
+  loadingIntake,
+  onReviewIntake,
+  onCapturePaperIntake,
+}) {
   // A child's date of birth lives on their profile document (children/{id}),
   // not on a clinical profile, which is empty until staff import the intake
   // form. Fall back to it so the overview is never blank for a child.
-  const dob = overviewForm.dateOfBirth || profile?.dateOfBirth || patient.dateOfBirth
-  const age = patient.isChild ? (dob ? formatAge(dob) : null) : calculateAge(dob)
-  const answers = intake?.answers || {}
-  const genderValue = profile?.gender || answers.gender
-  const guardianContact = [answers.guardianPhone, answers.guardianEmail].filter(Boolean).join(' · ')
-  const [fieldErrors, setFieldErrors] = useState({})
-  const [saving, setSaving] = useState(false)
+  const dob =
+    overviewForm.dateOfBirth || profile?.dateOfBirth || patient.dateOfBirth;
+  const age = patient.isChild
+    ? dob
+      ? formatAge(dob)
+      : null
+    : calculateAge(dob);
+  const answers = intake?.answers || {};
+  const genderValue = profile?.gender || answers.gender;
+  const guardianContact = [answers.guardianPhone, answers.guardianEmail]
+    .filter(Boolean)
+    .join(" · ");
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [saving, setSaving] = useState(false);
 
   function set(field, value) {
-    setOverviewForm((prev) => ({ ...prev, [field]: value }))
-    setFieldErrors((prev) => ({ ...prev, [field]: undefined }))
+    setOverviewForm((prev) => ({ ...prev, [field]: value }));
+    setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
   }
 
   function validate() {
-    const errors = {}
+    const errors = {};
     if (!isValidPhone(overviewForm.emergencyContactPhone)) {
-      errors.emergencyContactPhone = 'Numbers only, 7–15 digits.'
+      errors.emergencyContactPhone = "Numbers only, 7–15 digits.";
     }
     if (!isValidMedicalAidNumber(overviewForm.medicalAidNumber)) {
-      errors.medicalAidNumber = 'Numbers only.'
+      errors.medicalAidNumber = "Numbers only.";
     }
-    setFieldErrors(errors)
-    return Object.keys(errors).length === 0
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   }
 
   async function handleSave() {
-    if (!validate()) return
-    setSaving(true)
+    if (!validate()) return;
+    setSaving(true);
     try {
-      await onSave()
+      await onSave();
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
   }
 
   function cancel() {
-    setFieldErrors({})
-    setEditingOverview(false)
+    setFieldErrors({});
+    setEditingOverview(false);
   }
 
   return (
@@ -621,16 +780,26 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
         title="Personal information"
         action={
           !editingOverview ? (
-            <button onClick={() => setEditingOverview(true)} className="text-xs font-medium text-rose hover:underline">
+            <button
+              onClick={() => setEditingOverview(true)}
+              className="text-xs font-medium text-rose hover:underline"
+            >
               Edit
             </button>
           ) : (
             <div className="flex gap-3">
-              <button onClick={cancel} className="text-xs font-medium text-slate hover:underline">
+              <button
+                onClick={cancel}
+                className="text-xs font-medium text-slate hover:underline"
+              >
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving} className="text-xs font-medium text-rose hover:underline disabled:opacity-60">
-                {saving ? 'Saving...' : 'Save'}
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="text-xs font-medium text-rose hover:underline disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save"}
               </button>
             </div>
           )
@@ -639,10 +808,27 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
         {!editingOverview ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
             <InfoItem label="Full name" value={patient.name} />
-            <InfoItem label="Date of birth" value={dob ? formatDisplayDate(dob) : '-'} />
-            <InfoItem label="Age" value={age != null ? age : '-'} />
-            <InfoItem label="Gender" value={GENDER_OPTIONS.find((g) => g.value === genderValue)?.label || genderValue || '-'} />
-            <InfoItem label={patient.isChild ? 'ID / birth certificate number' : 'ID/Passport number'} value={patient.idNumber || '-'} />
+            <InfoItem
+              label="Date of birth"
+              value={dob ? formatDisplayDate(dob) : "-"}
+            />
+            <InfoItem label="Age" value={age != null ? age : "-"} />
+            <InfoItem
+              label="Gender"
+              value={
+                GENDER_OPTIONS.find((g) => g.value === genderValue)?.label ||
+                genderValue ||
+                "-"
+              }
+            />
+            <InfoItem
+              label={
+                patient.isChild
+                  ? "ID / birth certificate number"
+                  : "ID/Passport number"
+              }
+              value={patient.idNumber || "-"}
+            />
             {patient.isChild ? (
               <>
                 <InfoItem
@@ -652,62 +838,106 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
                       ? `${patient.guardianName}${
                           patient.guardianRelationship
                             ? ` (${RELATIONSHIPS.find((r) => r.value === patient.guardianRelationship)?.label || patient.guardianRelationship})`
-                            : ''
+                            : ""
                         }`
-                      : '-'
+                      : "-"
                   }
                 />
-                <InfoItem label="Guardian contact" value={guardianContact || '-'} />
-                <InfoItem label="Home address" value={answers.homeAddress || '-'} />
+                <InfoItem
+                  label="Guardian contact"
+                  value={guardianContact || "-"}
+                />
+                <InfoItem
+                  label="Home address"
+                  value={answers.homeAddress || "-"}
+                />
               </>
             ) : (
               <>
-                <InfoItem label="Contact number" value={patient.phone || '-'} />
-                <InfoItem label="Email address" value={patient.email || '-'} />
-                <InfoItem label="Marital status" value={profile?.maritalStatus || '-'} />
-                <InfoItem label="Occupation" value={profile?.occupation || '-'} />
+                <InfoItem label="Contact number" value={patient.phone || "-"} />
+                <InfoItem label="Email address" value={patient.email || "-"} />
+                <InfoItem
+                  label="Marital status"
+                  value={profile?.maritalStatus || "-"}
+                />
+                <InfoItem
+                  label="Occupation"
+                  value={profile?.occupation || "-"}
+                />
               </>
             )}
-            <InfoItem label="Emergency contact" value={profile?.emergencyContactName ? `${profile.emergencyContactName}${profile.emergencyContactPhone ? ' · ' + profile.emergencyContactPhone : ''}` : '-'} />
+            <InfoItem
+              label="Emergency contact"
+              value={
+                profile?.emergencyContactName
+                  ? `${profile.emergencyContactName}${profile.emergencyContactPhone ? " · " + profile.emergencyContactPhone : ""}`
+                  : "-"
+              }
+            />
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {!patient.isChild && (
               <Field label="Date of birth">
-                <input type="date" value={overviewForm.dateOfBirth || ''} onChange={(e) => set('dateOfBirth', e.target.value)} className={inputClasses} />
+                <input
+                  type="date"
+                  value={overviewForm.dateOfBirth || ""}
+                  onChange={(e) => set("dateOfBirth", e.target.value)}
+                  className={inputClasses}
+                />
               </Field>
             )}
             <Field label="Gender">
-              <select value={overviewForm.gender || ''} onChange={(e) => set('gender', e.target.value)} className={inputClasses}>
+              <select
+                value={overviewForm.gender || ""}
+                onChange={(e) => set("gender", e.target.value)}
+                className={inputClasses}
+              >
                 <option value="">Select...</option>
                 {GENDER_OPTIONS.map((g) => (
-                  <option key={g.value} value={g.value}>{g.label}</option>
+                  <option key={g.value} value={g.value}>
+                    {g.label}
+                  </option>
                 ))}
               </select>
             </Field>
             {!patient.isChild && (
               <>
                 <Field label="Marital status">
-                  <input value={overviewForm.maritalStatus || ''} onChange={(e) => set('maritalStatus', e.target.value)} className={inputClasses} />
+                  <input
+                    value={overviewForm.maritalStatus || ""}
+                    onChange={(e) => set("maritalStatus", e.target.value)}
+                    className={inputClasses}
+                  />
                 </Field>
                 <Field label="Occupation">
-                  <input value={overviewForm.occupation || ''} onChange={(e) => set('occupation', e.target.value)} className={inputClasses} />
+                  <input
+                    value={overviewForm.occupation || ""}
+                    onChange={(e) => set("occupation", e.target.value)}
+                    className={inputClasses}
+                  />
                 </Field>
               </>
             )}
             <Field label="Emergency contact name">
-              <input value={overviewForm.emergencyContactName || ''} onChange={(e) => set('emergencyContactName', e.target.value)} className={inputClasses} />
+              <input
+                value={overviewForm.emergencyContactName || ""}
+                onChange={(e) => set("emergencyContactName", e.target.value)}
+                className={inputClasses}
+              />
             </Field>
             <Field label="Emergency contact phone">
               <input
                 type="tel"
                 inputMode="numeric"
-                value={overviewForm.emergencyContactPhone || ''}
-                onChange={(e) => set('emergencyContactPhone', e.target.value)}
-                className={`${inputClasses} ${fieldErrors.emergencyContactPhone ? 'border-red' : ''}`}
+                value={overviewForm.emergencyContactPhone || ""}
+                onChange={(e) => set("emergencyContactPhone", e.target.value)}
+                className={`${inputClasses} ${fieldErrors.emergencyContactPhone ? "border-red" : ""}`}
               />
               {fieldErrors.emergencyContactPhone && (
-                <p className="text-red text-xs mt-1">{fieldErrors.emergencyContactPhone}</p>
+                <p className="text-red text-xs mt-1">
+                  {fieldErrors.emergencyContactPhone}
+                </p>
               )}
             </Field>
           </div>
@@ -717,12 +947,33 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
       <SectionCard title="Quick medical snapshot">
         {!editingOverview ? (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-            <InfoItem label="Blood group" value={profile?.bloodGroup || '-'} />
-            <InfoItem label="Primary doctor" value={profile?.primaryDoctor || '-'} />
-            <InfoItem label="Medical aid" value={profile?.medicalAidProvider ? `${profile.medicalAidProvider}${profile.medicalAidNumber ? ' · ' + profile.medicalAidNumber : ''}` : '-'} />
-            <InfoItem label="Last visit" value={lastVisit ? formatShortDate(lastVisit.date) : '-'} />
-            <InfoItem label="Next appointment" value={nextAppointment ? formatShortDate(nextAppointment.date) : '-'} />
-            <InfoItem label="Chronic conditions" value={(profile?.chronicConditions || []).join(', ') || '-'} />
+            <InfoItem label="Blood group" value={profile?.bloodGroup || "-"} />
+            <InfoItem
+              label="Primary doctor"
+              value={profile?.primaryDoctor || "-"}
+            />
+            <InfoItem
+              label="Medical aid"
+              value={
+                profile?.medicalAidProvider
+                  ? `${profile.medicalAidProvider}${profile.medicalAidNumber ? " · " + profile.medicalAidNumber : ""}`
+                  : "-"
+              }
+            />
+            <InfoItem
+              label="Last visit"
+              value={lastVisit ? formatShortDate(lastVisit.date) : "-"}
+            />
+            <InfoItem
+              label="Next appointment"
+              value={
+                nextAppointment ? formatShortDate(nextAppointment.date) : "-"
+              }
+            />
+            <InfoItem
+              label="Chronic conditions"
+              value={(profile?.chronicConditions || []).join(", ") || "-"}
+            />
             <div className="col-span-2 md:col-span-3">
               <p className="text-xs text-slate mb-1">Allergies</p>
               {(profile?.allergies || []).length === 0 ? (
@@ -732,7 +983,7 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
                   {profile.allergies.map((a, i) => (
                     <span
                       key={i}
-                      className={`px-3 py-1 rounded-full text-xs font-medium ${SEVERITY_BADGE[a.severity] || 'bg-sand text-slate'}`}
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${SEVERITY_BADGE[a.severity] || "bg-sand text-slate"}`}
                     >
                       {a.allergen}
                     </span>
@@ -744,42 +995,62 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
               <p className="text-xs text-slate mb-1">Current medications</p>
               <p className="text-ink text-sm">
                 {(profile?.currentMedications || []).length === 0
-                  ? '-'
-                  : profile.currentMedications.map((m) => m.name).filter(Boolean).join(', ')}
+                  ? "-"
+                  : profile.currentMedications
+                      .map((m) => m.name)
+                      .filter(Boolean)
+                      .join(", ")}
               </p>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Blood group">
-              <input value={overviewForm.bloodGroup || ''} onChange={(e) => set('bloodGroup', e.target.value)} className={inputClasses} placeholder="e.g. O+" />
+              <input
+                value={overviewForm.bloodGroup || ""}
+                onChange={(e) => set("bloodGroup", e.target.value)}
+                className={inputClasses}
+                placeholder="e.g. O+"
+              />
             </Field>
             <Field label="Primary doctor">
-              <input value={overviewForm.primaryDoctor || ''} onChange={(e) => set('primaryDoctor', e.target.value)} className={inputClasses} />
+              <input
+                value={overviewForm.primaryDoctor || ""}
+                onChange={(e) => set("primaryDoctor", e.target.value)}
+                className={inputClasses}
+              />
             </Field>
             <Field label="Medical aid provider">
-              <input value={overviewForm.medicalAidProvider || ''} onChange={(e) => set('medicalAidProvider', e.target.value)} className={inputClasses} />
+              <input
+                value={overviewForm.medicalAidProvider || ""}
+                onChange={(e) => set("medicalAidProvider", e.target.value)}
+                className={inputClasses}
+              />
             </Field>
             <Field label="Medical aid number">
               <input
                 type="text"
                 inputMode="numeric"
-                value={overviewForm.medicalAidNumber || ''}
-                onChange={(e) => set('medicalAidNumber', e.target.value)}
-                className={`${inputClasses} ${fieldErrors.medicalAidNumber ? 'border-red' : ''}`}
+                value={overviewForm.medicalAidNumber || ""}
+                onChange={(e) => set("medicalAidNumber", e.target.value)}
+                className={`${inputClasses} ${fieldErrors.medicalAidNumber ? "border-red" : ""}`}
               />
               {fieldErrors.medicalAidNumber && (
-                <p className="text-red text-xs mt-1">{fieldErrors.medicalAidNumber}</p>
+                <p className="text-red text-xs mt-1">
+                  {fieldErrors.medicalAidNumber}
+                </p>
               )}
             </Field>
           </div>
         )}
-        <p className="text-xs text-slate mt-3">Allergies, conditions and medications are managed from their own tabs.</p>
+        <p className="text-xs text-slate mt-3">
+          Allergies, conditions and medications are managed from their own tabs.
+        </p>
       </SectionCard>
 
       {patient.isChild && <ChildHealthCard answers={intake?.answers} />}
     </div>
-  )
+  );
 }
 
 // "Has this patient done their first-time intake form?" at a glance, so
@@ -787,24 +1058,34 @@ function OverviewTab({ patient, profile, editingOverview, setEditingOverview, ov
 // tablet in person if not - without having to dig into their record. See
 // the "Intake form" tab (only rendered once a form actually exists) for
 // the full read-only answers.
-function IntakeStatusCard({ patient, intake, loadingIntake, onReview, onCapturePaperIntake }) {
-  const [sending, setSending] = useState(false)
-  const [sent, setSent] = useState(false)
-  const [error, setError] = useState('')
+function IntakeStatusCard({
+  patient,
+  intake,
+  loadingIntake,
+  onReview,
+  onCapturePaperIntake,
+}) {
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
 
-  const completed = loadingIntake ? null : !!intake || patient.hasCompletedIntake === true
+  const completed = loadingIntake
+    ? null
+    : !!intake || patient.hasCompletedIntake === true;
 
   async function handleSendReminder() {
-    setSending(true)
-    setError('')
+    setSending(true);
+    setError("");
     try {
-      await sendIntakeReminder(patient)
-      setSent(true)
+      await sendIntakeReminder(patient);
+      setSent(true);
     } catch (err) {
-      console.error(err)
-      setError(err?.message || 'Could not send the reminder. Please try again.')
+      console.error(err);
+      setError(
+        err?.message || "Could not send the reminder. Please try again.",
+      );
     }
-    setSending(false)
+    setSending(false);
   }
 
   return (
@@ -820,7 +1101,11 @@ function IntakeStatusCard({ patient, intake, loadingIntake, onReview, onCaptureP
                 className="text-xs font-medium text-rose hover:underline disabled:opacity-60 flex items-center gap-1"
               >
                 <Bell size={12} />
-                {sent ? 'Reminder sent' : sending ? 'Sending...' : 'Send reminder'}
+                {sent
+                  ? "Reminder sent"
+                  : sending
+                    ? "Sending..."
+                    : "Send reminder"}
               </button>
             )}
             <button
@@ -840,14 +1125,17 @@ function IntakeStatusCard({ patient, intake, loadingIntake, onReview, onCaptureP
         <p className="text-sm text-ink flex items-center gap-2">
           <ClipboardList size={16} className="text-green shrink-0" />
           Completed
-          {intake?.submittedBy === 'secretary'
-            ? ' (captured by the practice)'
-            : intake?.submittedBy === 'guardian'
-              ? ' (filled in by the parent or guardian)'
-              : ''}
+          {intake?.submittedBy === "secretary"
+            ? " (captured by the practice)"
+            : intake?.submittedBy === "guardian"
+              ? " (filled in by the parent or guardian)"
+              : ""}
           .
           {intake && !intake.importedAt && onReview && (
-            <button onClick={onReview} className="ml-1 text-xs font-medium text-rose hover:underline">
+            <button
+              onClick={onReview}
+              className="ml-1 text-xs font-medium text-rose hover:underline"
+            >
               Review and import into the profile
             </button>
           )}
@@ -869,7 +1157,7 @@ function IntakeStatusCard({ patient, intake, loadingIntake, onReview, onCaptureP
         </div>
       )}
     </SectionCard>
-  )
+  );
 }
 
 function InfoItem({ label, value }) {
@@ -878,41 +1166,62 @@ function InfoItem({ label, value }) {
       <p className="text-xs text-slate">{label}</p>
       <p className="text-ink">{value}</p>
     </div>
-  )
+  );
 }
 
 // ---------------- Medical History ----------------
 
 function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
-  const [surgeryForm, setSurgeryForm] = useState({ procedure: '', hospital: '', date: '', notes: '' })
-  const [showSurgeryForm, setShowSurgeryForm] = useState(false)
-  const [admissionForm, setAdmissionForm] = useState({ hospital: '', admissionDate: '', dischargeDate: '', reason: '' })
-  const [showAdmissionForm, setShowAdmissionForm] = useState(false)
-  const [otherCondition, setOtherCondition] = useState(profile?.otherConditions || '')
+  const [surgeryForm, setSurgeryForm] = useState({
+    procedure: "",
+    hospital: "",
+    date: "",
+    notes: "",
+  });
+  const [showSurgeryForm, setShowSurgeryForm] = useState(false);
+  const [admissionForm, setAdmissionForm] = useState({
+    hospital: "",
+    admissionDate: "",
+    dischargeDate: "",
+    reason: "",
+  });
+  const [showAdmissionForm, setShowAdmissionForm] = useState(false);
+  const [otherCondition, setOtherCondition] = useState(
+    profile?.otherConditions || "",
+  );
 
-  const surgeries = profile?.previousSurgeries || []
-  const admissions = profile?.hospitalAdmissions || []
+  const surgeries = profile?.previousSurgeries || [];
+  const admissions = profile?.hospitalAdmissions || [];
 
   async function addSurgery() {
-    if (!surgeryForm.procedure.trim()) return
-    await onPersist({ previousSurgeries: [...surgeries, surgeryForm] })
-    setSurgeryForm({ procedure: '', hospital: '', date: '', notes: '' })
-    setShowSurgeryForm(false)
+    if (!surgeryForm.procedure.trim()) return;
+    await onPersist({ previousSurgeries: [...surgeries, surgeryForm] });
+    setSurgeryForm({ procedure: "", hospital: "", date: "", notes: "" });
+    setShowSurgeryForm(false);
   }
 
   async function removeSurgery(index) {
-    await onPersist({ previousSurgeries: surgeries.filter((_, i) => i !== index) })
+    await onPersist({
+      previousSurgeries: surgeries.filter((_, i) => i !== index),
+    });
   }
 
   async function addAdmission() {
-    if (!admissionForm.hospital.trim()) return
-    await onPersist({ hospitalAdmissions: [...admissions, admissionForm] })
-    setAdmissionForm({ hospital: '', admissionDate: '', dischargeDate: '', reason: '' })
-    setShowAdmissionForm(false)
+    if (!admissionForm.hospital.trim()) return;
+    await onPersist({ hospitalAdmissions: [...admissions, admissionForm] });
+    setAdmissionForm({
+      hospital: "",
+      admissionDate: "",
+      dischargeDate: "",
+      reason: "",
+    });
+    setShowAdmissionForm(false);
   }
 
   async function removeAdmission(index) {
-    await onPersist({ hospitalAdmissions: admissions.filter((_, i) => i !== index) })
+    await onPersist({
+      hospitalAdmissions: admissions.filter((_, i) => i !== index),
+    });
   }
 
   return (
@@ -920,7 +1229,12 @@ function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
       <SectionCard title="Chronic conditions">
         <div className="flex flex-wrap gap-2 mb-3">
           {CHRONIC_CONDITIONS.map((c) => (
-            <ChipToggle key={c} label={c} active={(profile?.chronicConditions || []).includes(c)} onClick={() => onToggleTag('chronicConditions', c)} />
+            <ChipToggle
+              key={c}
+              label={c}
+              active={(profile?.chronicConditions || []).includes(c)}
+              onClick={() => onToggleTag("chronicConditions", c)}
+            />
           ))}
         </div>
         <Field label="Other conditions">
@@ -937,18 +1251,53 @@ function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
       <SectionCard
         title="Previous surgeries"
         action={
-          <button onClick={() => setShowSurgeryForm((v) => !v)} className="text-xs font-medium text-rose hover:underline flex items-center gap-1">
+          <button
+            onClick={() => setShowSurgeryForm((v) => !v)}
+            className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
+          >
             <Plus size={13} /> Add
           </button>
         }
       >
         {showSurgeryForm && (
           <div className="bg-white rounded-lg p-3 mb-3 flex flex-col gap-2 border border-sand">
-            <input value={surgeryForm.procedure} onChange={(e) => setSurgeryForm({ ...surgeryForm, procedure: e.target.value })} placeholder="Procedure" className={inputClasses} />
-            <input value={surgeryForm.hospital} onChange={(e) => setSurgeryForm({ ...surgeryForm, hospital: e.target.value })} placeholder="Hospital" className={inputClasses} />
-            <input type="date" value={surgeryForm.date} onChange={(e) => setSurgeryForm({ ...surgeryForm, date: e.target.value })} className={inputClasses} />
-            <textarea value={surgeryForm.notes} onChange={(e) => setSurgeryForm({ ...surgeryForm, notes: e.target.value })} placeholder="Notes (optional)" rows={2} className={inputClasses} />
-            <button onClick={addSurgery} className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors">
+            <input
+              value={surgeryForm.procedure}
+              onChange={(e) =>
+                setSurgeryForm({ ...surgeryForm, procedure: e.target.value })
+              }
+              placeholder="Procedure"
+              className={inputClasses}
+            />
+            <input
+              value={surgeryForm.hospital}
+              onChange={(e) =>
+                setSurgeryForm({ ...surgeryForm, hospital: e.target.value })
+              }
+              placeholder="Hospital"
+              className={inputClasses}
+            />
+            <input
+              type="date"
+              value={surgeryForm.date}
+              onChange={(e) =>
+                setSurgeryForm({ ...surgeryForm, date: e.target.value })
+              }
+              className={inputClasses}
+            />
+            <textarea
+              value={surgeryForm.notes}
+              onChange={(e) =>
+                setSurgeryForm({ ...surgeryForm, notes: e.target.value })
+              }
+              placeholder="Notes (optional)"
+              rows={2}
+              className={inputClasses}
+            />
+            <button
+              onClick={addSurgery}
+              className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors"
+            >
               Save surgery
             </button>
           </div>
@@ -958,15 +1307,26 @@ function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
         ) : (
           <div className="flex flex-col gap-2">
             {surgeries.map((s, i) => (
-              <div key={i} className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2">
+              <div
+                key={i}
+                className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2"
+              >
                 <div>
                   <p className="text-sm text-ink">{s.procedure}</p>
                   <p className="text-xs text-slate">
-                    {[s.hospital, s.date ? formatShortDate(s.date) : ''].filter(Boolean).join(' · ')}
+                    {[s.hospital, s.date ? formatShortDate(s.date) : ""]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
-                  {s.notes && <p className="text-xs text-slate mt-0.5">{s.notes}</p>}
+                  {s.notes && (
+                    <p className="text-xs text-slate mt-0.5">{s.notes}</p>
+                  )}
                 </div>
-                <button onClick={() => removeSurgery(i)} className="text-slate hover:text-red shrink-0" aria-label="Remove">
+                <button
+                  onClick={() => removeSurgery(i)}
+                  className="text-slate hover:text-red shrink-0"
+                  aria-label="Remove"
+                >
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -978,20 +1338,60 @@ function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
       <SectionCard
         title="Hospital admissions"
         action={
-          <button onClick={() => setShowAdmissionForm((v) => !v)} className="text-xs font-medium text-rose hover:underline flex items-center gap-1">
+          <button
+            onClick={() => setShowAdmissionForm((v) => !v)}
+            className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
+          >
             <Plus size={13} /> Add
           </button>
         }
       >
         {showAdmissionForm && (
           <div className="bg-white rounded-lg p-3 mb-3 flex flex-col gap-2 border border-sand">
-            <input value={admissionForm.hospital} onChange={(e) => setAdmissionForm({ ...admissionForm, hospital: e.target.value })} placeholder="Hospital" className={inputClasses} />
+            <input
+              value={admissionForm.hospital}
+              onChange={(e) =>
+                setAdmissionForm({ ...admissionForm, hospital: e.target.value })
+              }
+              placeholder="Hospital"
+              className={inputClasses}
+            />
             <div className="grid grid-cols-2 gap-2">
-              <input type="date" value={admissionForm.admissionDate} onChange={(e) => setAdmissionForm({ ...admissionForm, admissionDate: e.target.value })} className={inputClasses} />
-              <input type="date" value={admissionForm.dischargeDate} onChange={(e) => setAdmissionForm({ ...admissionForm, dischargeDate: e.target.value })} className={inputClasses} />
+              <input
+                type="date"
+                value={admissionForm.admissionDate}
+                onChange={(e) =>
+                  setAdmissionForm({
+                    ...admissionForm,
+                    admissionDate: e.target.value,
+                  })
+                }
+                className={inputClasses}
+              />
+              <input
+                type="date"
+                value={admissionForm.dischargeDate}
+                onChange={(e) =>
+                  setAdmissionForm({
+                    ...admissionForm,
+                    dischargeDate: e.target.value,
+                  })
+                }
+                className={inputClasses}
+              />
             </div>
-            <input value={admissionForm.reason} onChange={(e) => setAdmissionForm({ ...admissionForm, reason: e.target.value })} placeholder="Reason" className={inputClasses} />
-            <button onClick={addAdmission} className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors">
+            <input
+              value={admissionForm.reason}
+              onChange={(e) =>
+                setAdmissionForm({ ...admissionForm, reason: e.target.value })
+              }
+              placeholder="Reason"
+              className={inputClasses}
+            />
+            <button
+              onClick={addAdmission}
+              className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors"
+            >
               Save admission
             </button>
           </div>
@@ -1001,15 +1401,27 @@ function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
         ) : (
           <div className="flex flex-col gap-2">
             {admissions.map((a, i) => (
-              <div key={i} className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2">
+              <div
+                key={i}
+                className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2"
+              >
                 <div>
                   <p className="text-sm text-ink">{a.hospital}</p>
                   <p className="text-xs text-slate">
-                    {a.admissionDate ? formatShortDate(a.admissionDate) : '?'} – {a.dischargeDate ? formatShortDate(a.dischargeDate) : 'ongoing'}
+                    {a.admissionDate ? formatShortDate(a.admissionDate) : "?"} –{" "}
+                    {a.dischargeDate
+                      ? formatShortDate(a.dischargeDate)
+                      : "ongoing"}
                   </p>
-                  {a.reason && <p className="text-xs text-slate mt-0.5">{a.reason}</p>}
+                  {a.reason && (
+                    <p className="text-xs text-slate mt-0.5">{a.reason}</p>
+                  )}
                 </div>
-                <button onClick={() => removeAdmission(i)} className="text-slate hover:text-red shrink-0" aria-label="Remove">
+                <button
+                  onClick={() => removeAdmission(i)}
+                  className="text-slate hover:text-red shrink-0"
+                  aria-label="Remove"
+                >
                   <Trash2 size={14} />
                 </button>
               </div>
@@ -1021,12 +1433,17 @@ function MedicalHistoryTab({ profile, onToggleTag, onPersist }) {
       <SectionCard title="Family history">
         <div className="flex flex-wrap gap-2">
           {FAMILY_HISTORY_OPTIONS.map((f) => (
-            <ChipToggle key={f} label={f} active={(profile?.familyHistory || []).includes(f)} onClick={() => onToggleTag('familyHistory', f)} />
+            <ChipToggle
+              key={f}
+              label={f}
+              active={(profile?.familyHistory || []).includes(f)}
+              onClick={() => onToggleTag("familyHistory", f)}
+            />
           ))}
         </div>
       </SectionCard>
     </div>
-  )
+  );
 }
 
 function ChipToggle({ label, active, onClick }) {
@@ -1035,59 +1452,107 @@ function ChipToggle({ label, active, onClick }) {
       type="button"
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-        active ? 'bg-rose text-white border-rose' : 'bg-white text-slate border-stone hover:border-rose'
+        active
+          ? "bg-rose text-white border-rose"
+          : "bg-white text-slate border-stone hover:border-rose"
       }`}
     >
       {label}
     </button>
-  )
+  );
 }
 
 // ---------------- Allergies ----------------
 
 function AllergiesTab({ profile, onPersist }) {
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ allergen: '', type: 'Medication', severity: 'Mild', reaction: '', notes: '' })
-  const allergies = profile?.allergies || []
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    allergen: "",
+    type: "Medication",
+    severity: "Mild",
+    reaction: "",
+    notes: "",
+  });
+  const allergies = profile?.allergies || [];
 
   async function addAllergy() {
-    if (!form.allergen.trim()) return
-    await onPersist({ allergies: [...allergies, form] })
-    setForm({ allergen: '', type: 'Medication', severity: 'Mild', reaction: '', notes: '' })
-    setShowForm(false)
+    if (!form.allergen.trim()) return;
+    await onPersist({ allergies: [...allergies, form] });
+    setForm({
+      allergen: "",
+      type: "Medication",
+      severity: "Mild",
+      reaction: "",
+      notes: "",
+    });
+    setShowForm(false);
   }
 
   async function removeAllergy(index) {
-    await onPersist({ allergies: allergies.filter((_, i) => i !== index) })
+    await onPersist({ allergies: allergies.filter((_, i) => i !== index) });
   }
 
   return (
     <SectionCard
       title="Allergies"
       action={
-        <button onClick={() => setShowForm((v) => !v)} className="text-xs font-medium text-rose hover:underline flex items-center gap-1">
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
+        >
           <Plus size={13} /> Add allergy
         </button>
       }
     >
       {showForm && (
         <div className="bg-white rounded-lg p-3 mb-3 flex flex-col gap-2 border border-sand">
-          <input value={form.allergen} onChange={(e) => setForm({ ...form, allergen: e.target.value })} placeholder="Allergen, e.g. Penicillin" className={inputClasses} />
+          <input
+            value={form.allergen}
+            onChange={(e) => setForm({ ...form, allergen: e.target.value })}
+            placeholder="Allergen, e.g. Penicillin"
+            className={inputClasses}
+          />
           <div className="grid grid-cols-2 gap-2">
-            <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={inputClasses}>
+            <select
+              value={form.type}
+              onChange={(e) => setForm({ ...form, type: e.target.value })}
+              className={inputClasses}
+            >
               {ALLERGY_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>
+                  {t}
+                </option>
               ))}
             </select>
-            <select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })} className={inputClasses}>
+            <select
+              value={form.severity}
+              onChange={(e) => setForm({ ...form, severity: e.target.value })}
+              className={inputClasses}
+            >
               {SEVERITIES.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
           </div>
-          <input value={form.reaction} onChange={(e) => setForm({ ...form, reaction: e.target.value })} placeholder="Reaction, e.g. Anaphylaxis" className={inputClasses} />
-          <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Notes (optional)" rows={2} className={inputClasses} />
-          <button onClick={addAllergy} className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors">
+          <input
+            value={form.reaction}
+            onChange={(e) => setForm({ ...form, reaction: e.target.value })}
+            placeholder="Reaction, e.g. Anaphylaxis"
+            className={inputClasses}
+          />
+          <textarea
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="Notes (optional)"
+            rows={2}
+            className={inputClasses}
+          />
+          <button
+            onClick={addAllergy}
+            className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors"
+          >
             Save allergy
           </button>
         </div>
@@ -1098,16 +1563,31 @@ function AllergiesTab({ profile, onPersist }) {
       ) : (
         <div className="flex flex-col gap-2">
           {allergies.map((a, i) => (
-            <div key={i} className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2">
+            <div
+              key={i}
+              className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2"
+            >
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <p className="text-sm font-medium text-ink">{a.allergen}</p>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_BADGE[a.severity] || 'bg-sand text-slate'}`}>{a.severity}</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEVERITY_BADGE[a.severity] || "bg-sand text-slate"}`}
+                  >
+                    {a.severity}
+                  </span>
                 </div>
-                <p className="text-xs text-slate">{[a.type, a.reaction].filter(Boolean).join(' · ')}</p>
-                {a.notes && <p className="text-xs text-slate mt-0.5">{a.notes}</p>}
+                <p className="text-xs text-slate">
+                  {[a.type, a.reaction].filter(Boolean).join(" · ")}
+                </p>
+                {a.notes && (
+                  <p className="text-xs text-slate mt-0.5">{a.notes}</p>
+                )}
               </div>
-              <button onClick={() => removeAllergy(i)} className="text-slate hover:text-red shrink-0" aria-label="Remove">
+              <button
+                onClick={() => removeAllergy(i)}
+                className="text-slate hover:text-red shrink-0"
+                aria-label="Remove"
+              >
                 <Trash2 size={14} />
               </button>
             </div>
@@ -1115,54 +1595,118 @@ function AllergiesTab({ profile, onPersist }) {
         </div>
       )}
     </SectionCard>
-  )
+  );
 }
 
 // ---------------- Medications ----------------
 
 function MedicationsTab({ profile, onPersist }) {
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', dosage: '', frequency: '', startDate: '', endDate: '', prescribingDoctor: '', notes: '' })
-  const medications = profile?.currentMedications || []
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    dosage: "",
+    frequency: "",
+    startDate: "",
+    endDate: "",
+    prescribingDoctor: "",
+    notes: "",
+  });
+  const medications = profile?.currentMedications || [];
 
   async function addMedication() {
-    if (!form.name.trim()) return
-    await onPersist({ currentMedications: [...medications, form] })
-    setForm({ name: '', dosage: '', frequency: '', startDate: '', endDate: '', prescribingDoctor: '', notes: '' })
-    setShowForm(false)
+    if (!form.name.trim()) return;
+    await onPersist({ currentMedications: [...medications, form] });
+    setForm({
+      name: "",
+      dosage: "",
+      frequency: "",
+      startDate: "",
+      endDate: "",
+      prescribingDoctor: "",
+      notes: "",
+    });
+    setShowForm(false);
   }
 
   async function removeMedication(index) {
-    await onPersist({ currentMedications: medications.filter((_, i) => i !== index) })
+    await onPersist({
+      currentMedications: medications.filter((_, i) => i !== index),
+    });
   }
 
   return (
     <SectionCard
       title="Current medications"
       action={
-        <button onClick={() => setShowForm((v) => !v)} className="text-xs font-medium text-rose hover:underline flex items-center gap-1">
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
+        >
           <Plus size={13} /> Add medication
         </button>
       }
     >
       {showForm && (
         <div className="bg-white rounded-lg p-3 mb-3 flex flex-col gap-2 border border-sand">
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Medication name" className={inputClasses} />
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Medication name"
+            className={inputClasses}
+          />
           <div className="grid grid-cols-2 gap-2">
-            <input value={form.dosage} onChange={(e) => setForm({ ...form, dosage: e.target.value })} placeholder="Dosage, e.g. 500mg" className={inputClasses} />
-            <input value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })} placeholder="Frequency, e.g. Twice daily" className={inputClasses} />
+            <input
+              value={form.dosage}
+              onChange={(e) => setForm({ ...form, dosage: e.target.value })}
+              placeholder="Dosage, e.g. 500mg"
+              className={inputClasses}
+            />
+            <input
+              value={form.frequency}
+              onChange={(e) => setForm({ ...form, frequency: e.target.value })}
+              placeholder="Frequency, e.g. Twice daily"
+              className={inputClasses}
+            />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Start date">
-              <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} className={inputClasses} />
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) =>
+                  setForm({ ...form, startDate: e.target.value })
+                }
+                className={inputClasses}
+              />
             </Field>
             <Field label="End date (optional)">
-              <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className={inputClasses} />
+              <input
+                type="date"
+                value={form.endDate}
+                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                className={inputClasses}
+              />
             </Field>
           </div>
-          <input value={form.prescribingDoctor} onChange={(e) => setForm({ ...form, prescribingDoctor: e.target.value })} placeholder="Prescribing doctor" className={inputClasses} />
-          <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Notes (optional)" rows={2} className={inputClasses} />
-          <button onClick={addMedication} className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors">
+          <input
+            value={form.prescribingDoctor}
+            onChange={(e) =>
+              setForm({ ...form, prescribingDoctor: e.target.value })
+            }
+            placeholder="Prescribing doctor"
+            className={inputClasses}
+          />
+          <textarea
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="Notes (optional)"
+            rows={2}
+            className={inputClasses}
+          />
+          <button
+            onClick={addMedication}
+            className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors"
+          >
             Save medication
           </button>
         </div>
@@ -1173,14 +1717,29 @@ function MedicationsTab({ profile, onPersist }) {
       ) : (
         <div className="flex flex-col gap-2">
           {medications.map((m, i) => (
-            <div key={i} className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2">
+            <div
+              key={i}
+              className="bg-white rounded-lg px-3 py-2 flex items-start justify-between gap-2"
+            >
               <div>
                 <p className="text-sm font-medium text-ink">{m.name}</p>
-                <p className="text-xs text-slate">{[m.dosage, m.frequency].filter(Boolean).join(' · ')}</p>
-                {m.prescribingDoctor && <p className="text-xs text-slate">Prescribed by {m.prescribingDoctor}</p>}
-                {m.notes && <p className="text-xs text-slate mt-0.5">{m.notes}</p>}
+                <p className="text-xs text-slate">
+                  {[m.dosage, m.frequency].filter(Boolean).join(" · ")}
+                </p>
+                {m.prescribingDoctor && (
+                  <p className="text-xs text-slate">
+                    Prescribed by {m.prescribingDoctor}
+                  </p>
+                )}
+                {m.notes && (
+                  <p className="text-xs text-slate mt-0.5">{m.notes}</p>
+                )}
               </div>
-              <button onClick={() => removeMedication(i)} className="text-slate hover:text-red shrink-0" aria-label="Remove">
+              <button
+                onClick={() => removeMedication(i)}
+                className="text-slate hover:text-red shrink-0"
+                aria-label="Remove"
+              >
                 <Trash2 size={14} />
               </button>
             </div>
@@ -1188,41 +1747,58 @@ function MedicationsTab({ profile, onPersist }) {
         </div>
       )}
     </SectionCard>
-  )
+  );
 }
 
 // ---------------- Consultations ----------------
 
 const EMPTY_CONSULT_FORM = {
   date: getTodayString(),
-  doctor: '',
-  reasonForVisit: '',
-  diagnosis: '',
-  treatment: '',
+  doctor: "",
+  reasonForVisit: "",
+  diagnosis: "",
+  treatment: "",
   followUpRequired: false,
-  notes: '',
+  notes: "",
   internalOnly: false,
-  height: '',
-  weight: '',
-  bloodPressure: '',
-  pulse: '',
-  temperature: '',
-  oxygenSaturation: '',
-  bloodSugar: '',
-}
+  height: "",
+  weight: "",
+  bloodPressure: "",
+  pulse: "",
+  temperature: "",
+  oxygenSaturation: "",
+  bloodSugar: "",
+};
 
-function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loading, showForm, setShowForm, saving, setSaving, error, setError, onAdded }) {
-  const [form, setForm] = useState(EMPTY_CONSULT_FORM)
-  const bmi = calculateBmi(form.height, form.weight)
+function ConsultationsTab({
+  patient,
+  currentUser,
+  consultations,
+  quickNotes,
+  loading,
+  showForm,
+  setShowForm,
+  saving,
+  setSaving,
+  error,
+  setError,
+  onAdded,
+}) {
+  const [form, setForm] = useState(EMPTY_CONSULT_FORM);
+  const bmi = calculateBmi(form.height, form.weight);
 
   async function handleAdd() {
-    setError('')
-    if (!form.date) return setError('Please choose a date.')
-    if (!form.reasonForVisit.trim() && !form.diagnosis.trim() && !form.notes.trim()) {
-      return setError('Add a reason for visit, diagnosis, or note.')
+    setError("");
+    if (!form.date) return setError("Please choose a date.");
+    if (
+      !form.reasonForVisit.trim() &&
+      !form.diagnosis.trim() &&
+      !form.notes.trim()
+    ) {
+      return setError("Add a reason for visit, diagnosis, or note.");
     }
 
-    setSaving(true)
+    setSaving(true);
     try {
       const vitals = {
         height: form.height,
@@ -1233,14 +1809,14 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
         temperature: form.temperature,
         oxygenSaturation: form.oxygenSaturation,
         bloodSugar: form.bloodSugar,
-      }
-      const hasVitals = Object.values(vitals).some((v) => v)
+      };
+      const hasVitals = Object.values(vitals).some((v) => v);
 
       const newId = await addPatientRecord({
         patientId: patient.id || null,
-        patientIdNumber: patient.idNumber || '',
-        type: 'consultation',
-        title: form.reasonForVisit.trim() || 'Consultation',
+        patientIdNumber: patient.idNumber || "",
+        type: "consultation",
+        title: form.reasonForVisit.trim() || "Consultation",
         date: form.date,
         doctor: form.doctor.trim(),
         reasonForVisit: form.reasonForVisit.trim(),
@@ -1251,11 +1827,11 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
         vitals: hasVitals ? vitals : null,
         createdBy: currentUser?.uid || null,
         internalOnly: form.internalOnly,
-      })
+      });
       onAdded({
         id: newId,
-        type: 'consultation',
-        title: form.reasonForVisit.trim() || 'Consultation',
+        type: "consultation",
+        title: form.reasonForVisit.trim() || "Consultation",
         date: form.date,
         doctor: form.doctor.trim(),
         reasonForVisit: form.reasonForVisit.trim(),
@@ -1265,14 +1841,14 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
         notes: form.notes.trim(),
         vitals: hasVitals ? vitals : null,
         internalOnly: form.internalOnly,
-      })
-      setForm(EMPTY_CONSULT_FORM)
-      setShowForm(false)
+      });
+      setForm(EMPTY_CONSULT_FORM);
+      setShowForm(false);
     } catch (err) {
-      console.error(err)
-      setError('Could not save this consultation. Please try again.')
+      console.error(err);
+      setError("Could not save this consultation. Please try again.");
     }
-    setSaving(false)
+    setSaving(false);
   }
 
   return (
@@ -1280,8 +1856,11 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
       <SectionCard
         title="Add consultation / visit note"
         action={
-          <button onClick={() => setShowForm((v) => !v)} className="text-xs font-medium text-rose hover:underline flex items-center gap-1">
-            <Plus size={13} /> {showForm ? 'Close' : 'New entry'}
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="text-xs font-medium text-rose hover:underline flex items-center gap-1"
+          >
+            <Plus size={13} /> {showForm ? "Close" : "New entry"}
           </button>
         }
       >
@@ -1289,69 +1868,176 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
           <div className="bg-white rounded-lg p-3 flex flex-col gap-3 border border-sand">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Visit date">
-                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputClasses} />
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  className={inputClasses}
+                />
               </Field>
               <Field label="Doctor">
-                <input value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} placeholder="e.g. Dr. Nkosi" className={inputClasses} />
+                <input
+                  value={form.doctor}
+                  onChange={(e) => setForm({ ...form, doctor: e.target.value })}
+                  placeholder="e.g. Dr. Nkosi"
+                  className={inputClasses}
+                />
               </Field>
             </div>
             <Field label="Reason for visit">
-              <input value={form.reasonForVisit} onChange={(e) => setForm({ ...form, reasonForVisit: e.target.value })} className={inputClasses} />
+              <input
+                value={form.reasonForVisit}
+                onChange={(e) =>
+                  setForm({ ...form, reasonForVisit: e.target.value })
+                }
+                className={inputClasses}
+              />
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Diagnosis">
-                <input value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} className={inputClasses} />
+                <input
+                  value={form.diagnosis}
+                  onChange={(e) =>
+                    setForm({ ...form, diagnosis: e.target.value })
+                  }
+                  className={inputClasses}
+                />
               </Field>
               <Field label="Treatment">
-                <input value={form.treatment} onChange={(e) => setForm({ ...form, treatment: e.target.value })} className={inputClasses} />
+                <input
+                  value={form.treatment}
+                  onChange={(e) =>
+                    setForm({ ...form, treatment: e.target.value })
+                  }
+                  className={inputClasses}
+                />
               </Field>
             </div>
             <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" checked={form.followUpRequired} onChange={(e) => setForm({ ...form, followUpRequired: e.target.checked })} className="rounded border-stone" />
+              <input
+                type="checkbox"
+                checked={form.followUpRequired}
+                onChange={(e) =>
+                  setForm({ ...form, followUpRequired: e.target.checked })
+                }
+                className="rounded border-stone"
+              />
               Follow-up required
             </label>
             <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="checkbox" checked={form.internalOnly} onChange={(e) => setForm({ ...form, internalOnly: e.target.checked })} className="rounded border-stone" />
+              <input
+                type="checkbox"
+                checked={form.internalOnly}
+                onChange={(e) =>
+                  setForm({ ...form, internalOnly: e.target.checked })
+                }
+                className="rounded border-stone"
+              />
               Staff only - hidden from the patient's own record
             </label>
             <Field label="Notes">
-              <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} className={inputClasses} />
+              <textarea
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                rows={2}
+                className={inputClasses}
+              />
             </Field>
 
             <div>
-              <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">Vital signs (optional)</p>
+              <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">
+                Vital signs (optional)
+              </p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                <input value={form.height} onChange={(e) => setForm({ ...form, height: e.target.value })} placeholder="Height (cm)" className={inputClasses} />
-                <input value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} placeholder="Weight (kg)" className={inputClasses} />
-                <input value={bmi} disabled placeholder="BMI (auto)" className={`${inputClasses} bg-mist text-slate`} />
-                <input value={form.bloodPressure} onChange={(e) => setForm({ ...form, bloodPressure: e.target.value })} placeholder="Blood pressure" className={inputClasses} />
-                <input value={form.pulse} onChange={(e) => setForm({ ...form, pulse: e.target.value })} placeholder="Pulse (bpm)" className={inputClasses} />
-                <input value={form.temperature} onChange={(e) => setForm({ ...form, temperature: e.target.value })} placeholder="Temperature (°C)" className={inputClasses} />
-                <input value={form.oxygenSaturation} onChange={(e) => setForm({ ...form, oxygenSaturation: e.target.value })} placeholder="Oxygen saturation (%)" className={inputClasses} />
-                <input value={form.bloodSugar} onChange={(e) => setForm({ ...form, bloodSugar: e.target.value })} placeholder="Blood sugar (optional)" className={inputClasses} />
+                <input
+                  value={form.height}
+                  onChange={(e) => setForm({ ...form, height: e.target.value })}
+                  placeholder="Height (cm)"
+                  className={inputClasses}
+                />
+                <input
+                  value={form.weight}
+                  onChange={(e) => setForm({ ...form, weight: e.target.value })}
+                  placeholder="Weight (kg)"
+                  className={inputClasses}
+                />
+                <input
+                  value={bmi}
+                  disabled
+                  placeholder="BMI (auto)"
+                  className={`${inputClasses} bg-mist text-slate`}
+                />
+                <input
+                  value={form.bloodPressure}
+                  onChange={(e) =>
+                    setForm({ ...form, bloodPressure: e.target.value })
+                  }
+                  placeholder="Blood pressure"
+                  className={inputClasses}
+                />
+                <input
+                  value={form.pulse}
+                  onChange={(e) => setForm({ ...form, pulse: e.target.value })}
+                  placeholder="Pulse (bpm)"
+                  className={inputClasses}
+                />
+                <input
+                  value={form.temperature}
+                  onChange={(e) =>
+                    setForm({ ...form, temperature: e.target.value })
+                  }
+                  placeholder="Temperature (°C)"
+                  className={inputClasses}
+                />
+                <input
+                  value={form.oxygenSaturation}
+                  onChange={(e) =>
+                    setForm({ ...form, oxygenSaturation: e.target.value })
+                  }
+                  placeholder="Oxygen saturation (%)"
+                  className={inputClasses}
+                />
+                <input
+                  value={form.bloodSugar}
+                  onChange={(e) =>
+                    setForm({ ...form, bloodSugar: e.target.value })
+                  }
+                  placeholder="Blood sugar (optional)"
+                  className={inputClasses}
+                />
               </div>
             </div>
 
             {error && <p className="text-red text-xs">{error}</p>}
-            <button onClick={handleAdd} disabled={saving} className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors disabled:opacity-60">
-              {saving ? 'Saving...' : 'Save entry'}
+            <button
+              onClick={handleAdd}
+              disabled={saving}
+              className="self-start bg-rose text-white rounded-lg px-4 py-2 text-xs font-medium hover:bg-plum transition-colors disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save entry"}
             </button>
           </div>
         ) : (
-          <p className="text-sm text-slate">Log a consultation, vitals, or a quick note from this visit.</p>
+          <p className="text-sm text-slate">
+            Log a consultation, vitals, or a quick note from this visit.
+          </p>
         )}
       </SectionCard>
 
       <div>
-        <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">Visit history</p>
+        <p className="text-xs font-semibold text-slate uppercase tracking-wide mb-2">
+          Visit history
+        </p>
         {loading ? (
           <p className="text-sm text-slate">Loading...</p>
         ) : consultations.length === 0 && quickNotes.length === 0 ? (
-          <p className="text-sm text-slate">No consultations or notes on file yet.</p>
+          <p className="text-sm text-slate">
+            No consultations or notes on file yet.
+          </p>
         ) : (
           <div className="flex flex-col gap-3">
             {[...consultations, ...quickNotes]
-              .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+              .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
               .map((r) => (
                 <div key={r.id} className="bg-mist rounded-xl p-4">
                   <div className="flex items-center justify-between mb-1">
@@ -1363,30 +2049,64 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate">{r.date ? formatShortDate(r.date) : ''}</p>
+                    <p className="text-xs text-slate">
+                      {r.date ? formatShortDate(r.date) : ""}
+                    </p>
                   </div>
-                  {r.type === 'consultation' ? (
+                  {r.type === "consultation" ? (
                     <>
-                      {r.doctor && <p className="text-xs text-slate">Seen by {r.doctor}</p>}
-                      {r.diagnosis && <p className="text-sm text-ink mt-1">Diagnosis: {r.diagnosis}</p>}
-                      {r.treatment && <p className="text-sm text-ink">Treatment: {r.treatment}</p>}
-                      {r.followUpRequired && <p className="text-xs text-amber mt-1">Follow-up required</p>}
-                      {r.notes && <p className="text-xs text-slate mt-1">{r.notes}</p>}
+                      {r.doctor && (
+                        <p className="text-xs text-slate">Seen by {r.doctor}</p>
+                      )}
+                      {r.diagnosis && (
+                        <p className="text-sm text-ink mt-1">
+                          Diagnosis: {r.diagnosis}
+                        </p>
+                      )}
+                      {r.treatment && (
+                        <p className="text-sm text-ink">
+                          Treatment: {r.treatment}
+                        </p>
+                      )}
+                      {r.followUpRequired && (
+                        <p className="text-xs text-amber mt-1">
+                          Follow-up required
+                        </p>
+                      )}
+                      {r.notes && (
+                        <p className="text-xs text-slate mt-1">{r.notes}</p>
+                      )}
                       {r.vitals && (
                         <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mt-2 text-xs text-slate">
-                          {r.vitals.height && <span>Height: {r.vitals.height}cm</span>}
-                          {r.vitals.weight && <span>Weight: {r.vitals.weight}kg</span>}
+                          {r.vitals.height && (
+                            <span>Height: {r.vitals.height}cm</span>
+                          )}
+                          {r.vitals.weight && (
+                            <span>Weight: {r.vitals.weight}kg</span>
+                          )}
                           {r.vitals.bmi && <span>BMI: {r.vitals.bmi}</span>}
-                          {r.vitals.bloodPressure && <span>BP: {r.vitals.bloodPressure}</span>}
-                          {r.vitals.pulse && <span>Pulse: {r.vitals.pulse}</span>}
-                          {r.vitals.temperature && <span>Temp: {r.vitals.temperature}°C</span>}
-                          {r.vitals.oxygenSaturation && <span>O2: {r.vitals.oxygenSaturation}%</span>}
-                          {r.vitals.bloodSugar && <span>Blood sugar: {r.vitals.bloodSugar}</span>}
+                          {r.vitals.bloodPressure && (
+                            <span>BP: {r.vitals.bloodPressure}</span>
+                          )}
+                          {r.vitals.pulse && (
+                            <span>Pulse: {r.vitals.pulse}</span>
+                          )}
+                          {r.vitals.temperature && (
+                            <span>Temp: {r.vitals.temperature}°C</span>
+                          )}
+                          {r.vitals.oxygenSaturation && (
+                            <span>O2: {r.vitals.oxygenSaturation}%</span>
+                          )}
+                          {r.vitals.bloodSugar && (
+                            <span>Blood sugar: {r.vitals.bloodSugar}</span>
+                          )}
                         </div>
                       )}
                     </>
                   ) : (
-                    r.notes && <p className="text-sm text-ink mt-1">{r.notes}</p>
+                    r.notes && (
+                      <p className="text-sm text-ink mt-1">{r.notes}</p>
+                    )
                   )}
                 </div>
               ))}
@@ -1394,5 +2114,5 @@ function ConsultationsTab({ patient, currentUser, consultations, quickNotes, loa
         )}
       </div>
     </div>
-  )
+  );
 }
