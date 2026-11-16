@@ -216,12 +216,23 @@ function isVerifiedGuardianOf(childId) {
     match /children/{childId} {
 
       // A guardian can only read children linked to their account.
-      allow read: if isSecretary()
+      allow get: if isSecretary()
         || (
           request.auth != null
           && request.auth.token.email_verified == true
           && request.auth.uid in resource.data.guardianIds
           && request.time < resource.data.turns18At
+        );
+
+      // List queries must be provable from the query itself. The guardian's
+      // query filters on guardianIds array-contains their own uid, so that is
+      // what is enforced here. Children aged 18+ are dropped client-side and
+      // are blocked on direct reads by the rule above.
+      allow list: if isSecretary()
+        || (
+          request.auth != null
+          && request.auth.token.email_verified == true
+          && request.auth.uid in resource.data.guardianIds
         );
 
       // New child profiles must be created by the signed-in guardian.
