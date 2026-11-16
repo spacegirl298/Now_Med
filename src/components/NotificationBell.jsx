@@ -49,10 +49,7 @@ function splitMeetingLink(message) {
   };
 }
 
-export default function NotificationBell({
-  inline = false,
-  alerts = null,
-}) {
+export default function NotificationBell({ inline = false, alerts = null }) {
   const {
     notifications,
     unreadCount,
@@ -85,23 +82,22 @@ export default function NotificationBell({
     <div
       ref={wrapperRef}
       className={
-        inline ? "relative" : "fixed top-4 right-4 md:top-6 md:right-20 z-40"
+        inline ? "relative" : "fixed top-1 right-16 md:top-6 md:right-20 z-40"
       }
     >
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
-        className={`group relative w-11 h-11 rounded-full flex items-center justify-center hover:bg-mist transition-colors ${
-          inline ? "bg-transparent" : "bg-white shadow-sm"
+        className={`group relative w-11 h-11 rounded-full flex items-center justify-center transition-colors active:bg-white/10 md:active:bg-transparent md:hover:bg-mist  ${
+          inline ? "bg-transparent" : "bg-plum md:bg-white md:shadow-sm"
         }`}
       >
         <Bell
           size={20}
-          color={inline ? undefined : "var(--color-plum)"}
-          className="text-plum transition-colors group-hover:text-plum"
+          className="text-white md:text-plum transition-colors md:group-hover:text-plum"
         />
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-full bg-rose text-white text-[10px] font-semibold flex items-center justify-center hover: text-plum transition-colors">
+          <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-rose md:bg-rose md:text-white text-[10px] font-semibold flex items-center justify-center transition-colors">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
